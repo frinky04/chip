@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Chip.Core/Chip.Core.csproj" />
+    <Project Path="src/Chip.Editor/Chip.Editor.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Chip.Core.Tests/Chip.Core.Tests.csproj" />
+  </Folder>
+</Solution>

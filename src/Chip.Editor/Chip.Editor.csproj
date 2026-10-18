@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Chip.Core\Chip.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NativeFileDialogSharp" Version="0.5.0" />
+    <PackageReference Include="Silk.NET.Input" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.OpenGL.Extensions.ImGui" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
+    <PackageReference Include="StbImageSharp" Version="2.30.16" />
+    <PackageReference Include="StbImageWriteSharp" Version="1.16.7" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>Chip</AssemblyName>
+    <RootNamespace>Chip.Editor</RootNamespace>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\assets\**\*" LinkBase="assets" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

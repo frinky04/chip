@@ -1,0 +1,31 @@
+using Chip.Core.Geometry;
+
+namespace Chip.Core.Scene;
+
+/// <summary>The saved level: meshes plus export settings. Geometry is in metres; <see cref="ExportScale"/> multiplies on export (e.g. 100 for centimetre engines).</summary>
+public sealed class Document
+{
+    public List<PolyMesh> Meshes = new();
+    public int NextId = 1;
+    public float ExportScale = 1f;
+    public string? ExportPath;
+    public bool ExportCollision = true;
+
+    public PolyMesh Add(PolyMesh m)
+    {
+        m.Id = NextId++;
+        Meshes.Add(m);
+        return m;
+    }
+
+    public PolyMesh? Find(int id) => Meshes.Find(m => m.Id == id);
+
+    public Document Clone() => new()
+    {
+        Meshes = Meshes.Select(m => m.Clone()).ToList(),
+        NextId = NextId,
+        ExportScale = ExportScale,
+        ExportPath = ExportPath,
+        ExportCollision = ExportCollision,
+    };
+}
