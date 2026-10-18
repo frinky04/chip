@@ -5,7 +5,8 @@ namespace Chip.Core.Scene;
 public enum SelectMode { Vertex, Edge, Face, Object }
 
 /// <summary>
-/// One selectable element. Vertex: A = vertex. Edge: A &lt; B vertex pair. Face: A = face. Object: mesh only.
+/// One selectable element. Vertex: A = vertex. Edge: A &lt; B vertex pair. Face: A = face. Object: a mesh or an entity
+/// (ids are unique across both, so <see cref="Mesh"/> holds either; mesh-only code skips ids <c>Document.Find</c> can't resolve).
 /// </summary>
 public readonly record struct ElementRef(int Mesh, int A = -1, int B = -1)
 {
@@ -48,11 +49,13 @@ public sealed class Selection
     {
         foreach (var m in doc.Meshes.Where(m => !m.Hidden && !m.Locked))
             Items.UnionWith(Elements(m, Mode));
+        if (Mode == SelectMode.Object) Items.UnionWith(SelectableEntities(doc));
     }
 
     public void Invert(Document doc)
     {
         var all = doc.Meshes.Where(m => !m.Hidden && !m.Locked).SelectMany(m => Elements(m, Mode)).ToHashSet();
+        if (Mode == SelectMode.Object) all.UnionWith(SelectableEntities(doc));
         all.ExceptWith(Items);
         Clear();
         Items.UnionWith(all);
@@ -61,6 +64,7 @@ public sealed class Selection
     /// <summary>
     /// Converts to another mode. Vertices→edges/faces take fully enclosed elements, falling back to touching ones.
     /// Edges→faces take faces containing any selected edge. Anything→object takes owning meshes.
+    /// Entities only exist in object mode: switching to a component mode drops them.
     /// </summary>
     public void ConvertTo(SelectMode mode, Document doc)
     {
@@ -130,6 +134,17 @@ public sealed class Selection
 
     public HashSet<int> MeshIds() => Items.Select(i => i.Mesh).ToHashSet();
 
+    /// <summary>Selected entities (object mode only), in document order.</summary>
+    public List<Entity> Entities(Document doc)
+    {
+        if (Mode != SelectMode.Object || Items.Count == 0) return [];
+        var ids = MeshIds();
+        return doc.Entities.Where(e => ids.Contains(e.Id)).ToList();
+    }
+
+    static IEnumerable<ElementRef> SelectableEntities(Document doc) =>
+        doc.Entities.Where(e => !e.Hidden && !e.Locked).Select(e => ElementRef.Object(e.Id));
+
     /// <summary>Re-points one mesh's element references after its vertices/faces were renumbered (-1 = removed).</summary>
     public void Remap(int meshId, int[] vertexMap, int[] faceMap)
     {
@@ -151,9 +166,12 @@ public sealed class Selection
     /// <summary>Drops references that no longer resolve (after undo or topology edits).</summary>
     public void Prune(Document doc)
     {
-        Items.RemoveWhere(i => doc.Find(i.Mesh) is not { } m || m.Hidden || m.Locked || !IsValid(m, i));
+        Items.RemoveWhere(i => doc.Find(i.Mesh) is not { } m ? !IsLiveEntity(doc, i) : m.Hidden || m.Locked || !IsValid(m, i));
         if (Active is { } a && !Items.Contains(a)) Active = null;
     }
+
+    bool IsLiveEntity(Document doc, ElementRef i) =>
+        Mode == SelectMode.Object && doc.FindEntity(i.Mesh) is { } e && !e.Hidden && !e.Locked;
 
     bool IsValid(PolyMesh m, ElementRef i) => Mode switch
     {

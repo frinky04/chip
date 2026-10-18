@@ -7,6 +7,8 @@ public sealed class Document
 {
     public List<PolyMesh> Meshes = new();
     public List<Entity> Entities = new();
+    /// <summary>Outliner groups (stream H). Optional in files; ids share <see cref="NextId"/> with meshes and entities.</summary>
+    public List<Group> Groups = new();
     public int NextId = 1;
     public float ExportScale = 1f;
     public string? ExportPath;
@@ -27,6 +29,16 @@ public sealed class Document
         return e;
     }
 
+    /// <summary>Adds a group with a fresh id.</summary>
+    public Group Add(Group g)
+    {
+        g.Id = NextId++;
+        Groups.Add(g);
+        return g;
+    }
+
+    public Group? FindGroup(int id) => Groups.Find(g => g.Id == id);
+
     public PolyMesh? Find(int id) => Meshes.Find(m => m.Id == id);
 
     public Entity? FindEntity(int id) => Entities.Find(e => e.Id == id);
@@ -35,6 +47,7 @@ public sealed class Document
     {
         Meshes = Meshes.Select(m => m.Clone()).ToList(),
         Entities = Entities.Select(e => e.Clone()).ToList(),
+        Groups = Groups.Select(g => g.Clone()).ToList(),
         NextId = NextId,
         ExportScale = ExportScale,
         ExportPath = ExportPath,
