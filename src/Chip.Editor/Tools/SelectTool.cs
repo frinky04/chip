@@ -74,9 +74,16 @@ public sealed class SelectTool : IViewportTool
         bool overGizmo = pivot != null && gizmo.Hover != Handle.None;
         if (ctx.ViewportHovered && overGizmo && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
         {
-            bool extrude = io.KeyShift && ctx.Sel.Mode == SelectMode.Face && gizmo.Mode == GizmoMode.Translate;
-            string label = extrude ? "Extrude" : gizmo.Mode switch { GizmoMode.Rotate => "Rotate", GizmoMode.Scale => "Scale", _ => "Move" };
-            _gesture = TransformGesture.Start(ctx.Session, label, extrude);
+            var kind = io.KeyShift && gizmo.Mode == GizmoMode.Translate
+                ? (io.KeyCtrl ? GestureKind.PushPull : GestureKind.Extrude)
+                : GestureKind.Transform;
+            string label = kind switch
+            {
+                GestureKind.Extrude => "Extrude",
+                GestureKind.PushPull => "Push/Pull",
+                _ => gizmo.Mode switch { GizmoMode.Rotate => "Rotate", GizmoMode.Scale => "Scale", _ => "Move" },
+            };
+            _gesture = TransformGesture.Start(ctx.Session, label, kind);
             if (_gesture != null) gizmo.BeginDrag(gizmo.Hover, ctx.View, _gesture.Pivot, mouse);
             return;
         }

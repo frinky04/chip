@@ -5,6 +5,12 @@ using Chip.Core.Texturing;
 namespace Chip.Core.Scene;
 
 /// <summary>
+/// What a gizmo drag does besides moving. The select tool maps modifiers to a kind (Shift = extrude,
+/// Ctrl+Shift = push/pull); the gesture decides what that means for the current selection mode.
+/// </summary>
+public enum GestureKind { Transform, Extrude, PushPull }
+
+/// <summary>
 /// One transform of the current selection as an undoable gesture (gizmo drag, nudge, numeric entry).
 /// <see cref="Apply"/> is absolute relative to the start state, so repeated calls never accumulate error.
 /// Object-mode rigid moves keep textures locked to the geometry; everything else stays world-projected.
@@ -21,14 +27,18 @@ public sealed class TransformGesture
     public Vector3 Pivot { get; }
     public (Vector3 Min, Vector3 Max) StartBounds { get; }
 
-    TransformGesture(Session session, string label, bool extrude)
+    public GestureKind Kind { get; }
+
+    TransformGesture(Session session, string label, GestureKind kind)
     {
+        Kind = kind;
         _session = session;
         session.Begin(label);
         var doc = session.Doc;
         var sel = session.Sel;
 
-        if (extrude && sel.Mode == SelectMode.Face)
+        // Face extrude today; edge extrude and true push/pull (stream A) plug in here by mode and kind.
+        if (kind != GestureKind.Transform && sel.Mode == SelectMode.Face)
         {
             foreach (var (mesh, faces) in sel.FaceSets(doc))
             {
@@ -53,11 +63,14 @@ public sealed class TransformGesture
     }
 
     /// <summary>Starts a gesture on the session's selection. Returns null when nothing is selected.</summary>
-    public static TransformGesture? Start(Session session, string label, bool extrude = false)
+    public static TransformGesture? Start(Session session, string label, GestureKind kind)
     {
         if (session.Sel.IsEmpty) return null;
-        return new TransformGesture(session, label, extrude);
+        return new TransformGesture(session, label, kind);
     }
+
+    public static TransformGesture? Start(Session session, string label, bool extrude = false) =>
+        Start(session, label, extrude ? GestureKind.Extrude : GestureKind.Transform);
 
     /// <summary>Sets every affected vertex to <c>m * start</c>. <paramref name="rigid"/> = rotation/translation only.</summary>
     public void Apply(Matrix4x4 m, bool rigid)
