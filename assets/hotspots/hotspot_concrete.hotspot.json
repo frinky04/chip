@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "name": "Concrete panels",
+  "referenceWidth": 1024,
+  "referenceHeight": 1024,
+  "materials": [
+    "hotspot_concrete"
+  ],
+  "patches": [
+    {
+      "x": 0,
+      "y": 0,
+      "w": 0.5,
+      "h": 0.5,
+      "allowRotation": true,
+      "mirrorX": true,
+      "mirrorY": true,
+      "tiling": false,
+      "inset": 4
+    },
+    {
+      "x": 0.5,
+      "y": 0,
+      "w": 0.5,
+      "h": 0.25,
+      "allowRotation": true,
+      "mirrorX": true,
+      "mirrorY": true,
+      "tiling": false,
+      "inset": 4
+    },
+    {
+      "x": 0.5,
+      "y": 0.25,
+      "w": 0.25,
+      "h": 0.25,
+      "allowRotation": true,
+      "mirrorX": true,
+      "mirrorY": true,
+      "tiling": false,
+      "inset": 4
+    },
+    {
+      "x": 0.75,
+      "y": 0.25,
+      "w": 0.25,
+      "h": 0.25,
+      "allowRotation": true,
+      "mirrorX": false,
+      "mirrorY": false,
+      "tiling": false,
+      "inset": 4
+    },
+    {
+      "x": 0,
+      "y": 0.5,
+      "w": 0.5,
+      "h": 0.125,
+      "allowRotation": true,
+      "mirrorX": true,
+      "mirrorY": true,
+      "tiling": false,
+      "inset": 3
+    },
+    {
+      "x": 0.5,
+      "y": 0.5,
+      "w": 0.5,
+      "h": 0.125,
+      "allowRotation": false,
+      "mirrorX": true,
+      "mirrorY": false,
+      "tiling": false,
+      "inset": 3
+    },
+    {
+      "x": 0,
+      "y": 0.625,
+      "w": 1,
+      "h": 0.125,
+      "allowRotation": false,
+      "mirrorX": true,
+      "mirrorY": false,
+      "tiling": true,
+      "inset": 3
+    },
+    {
+      "x": 0,
+      "y": 0.75,
+      "w": 1,
+      "h": 0.0625,
+      "allowRotation": false,
+      "mirrorX": false,
+      "mirrorY": true,
+      "tiling": true,
+      "inset": 2
+    },
+    {
+      "x": 0,
+      "y": 0.8125,
+      "w": 1,
+      "h": 0.0625,
+      "allowRotation": false,
+      "mirrorX": false,
+      "mirrorY": false,
+      "tiling": true,
+      "inset": 2
+    },
+    {
+      "x": 0,
+      "y": 0.875,
+      "w": 1,
+      "h": 0.03125,
+      "allowRotation": false,
+      "mirrorX": false,
+      "mirrorY": false,
+      "tiling": true,
+      "inset": 2
+    },
+    {
+      "x": 0,
+      "y": 0.90625,
+      "w": 1,
+      "h": 0.03125,
+      "allowRotation": false,
+      "mirrorX": false,
+      "mirrorY": false,
+      "tiling": true,
+      "inset": 2
+    },
+    {
+      "x": 0,
+      "y": 0.9375,
+      "w": 1,
+      "h": 0.0625,
+      "allowRotation": false,
+      "mirrorX": false,
+      "mirrorY": true,
+      "tiling": true,
+      "inset": 2
+    }
+  ]
+}
