@@ -47,32 +47,34 @@ public sealed class TexturingFeature : IEditorFeature
         c.Add("texture.clearUVs", "Clear explicit UVs", () => TextureOps.ClearExplicit(ctx), "Texture",
             canExecute: () => Has() && TextureOps.Faces(ctx).Any(f => f.Face.UVs != null), group: "5-unwrap", order: 10);
 
-        // ---- Numpad: shift by one grid step, scale, rotate ----
+        // ---- Shift by one grid step, scale, rotate: main-keyboard keys first, Scythe's numpad keys as alternatives ----
         (string Id, string Label, string Key, int X, int Y)[] shifts =
         [
-            ("shiftLeft", "Shift texture left", "Num4", -1, 0), ("shiftRight", "Shift texture right", "Num6", 1, 0),
-            ("shiftUp", "Shift texture up", "Num8", 0, 1), ("shiftDown", "Shift texture down", "Num2", 0, -1),
+            ("shiftLeft", "Shift texture left", "Ctrl+Left / Num4", -1, 0), ("shiftRight", "Shift texture right", "Ctrl+Right / Num6", 1, 0),
+            ("shiftUp", "Shift texture up", "Ctrl+Up / Num8", 0, 1), ("shiftDown", "Shift texture down", "Ctrl+Down / Num2", 0, -1),
             ("shiftUpLeft", "Shift texture up left", "Num7", -1, 1), ("shiftUpRight", "Shift texture up right", "Num9", 1, 1),
             ("shiftDownLeft", "Shift texture down left", "Num1", -1, -1), ("shiftDownRight", "Shift texture down right", "Num3", 1, -1),
         ];
         foreach (var (id, label, key, x, y) in shifts)
             c.Add($"texture.{id}", label, () => Shift(ctx, x, y), hotkey: key, canExecute: Has);
-        c.AddReference("Texture", "Num1 – 9", "shift texture one grid step (not Num5)");
+        c.AddReference("Texture", "Ctrl + arrows", "shift texture one grid step");
+        c.AddReference("Texture", "Num1 – 9", "shift texture (numpad, with diagonals)");
 
         (string Id, string Label, string Key, float X, float Y)[] scales =
         [
-            ("scaleWider", "Scale texture wider", "Ctrl+Alt+Num6", 2, 1), ("scaleNarrower", "Scale texture narrower", "Ctrl+Alt+Num4", 0.5f, 1),
-            ("scaleTaller", "Scale texture taller", "Ctrl+Alt+Num8", 1, 2), ("scaleShorter", "Scale texture shorter", "Ctrl+Alt+Num2", 1, 0.5f),
+            ("scaleWider", "Scale texture wider", "Ctrl+Shift+Right / Ctrl+Alt+Num6", 2, 1), ("scaleNarrower", "Scale texture narrower", "Ctrl+Shift+Left / Ctrl+Alt+Num4", 0.5f, 1),
+            ("scaleTaller", "Scale texture taller", "Ctrl+Shift+Up / Ctrl+Alt+Num8", 1, 2), ("scaleShorter", "Scale texture shorter", "Ctrl+Shift+Down / Ctrl+Alt+Num2", 1, 0.5f),
         ];
         foreach (var (id, label, key, x, y) in scales)
             c.Add($"texture.{id}", label, () => TextureOps.Edit(ctx, "Scale Texture",
                 faces => Justify.Scale(faces, new Vector2(x, y), size, options.TreatAsOne)), hotkey: key, canExecute: Has);
-        c.AddReference("Texture", "Ctrl+Alt+Num4/6/8/2", "scale texture");
+        c.AddReference("Texture", "Ctrl+Shift + arrows", "scale texture wider, narrower, taller, shorter");
+        c.AddReference("Texture", "Ctrl+Alt+Num4/6/8/2", "scale texture (numpad)");
 
         c.Add("texture.rotateCW", "Rotate texture clockwise", () => TextureOps.Edit(ctx, "Rotate Texture",
-            faces => Justify.Rotate(faces, RotateStep, size, options.TreatAsOne)), "Texture", "Alt+Num9", Has, "4-adjust", 0);
+            faces => Justify.Rotate(faces, RotateStep, size, options.TreatAsOne)), "Texture", "Alt+. / Alt+Num9", Has, "4-adjust", 0);
         c.Add("texture.rotateCCW", "Rotate texture anticlockwise", () => TextureOps.Edit(ctx, "Rotate Texture",
-            faces => Justify.Rotate(faces, -RotateStep, size, options.TreatAsOne)), "Texture", "Alt+Num7", Has, "4-adjust", 1);
+            faces => Justify.Rotate(faces, -RotateStep, size, options.TreatAsOne)), "Texture", "Alt+, / Alt+Num7", Has, "4-adjust", 1);
         c.Add("texture.flipFaceU", "Flip face UVs horizontally", () => TextureOps.Edit(ctx, "Flip Face UVs",
             faces => Justify.Flip(faces, horizontal: true, size, options.TreatAsOne)), "Texture", "Alt+R", Has, "4-adjust", 2);
         c.Add("texture.flipFaceV", "Flip face UVs vertically", () => TextureOps.Edit(ctx, "Flip Face UVs",
@@ -81,9 +83,9 @@ public sealed class TexturingFeature : IEditorFeature
         // ---- Justify ----
         (JustifyMode Mode, string Id, string Label, string Key)[] justify =
         [
-            (JustifyMode.Left, "justifyLeft", "Justify left", "Alt+Num4"), (JustifyMode.Right, "justifyRight", "Justify right", "Alt+Num6"),
-            (JustifyMode.Top, "justifyTop", "Justify top", "Alt+Num8"), (JustifyMode.Bottom, "justifyBottom", "Justify bottom", "Alt+Num2"),
-            (JustifyMode.Center, "justifyCenter", "Justify centre", "Alt+Num5"),
+            (JustifyMode.Left, "justifyLeft", "Justify left", "Shift+Alt+Left / Alt+Num4"), (JustifyMode.Right, "justifyRight", "Justify right", "Shift+Alt+Right / Alt+Num6"),
+            (JustifyMode.Top, "justifyTop", "Justify top", "Shift+Alt+Up / Alt+Num8"), (JustifyMode.Bottom, "justifyBottom", "Justify bottom", "Shift+Alt+Down / Alt+Num2"),
+            (JustifyMode.Center, "justifyCenter", "Justify centre", "Shift+Alt+C / Alt+Num5"),
         ];
         foreach (var (mode, id, label, key) in justify)
             c.Add($"texture.{id}", label, () => TextureOps.Edit(ctx, label,

@@ -78,7 +78,7 @@ Tags: **[v1]** = first shippable slice. **[v2]** = next. **[later]** = backlog. 
 | Flood fill (faces: connected; edges: loop; verts: connected). Shift adds, Ctrl removes | double-click | v2 (done) |
 | Select faces on plane (coplanar flood, 1° from the clicked face) | CapsLock/Mouse4/Mouse5 + double-click | v2 (done) |
 | Path selection (shortest path from the active element; by edge length for verts/edges, adjacency for faces) | Ctrl+Shift+click | v2 (done) |
-| Grow / shrink selection (faces by shared edges, verts/edges along edges; open borders count as rim) | `Alt+Num+` / `Alt+Num-` | v2 (done) |
+| Grow / shrink selection (faces by shared edges, verts/edges along edges; open borders count as rim) | `Alt+=` / `Alt+-` (or `Alt+Num+` / `Alt+Num-`) | v2 (done) |
 | Edge ring / edge loop (quad topology; stops at poles, n-gons, borders; a border edge follows the border) | `X` / `L` | v2 (done) |
 | Select by material (active face's, else the active material) / select connected | Select menu | v2 (done) |
 | Box select visible only (toggle; off = vertices and edges select through) | Select menu | v2 (done) |
@@ -152,11 +152,11 @@ Each face stores a planar projection: U axis, V axis, offset (u, v), scale (u, v
 |---|---|---|
 | Align to Grid (world-aligned, dominant-axis projection, texel density) | `Shift+Ctrl+G` | v1 |
 | Align to Face (face-plane projection from the longest edge) | `Shift+Ctrl+F` | v1 |
-| Shift U/V by one step (8 directions) | `Numpad 1–4, 6–9` | v1, done |
+| Shift U/V by one step (8 directions) | `Ctrl+arrows` (4 directions), `Numpad 1–4, 6–9` | v1, done |
 | Scale X/Y up/down | `Ctrl+Alt+Numpad 4/6/8/2` | v1, done |
-| Rotate CW / CCW (15°) | `Alt+Numpad 9 / 7` | v1, done |
-| Fit to face | `Ctrl+Alt+Numpad5` | v1, done |
-| Justify left/right/top/bottom/centre | `Alt+Numpad 4/6/8/2/5` | v2, done |
+| Rotate CW / CCW (15°) | `Alt+.` / `Alt+,`, or `Alt+Numpad 9 / 7` | v1, done |
+| Fit to face | `Ctrl+Alt+F` or `Ctrl+Alt+Numpad5` | v1, done |
+| Justify left/right/top/bottom/centre | `Shift+Alt+arrows` / `Shift+Alt+C`, or `Alt+Numpad 4/6/8/2/5` | v2, done |
 | Flip texture horizontal/vertical | `Alt+D` / `Alt+E` | v1, done |
 | Flip face UV horizontal/vertical | `Alt+R` / `Alt+T` | v2, done |
 | Modify Texture panel: numeric shift/scale/rotation, Fit to Height/Width, Keep Ratio, Treat as One | | v1 (numeric) / v2 (fit options), done |

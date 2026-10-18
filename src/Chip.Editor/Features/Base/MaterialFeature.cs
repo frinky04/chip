@@ -39,7 +39,7 @@ public sealed class MaterialFeature : IEditorFeature
             foreach (var f in faces) mesh.Faces[f].Map = TextureMapping.AlignToFace(mesh.FaceNormal(f), mesh.Faces[f].Map);
         }), "Texture", "Ctrl+Shift+F", HasFaceTargets, "2-align", 1);
         // Fit honours the fit options (mode, Keep Ratio, Treat as One) from the texture section.
-        c.Add("texture.fit", "Fit to face", () => TexturingFeature.Fit(ctx), "Texture", "Ctrl+Alt+Num5", HasFaceTargets, "2-align", 2);
+        c.Add("texture.fit", "Fit to face", () => TexturingFeature.Fit(ctx), "Texture", "Ctrl+Alt+F / Ctrl+Alt+Num5", HasFaceTargets, "2-align", 2);
         c.Add("texture.flipU", "Flip horizontally", () => FlipTexture(ctx, horizontal: true), "Texture", "Alt+D", HasFaceTargets, "3-flip", 0);
         c.Add("texture.flipV", "Flip vertically", () => FlipTexture(ctx, horizontal: false), "Texture", "Alt+E", HasFaceTargets, "3-flip", 1);
 

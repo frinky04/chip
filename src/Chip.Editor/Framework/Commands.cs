@@ -71,7 +71,8 @@ public sealed class CommandRegistry
         Add(new Command
         {
             Id = id, Label = label, Execute = execute, Menu = menu, Group = group, Order = order,
-            Hotkeys = hotkey == null ? [] : [Hotkey.Parse(hotkey)], CanExecute = canExecute, IsChecked = isChecked,
+            // "Ctrl+Left / Num4": alternatives, the first shown in menus. The main-keyboard key goes first (laptops).
+            Hotkeys = hotkey == null ? [] : hotkey.Split(" / ").Select(Hotkey.Parse).ToArray(), CanExecute = canExecute, IsChecked = isChecked,
         });
 
     public void AddReference(string category, string keys, string action) => _references.Add(new(category, keys, action));

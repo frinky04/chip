@@ -17,6 +17,10 @@ public sealed class TextureSection : IInspectorSection
 {
     static readonly uint[] UvTags = [0xFFA8A0A0, 0xFFA8A0A0];
 
+    /// <summary>"  (Ctrl+Alt+F or Ctrl+Alt+Num5)": the command's current bindings, so tooltips follow rebinding.</summary>
+    static string Keys(EditorContext ctx, string id) =>
+        ctx.Commands.Find(id) is { Hotkeys.Length: > 0 } c ? $"  ({string.Join(" or ", c.Hotkeys.Select(h => h.ToString()))})" : "";
+
     readonly Rendering.FrameCache<TextureFrameStats> _faces = new();
 
     TextureFrameStats Stats(EditorContext ctx)
@@ -76,36 +80,36 @@ public sealed class TextureSection : IInspectorSection
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(gap, Theme.Px(4)));
         float w = (ImGui.GetContentRegionAvail().X - gap * 4) / 5;
         if (ImGui.Button("Grid", new Vector2(w, 0))) ctx.Commands.Execute("texture.alignGrid");
-        Tip("Align to grid: project from the nearest world axis  (Ctrl+Shift+G)");
+        Tip($"Align to grid: project from the nearest world axis{Keys(ctx, "texture.alignGrid")}");
         ImGui.SameLine();
         if (ImGui.Button("Face", new Vector2(w, 0))) ctx.Commands.Execute("texture.alignFace");
-        Tip("Align to face: project along the face  (Ctrl+Shift+F)");
+        Tip($"Align to face: project along the face{Keys(ctx, "texture.alignFace")}");
         ImGui.SameLine();
         if (ImGui.Button("Fit", new Vector2(w, 0))) ctx.Commands.Execute("texture.fit");
-        Tip("Fit: one tile across the faces, using the fit options below  (Ctrl+Alt+Num5)");
+        Tip($"Fit: one tile across the faces, using the fit options below{Keys(ctx, "texture.fit")}");
         ImGui.SameLine();
-        if (IconButton("flipu", Icon.FlipU, "Flip horizontally  (Alt+D)", w)) ctx.Commands.Execute("texture.flipU");
+        if (IconButton("flipu", Icon.FlipU, $"Flip horizontally{Keys(ctx, "texture.flipU")}", w)) ctx.Commands.Execute("texture.flipU");
         ImGui.SameLine();
-        if (IconButton("flipv", Icon.FlipV, "Flip vertically  (Alt+E)", w)) ctx.Commands.Execute("texture.flipV");
+        if (IconButton("flipv", Icon.FlipV, $"Flip vertically{Keys(ctx, "texture.flipV")}", w)) ctx.Commands.Execute("texture.flipV");
 
         // Justify: five equal icon buttons after the label column.
         RowLabel("Justify", "Line the texture up with the faces' edges or centre");
         float jw = (ImGui.GetContentRegionAvail().X - gap * 4) / 5;
         (Icon Icon, string Id, string Tip)[] justify =
         [
-            (Icon.JustifyLeft, "texture.justifyLeft", "Justify left  (Alt+Num4)"), (Icon.JustifyRight, "texture.justifyRight", "Justify right  (Alt+Num6)"),
-            (Icon.JustifyTop, "texture.justifyTop", "Justify top  (Alt+Num8)"), (Icon.JustifyBottom, "texture.justifyBottom", "Justify bottom  (Alt+Num2)"),
-            (Icon.JustifyCenter, "texture.justifyCenter", "Justify centre  (Alt+Num5)"),
+            (Icon.JustifyLeft, "texture.justifyLeft", "Justify left"), (Icon.JustifyRight, "texture.justifyRight", "Justify right"),
+            (Icon.JustifyTop, "texture.justifyTop", "Justify top"), (Icon.JustifyBottom, "texture.justifyBottom", "Justify bottom"),
+            (Icon.JustifyCenter, "texture.justifyCenter", "Justify centre"),
         ];
         for (int i = 0; i < justify.Length; i++)
         {
             if (i > 0) ImGui.SameLine();
-            if (IconButton(justify[i].Id, justify[i].Icon, justify[i].Tip, jw)) ctx.Commands.Execute(justify[i].Id);
+            if (IconButton(justify[i].Id, justify[i].Icon, justify[i].Tip + Keys(ctx, justify[i].Id), jw)) ctx.Commands.Execute(justify[i].Id);
         }
         ImGui.PopStyleVar();
 
         // Fit options: which extent Fit fills, then Keep Ratio and Treat as One.
-        RowLabel("Fit", "What Fit (Ctrl+Alt+Num5) fills with one tile");
+        RowLabel("Fit", $"What Fit{Keys(ctx, "texture.fit")} fills with one tile");
         int fit = SegmentedControl("fitmode",
         [
             (Icon.FitBoth, "", "Fit width and height"), (Icon.FitWidth, "", "Fit width (walls: one tile across)"),

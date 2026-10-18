@@ -24,8 +24,8 @@ public sealed class SelectionFeature : IEditorFeature
         c.Add("select.ring", "Select edge ring", () => Report(ctx, SelectionOps.SelectRings(ctx.Doc, ctx.Sel),
                 "No ring to extend: the edges sit between n-gons, triangles or borders"),
             "Select", "X", EdgesSelected, "2-topology", 1);
-        c.Add("select.grow", "Grow selection", () => SelectionOps.Grow(ctx.Doc, ctx.Sel), "Select", "Alt+NumPlus", ElementsSelected, "2-topology", 2);
-        c.Add("select.shrink", "Shrink selection", () => SelectionOps.Shrink(ctx.Doc, ctx.Sel), "Select", "Alt+NumMinus", ElementsSelected, "2-topology", 3);
+        c.Add("select.grow", "Grow selection", () => SelectionOps.Grow(ctx.Doc, ctx.Sel), "Select", "Alt+= / Alt+NumPlus", ElementsSelected, "2-topology", 2);
+        c.Add("select.shrink", "Shrink selection", () => SelectionOps.Shrink(ctx.Doc, ctx.Sel), "Select", "Alt+- / Alt+NumMinus", ElementsSelected, "2-topology", 3);
         c.Add("select.connected", "Select connected", () => SelectionOps.SelectConnected(ctx.Doc, ctx.Sel), "Select", null, ElementsSelected, "2-topology", 4);
         c.Add("select.byMaterial", "Select by material", () => ByMaterial(ctx), "Select", group: "3-match");
 
