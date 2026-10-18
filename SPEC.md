@@ -161,7 +161,7 @@ Each face stores a planar projection: U axis, V axis, offset (u, v), scale (u, v
 | Flip face UV horizontal/vertical | `Alt+R` / `Alt+T` | v2, done |
 | Modify Texture panel: numeric shift/scale/rotation, Fit to Height/Width, Keep Ratio, Treat as One | | v1 (numeric) / v2 (fit options), done |
 | Texel density setting (px per metre, default 256) | | v1 (global) |
-| Wrap Texture onto the hovered adjacent face (continue the projection across the edge, copy the material) | `Alt+RMB` | v2, done |
+| Wrap Texture onto the hovered face (continue the projection, copy the material). Any face, as in Scythe: neighbours fold about the shared edge; other faces, including on other meshes, fold about the line where the two planes meet; parallel faces slide across, or turn half a turn when they face the other way | `Alt+RMB` | v2, done |
 | Wrap Texture to Selection | `Shift+Alt+RMB` | v2, done |
 | Flow Texture along curves (follow quads) | `Ctrl+Alt+RMB` | v2, done |
 | Texture lock toggle for moves **[S2]** | | v2, done |

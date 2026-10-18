@@ -132,32 +132,44 @@ public sealed class TexturingFeature : IEditorFeature
         return selected.Where(s => UvSpace.SharedEdge(mesh, s, face) != null).ToList();
     }
 
-    /// <summary>Alt+RMB: continue the selected face's texture onto the clicked neighbour, which joins the selection.</summary>
+    /// <summary>Alt+RMB: continue the selected face's texture onto the clicked face (neighbour or not), which joins the selection.</summary>
     static void WrapOnto(EditorContext ctx)
     {
         if (ctx.RaycastFace(selectable: true) is not { } hit) return;
         var mesh = hit.Mesh;
         if (ctx.Sel.Mode != SelectMode.Face || ctx.Sel.IsEmpty)
         {
-            ctx.Status("Select a face first, then Alt+RMB a face next to it to wrap the texture onto it", error: true);
+            ctx.Status("Select a face first, then Alt+RMB another face to wrap the texture onto it", error: true);
             return;
         }
         if (ctx.Sel.Items.Contains(ElementRef.Face(mesh.Id, hit.Face)))
         {
-            ctx.Status("That face is already selected. Alt+RMB a face next to the selection");
+            ctx.Status("That face is already selected. Alt+RMB a face outside the selection");
             return;
         }
-        if (SelectedNeighbours(ctx, mesh, hit.Face) is not [var src, ..])
+        // A selected neighbour gives the exact shared-edge seam; otherwise wrap from the active face, wherever it is.
+        var (srcMesh, src) = SelectedNeighbours(ctx, mesh, hit.Face) is [var n, ..] ? (mesh, n) : ActiveFace(ctx);
+        if (srcMesh == null)
         {
-            ctx.Status("Alt+RMB a face that shares an edge with a selected face", error: true);
+            ctx.Status("Select a face first, then Alt+RMB another face to wrap the texture onto it", error: true);
             return;
         }
         ctx.Session.Do("Wrap Texture", [mesh.Id], () =>
         {
-            Wrap.Across(mesh, src, hit.Face, TextureOps.SizeOf(ctx));
+            Wrap.Onto(srcMesh, src, mesh, hit.Face, TextureOps.SizeOf(ctx));
             ctx.Sel.Add(ElementRef.Face(mesh.Id, hit.Face));
         });
         ctx.Status("Wrapped texture onto the face. Alt+RMB the next face to keep going");
+    }
+
+    /// <summary>The active selected face, else the first selected one (face mode only).</summary>
+    static (PolyMesh? Mesh, int Face) ActiveFace(EditorContext ctx)
+    {
+        if (ctx.Sel.Mode != SelectMode.Face) return (null, -1);
+        var candidates = ctx.Sel.Active is { } a ? ctx.Sel.Items.Prepend(a) : ctx.Sel.Items;
+        foreach (var i in candidates)
+            if (ctx.Doc.Find(i.Mesh) is { } m && i.A >= 0 && i.A < m.Faces.Count && ctx.Sel.Items.Contains(i)) return (m, i.A);
+        return (null, -1);
     }
 
     /// <summary>Shift+Alt+RMB: wrap the clicked face's texture across every connected selected face.</summary>

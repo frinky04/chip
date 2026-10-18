@@ -15,9 +15,32 @@ public static class Wrap
     public static bool Across(PolyMesh mesh, int src, int dst, TextureSize size)
     {
         if (src == dst || UvSpace.SharedEdge(mesh, src, dst) is not { } edge) return false;
-        var s = mesh.Faces[src];
-        var d = mesh.Faces[dst];
-        var hinge = Hinge(mesh, src, dst, edge.A, edge.B);
+        Apply(mesh, src, mesh, dst, Hinge(mesh, src, dst, edge.A, edge.B), edge);
+        return true;
+    }
+
+    /// <summary>
+    /// Wraps <paramref name="src"/>'s texture onto any other face, connected or not, in the same mesh or another
+    /// (Scythe's wrap has no adjacency rule). Neighbours fold about their shared edge as in <see cref="Across"/>.
+    /// Otherwise the fold is about the line where the two face planes meet, which is the same fold whenever there is a
+    /// shared edge, so the texture continues as if both planes ran on until they met. Parallel faces facing the same
+    /// way keep the projection as is; opposite-facing ones turn it half a turn about the texture's vertical, so it reads
+    /// the right way round from the other side. False only when source and target are the same face.
+    /// </summary>
+    public static bool Onto(PolyMesh srcMesh, int src, PolyMesh dstMesh, int dst, TextureSize size)
+    {
+        if (ReferenceEquals(srcMesh, dstMesh)) return src != dst && (Across(srcMesh, src, dst, size) || Apply(srcMesh, src, dstMesh, dst, PlaneHinge(srcMesh, src, dstMesh, dst), null));
+        return Apply(srcMesh, src, dstMesh, dst, PlaneHinge(srcMesh, src, dstMesh, dst), null);
+    }
+
+    /// <summary>
+    /// Copies the material and carries the texture through <paramref name="hinge"/> (source plane onto target plane).
+    /// With a shared <paramref name="edge"/>, explicit UVs on its corners are copied exactly so the seam is invisible.
+    /// </summary>
+    static bool Apply(PolyMesh srcMesh, int src, PolyMesh dstMesh, int dst, Matrix4x4 hinge, (int A, int B)? edge)
+    {
+        var s = srcMesh.Faces[src];
+        var d = dstMesh.Faces[dst];
         d.Material = s.Material;
 
         if (!UvSpace.IsExplicit(s))
@@ -27,21 +50,57 @@ public static class Wrap
             return true;
         }
 
-        // Explicit: fold the neighbour flat into the source's plane, then extend the source's plane-to-UV map onto it.
+        // Explicit: fold the target flat into the source's plane, then extend the source's plane-to-UV map onto it.
         Matrix4x4.Invert(hinge, out var unfold);
-        var (u, v) = UvSpace.PlaneFrame(mesh.FaceNormal(src));
-        var srcPlane = UvSpace.PlaneCoords(mesh, src, u, v);
+        var (u, v) = UvSpace.PlaneFrame(srcMesh.FaceNormal(src));
+        var srcPlane = UvSpace.PlaneCoords(srcMesh, src, u, v);
         var affine = FitAffine(srcPlane, s.UVs!);
         var uvs = new Vector2[d.Verts.Length];
         for (int i = 0; i < uvs.Length; i++)
         {
-            var p = Vector3.Transform(mesh.Positions[d.Verts[i]], unfold);
+            var p = Vector3.Transform(dstMesh.Positions[d.Verts[i]], unfold);
             uvs[i] = affine(new Vector2(Vector3.Dot(p, u), Vector3.Dot(p, v)));
-            int sc = UvSpace.Corner(s, d.Verts[i]);
-            if (sc >= 0 && (d.Verts[i] == edge.A || d.Verts[i] == edge.B)) uvs[i] = s.UVs![sc]; // exactly seamless
+            if (edge is { } e && (d.Verts[i] == e.A || d.Verts[i] == e.B) && UvSpace.Corner(s, d.Verts[i]) is var sc and >= 0)
+                uvs[i] = s.UVs![sc]; // exactly seamless
         }
         d.UVs = uvs;
         return true;
+    }
+
+    /// <summary>Rigid fold carrying <paramref name="src"/>'s plane onto <paramref name="dst"/>'s, about the line where they meet.</summary>
+    public static Matrix4x4 PlaneHinge(PolyMesh srcMesh, int src, PolyMesh dstMesh, int dst)
+    {
+        var ns = srcMesh.FaceNormal(src);
+        var nd = dstMesh.FaceNormal(dst);
+        var ps = srcMesh.FaceCenter(src);
+        var pd = dstMesh.FaceCenter(dst);
+        var axis = Vector3.Cross(ns, nd);
+        float sin = axis.Length(), cos = Vector3.Dot(ns, nd);
+
+        if (sin < 1e-5f)
+        {
+            // Parallel planes never meet: slide across (same facing), or turn half a turn about an in-plane axis midway
+            // between them (opposite facing). The texture's V axis keeps the image upright.
+            var offset = nd * Vector3.Dot(pd - ps, nd);
+            if (cos > 0) return Matrix4x4.CreateTranslation(offset);
+            var vAxis = srcMesh.Faces[src].Map.VAxis;
+            var spin = vAxis - ns * Vector3.Dot(vAxis, ns);
+            if (spin.LengthSquared() < 1e-10f) spin = UvSpace.PlaneFrame(ns).V;
+            var mid = ps + offset * 0.5f;
+            return Matrix4x4.CreateTranslation(-mid)
+                * Matrix4x4.CreateFromQuaternion(Quaternion.CreateFromAxisAngle(Vector3.Normalize(spin), MathF.PI))
+                * Matrix4x4.CreateTranslation(mid);
+        }
+
+        // A point on both planes (n·x = d for each), then rotate about their common line by the angle between them.
+        float ds = Vector3.Dot(ns, ps), dd = Vector3.Dot(nd, pd);
+        float det = 1 - cos * cos;
+        var onBoth = ((ds - dd * cos) * ns + (dd - ds * cos) * nd) / det;
+        axis /= sin;
+        float angle = MathF.Atan2(sin, cos);
+        return Matrix4x4.CreateTranslation(-onBoth)
+            * Matrix4x4.CreateFromQuaternion(Quaternion.CreateFromAxisAngle(axis, angle))
+            * Matrix4x4.CreateTranslation(onBoth);
     }
 
     /// <summary>
