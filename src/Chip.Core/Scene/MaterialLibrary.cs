@@ -6,7 +6,7 @@ namespace Chip.Core.Scene;
 
 /// <summary>
 /// A material is one image file; its pixel size sets texel density (Scythe reads Base Color size the same way).
-/// Density comes from the level (<see cref="MaterialLibrary.DefaultTexelsPerMeter"/>, "1 m is 64 px") unless
+/// Density comes from the level (<see cref="MaterialLibrary.DefaultTexelsPerMeter"/>, "1 m is 256 px") unless
 /// <see cref="TexelDensity"/> overrides it for this texture.
 /// </summary>
 public sealed record MaterialInfo(string Name, string? Path, int Width, int Height)

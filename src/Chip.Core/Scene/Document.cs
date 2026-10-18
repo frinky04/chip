@@ -12,12 +12,12 @@ public sealed class Document
     public List<Group> Groups = new();
     public int NextId = 1;
     /// <summary>
-    /// Texel density in pixels per metre ("1 m is 64 px", as in Scythe) for every material without its own override.
+    /// Texel density in pixels per metre ("1 m is 256 px", as in Scythe) for every material without its own override.
     /// New levels use <see cref="NewLevelTexelDensity"/>; files saved before the setting existed load at 512, the scale they
     /// were built at. Change it with <see cref="TexelDensityOps.Change"/> so existing faces follow.
     /// </summary>
     public float TexelDensity = NewLevelTexelDensity;
-    public const float NewLevelTexelDensity = 64f;
+    public const float NewLevelTexelDensity = 256f;
     public float ExportScale = 1f;
     public string? ExportPath;
     public bool ExportCollision = true;

@@ -28,7 +28,7 @@ tests/Chip.Editor.Tests   registry/command tests on a headless EditorContext
 tests/fixtures/level.chip scenario level used by captures
 ```
 
-Units are **metres**, Y-up, right-handed. Texel density is per level (`Document.TexelDensity`, new levels 64 px/m, older files 512) unless a texture has its own; read it through `MaterialInfo.TexelsPerMeter`, never a constant.
+Units are **metres**, Y-up, right-handed. Texel density is per level (`Document.TexelDensity`, new levels 256 px/m, older files 512) unless a texture has its own; read it through `MaterialInfo.TexelsPerMeter`, never a constant.
 
 ## Adding a feature (no shared-file edits)
 

@@ -19,9 +19,9 @@ public class TexelDensityTests
     }
 
     [Fact]
-    public void New_levels_use_64_px_per_metre_and_old_files_load_at_512()
+    public void New_levels_use_256_px_per_metre_and_old_files_load_at_512()
     {
-        Assert.Equal(64f, new Document().TexelDensity);
+        Assert.Equal(256f, new Document().TexelDensity);
 
         var doc = new Document { TexelDensity = 100 };
         Assert.Equal(100f, DocumentSerializer.Deserialize(DocumentSerializer.Serialize(doc)).TexelDensity);

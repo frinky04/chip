@@ -8,7 +8,7 @@ dotnet test                                    # core + scenario tests
 Chip.exe --shot level.chip out.png faces      # headless UI capture (empty|objects|faces|block|backfaces)
 ```
 
-Everything is in metres. Materials are the PNGs in `assets/textures`, and texel density is set per level, Scythe style, in the Material section: "1 m is 64 px" by default, so a 128 px texture tiles every 2 m. Textures can have their own density. `Shift+Alt+1..0` picks the first ten. The export scale defaults to 1 (Godot); use 100 for centimetre engines.
+Everything is in metres. Materials are the PNGs in `assets/textures`, and texel density is set per level, Scythe style, in the Material section: "1 m is 256 px" by default, so a 128 px texture tiles every 50 cm. Textures can have their own density. `Shift+Alt+1..0` picks the first ten. The export scale defaults to 1 (Godot); use 100 for centimetre engines.
 
 | | |
 |---|---|

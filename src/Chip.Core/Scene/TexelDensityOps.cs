@@ -1,6 +1,6 @@
 namespace Chip.Core.Scene;
 
-/// <summary>The level's texel density ("1 m is 64 px"): changing it keeps every face that follows it in step.</summary>
+/// <summary>The level's texel density ("1 m is 256 px"): changing it keeps every face that follows it in step.</summary>
 public static class TexelDensityOps
 {
     /// <summary>
