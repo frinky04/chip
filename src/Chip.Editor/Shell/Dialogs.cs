@@ -112,7 +112,8 @@ public sealed partial class EditorApp
                 }
                 ImGui.EndTable();
             }
-            if (ImGui.IsKeyPressed(ImGuiKey.Escape) || ImGui.IsKeyPressed(ImGuiKey.F1, false)) ImGui.CloseCurrentPopup();
+            // F1 toggles the sheet, but not on the frame it opened: that's the same press that opened it.
+            if (ImGui.IsKeyPressed(ImGuiKey.Escape) || (ImGui.IsKeyPressed(ImGuiKey.F1, false) && !ImGui.IsWindowAppearing())) ImGui.CloseCurrentPopup();
             ImGui.EndPopup();
         }
         ImGui.PopStyleVar();

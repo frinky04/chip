@@ -3,6 +3,7 @@ using Chip.Core.Scene;
 using Chip.Editor.Framework;
 using Chip.Editor.Settings;
 using Chip.Editor.UI;
+using ImGuiNET;
 using Silk.NET.OpenGL;
 using StbImageWriteSharp;
 
@@ -131,7 +132,24 @@ public sealed partial class EditorApp
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _captureFbo);
         _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
 
-        for (int i = 0; i < 4; i++) Frame(1 / 60f); // ImGui settles layout over a couple of frames
+        // CHIP_SHOT_KEYS=F1 (or "Ctrl+P", comma-separated) presses those hotkeys inside ImGui on frame 1, so the real
+        // keyboard path (hotkey matching, popups) is proven headlessly. Never touches OS input.
+        var keys = (Environment.GetEnvironmentVariable("CHIP_SHOT_KEYS") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(Framework.Hotkey.Parse).ToList();
+        for (int i = 0; i < 6; i++) // ImGui settles layout over a couple of frames
+        {
+            var io = ImGui.GetIO();
+            foreach (var k in keys)
+            {
+                if (i is not (1 or 2)) continue;
+                bool down = i == 1;
+                if (k.Ctrl) io.AddKeyEvent(ImGuiKey.ModCtrl, down);
+                if (k.Shift) io.AddKeyEvent(ImGuiKey.ModShift, down);
+                if (k.Alt) io.AddKeyEvent(ImGuiKey.ModAlt, down);
+                io.AddKeyEvent(k.Key, down);
+            }
+            Frame(1 / 60f);
+        }
 
         var pixels = new byte[w * h * 4];
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _captureFbo);
