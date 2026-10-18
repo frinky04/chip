@@ -43,10 +43,13 @@ public readonly record struct FaceHit(PolyMesh Mesh, int Face, float Distance, V
 /// <summary>
 /// Hit-testing for every selection mode. Hidden meshes are ignored, locked meshes can't be selected; back faces are ignored unless
 /// <c>backfaces</c> is set (Scythe-style backface selection, e.g. picking a room's inside from outside).
+/// In object mode, entities are picked by their box or glyph unless a surface is in front of them.
 /// </summary>
 public static class Picker
 {
     const float VertexRadius = 10f, EdgeRadius = 7f;
+    /// <summary>Radius of an entity's screen glyph (logical pixels), drawn at the centre of its box.</summary>
+    public const float EntityGlyphRadius = 11f;
 
     /// <param name="selectable">Skip locked meshes (selection); placement and camera queries pass false.</param>
     public static FaceHit? RaycastFace(Document doc, Ray ray, bool backfaces = false, bool selectable = false)
@@ -81,7 +84,9 @@ public static class Picker
         var hit = RaycastFace(doc, ray, backfaces, selectable: true);
         switch (mode)
         {
-            case SelectMode.Object: return hit is { } h ? ElementRef.Object(h.Mesh.Id) : null;
+            case SelectMode.Object:
+                if (PickEntity(doc, view, mouse, pixelScale, hit?.Distance) is { } ent) return ElementRef.Object(ent.Id);
+                return hit is { } h ? ElementRef.Object(h.Mesh.Id) : null;
             case SelectMode.Face: return hit is { } hf ? ElementRef.Face(hf.Mesh.Id, hf.Face) : null;
         }
 
@@ -151,7 +156,34 @@ public static class Picker
                     break;
             }
         }
+        if (mode == SelectMode.Object)
+            foreach (var e in doc.Entities)
+                if (!e.Hidden && !e.Locked && Inside(e.Position)) result.Add(ElementRef.Object(e.Id));
         return result;
+    }
+
+    /// <summary>
+    /// The selectable entity under the mouse: the ray hits its box, or the cursor is on its glyph. The nearest wins, and only
+    /// when no surface closer than <paramref name="surfaceDistance"/> (along the ray) hides it.
+    /// </summary>
+    public static Entity? PickEntity(Document doc, ViewInfo view, Vector2 mouse, float pixelScale = 1, float? surfaceDistance = null)
+    {
+        var ray = view.ScreenRay(mouse);
+        float limit = surfaceDistance is { } s ? s * 1.02f + 0.02f : float.MaxValue;
+        Entity? best = null;
+        float bestT = float.MaxValue;
+        foreach (var e in doc.Entities)
+        {
+            if (e.Hidden || e.Locked) continue;
+            float? t = EntityOps.RayHit(e, ray);
+            var center = EntityOps.Center(e);
+            if (t == null && view.Project(center, out var sc) && Vector2.Distance(sc, mouse) < EntityGlyphRadius * pixelScale)
+                t = MathF.Max(0, Vector3.Dot(center - ray.Origin, ray.Dir));
+            if (t is not { } d || d > limit || d >= bestT) continue;
+            bestT = d;
+            best = e;
+        }
+        return best;
     }
 
     public static float DistanceToSegment(Vector2 p, Vector2 a, Vector2 b, out float t)

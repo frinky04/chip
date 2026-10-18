@@ -40,7 +40,7 @@ public sealed class MeshOpsFeature : IEditorFeature
         c.Add("mesh.weld", "Weld overlapping vertices", Weld, "Mesh", "Ctrl+Shift+Alt+M", () => !Sel.IsEmpty, "3-weld", 1);
 
         c.Add("mesh.mergeMeshes", "Merge meshes", MergeMeshes, "Mesh", "M",
-            () => Sel.Mode == SelectMode.Object && Sel.MeshIds().Count >= 2, "4-meshes", 0);
+            () => Sel.Mode == SelectMode.Object && Sel.MeshIds().Count(id => Doc.Find(id) != null) >= 2, "4-meshes", 0);
         c.Add("mesh.detach", "Detach faces", () => Detach(keepSource: false), "Mesh", "N", () => Mode(SelectMode.Face), "4-meshes", 1);
         c.Add("mesh.extract", "Extract faces", () => Detach(keepSource: true), "Mesh", "Alt+N", () => Mode(SelectMode.Face), "4-meshes", 2);
         c.Add("mesh.mirror", "Mirror", Mirror, "Mesh", "Shift+Z", () => !Sel.IsEmpty, "4-meshes", 3);

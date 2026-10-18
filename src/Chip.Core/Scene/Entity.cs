@@ -15,11 +15,13 @@ public sealed class Entity
     /// <summary>Euler angles in degrees, applied Y (yaw), then X (pitch), then Z (roll).</summary>
     public Vector3 Rotation;
     public bool Hidden;
+    /// <summary>Locked entities draw but can't be picked or selected (like <c>PolyMesh.Locked</c>).</summary>
+    public bool Locked;
     public Dictionary<string, string> Properties = new();
 
     public Entity Clone() => new()
     {
-        Id = Id, ClassName = ClassName, Name = Name, Position = Position, Rotation = Rotation, Hidden = Hidden,
+        Id = Id, ClassName = ClassName, Name = Name, Position = Position, Rotation = Rotation, Hidden = Hidden, Locked = Locked,
         Properties = new Dictionary<string, string>(Properties),
     };
 }

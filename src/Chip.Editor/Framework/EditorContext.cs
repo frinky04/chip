@@ -188,6 +188,12 @@ public sealed class EditorContext
                 max = Vector3.Max(max, p);
                 any = true;
             }
+        foreach (var e in Sel.Entities(Doc)) // entities count by their origin
+        {
+            min = Vector3.Min(min, e.Position);
+            max = Vector3.Max(max, e.Position);
+            any = true;
+        }
         return any ? (min, max) : null;
     }
 

@@ -6,7 +6,9 @@ namespace Chip.Editor.UI;
 public enum Icon { Select, Block, Vertex, Edge, Face, Object, Move, Rotate, Scale, Snap, Backfaces, FlipU, FlipV,
     Rectangle, Polygon, Clip, Knife, Bevel, KeepFront, KeepBack, KeepBoth, Eye,
     Texture, Repeat, Grid, Coordinates, Photo, Ruler, KeepRatio, TreatAsOne, Lock,
-    JustifyLeft, JustifyRight, JustifyTop, JustifyBottom, JustifyCenter, FitBoth, FitWidth, FitHeight }
+    JustifyLeft, JustifyRight, JustifyTop, JustifyBottom, JustifyCenter, FitBoth, FitWidth, FitHeight,
+    // stream H: outliner and entities
+    Folder, EyeOff, LockOpen, MapPin, Bulb, Lamp, User, Target, Flag, Box, Plus, Trash, ListTree, ChevronRight, ChevronDown }
 
 /// <summary>Tool glyphs from the Tabler icon font (MIT), drawn on whole pixels so they stay crisp at small sizes.</summary>
 public static class Icons
@@ -52,6 +54,22 @@ public static class Icons
         [Icon.FitBoth] = '',       // arrows-maximize
         [Icon.FitWidth] = '',      // arrows-horizontal
         [Icon.FitHeight] = '',     // arrows-vertical
+        // stream H: outliner and entities
+        [Icon.Folder] = '',        // folder
+        [Icon.EyeOff] = '',        // eye-off
+        [Icon.LockOpen] = '',      // lock-open
+        [Icon.MapPin] = '',        // map-pin
+        [Icon.Bulb] = '',          // bulb
+        [Icon.Lamp] = '',          // lamp
+        [Icon.User] = '',          // user
+        [Icon.Target] = '',        // target
+        [Icon.Flag] = '',          // flag
+        [Icon.Box] = '',           // box
+        [Icon.Plus] = '',          // plus
+        [Icon.Trash] = '',         // trash
+        [Icon.ListTree] = '﫺',      // list-tree
+        [Icon.ChevronRight] = '',  // chevron-right
+        [Icon.ChevronDown] = '',   // chevron-down
     };
 
     /// <summary>Codepoints to bake into the icon atlas.</summary>

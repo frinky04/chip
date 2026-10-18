@@ -26,7 +26,8 @@ public static partial class DocumentSerializer
 
     sealed record FileDto(int Version, float ExportScale, string? ExportPath, bool ExportCollision, int NextId,
         List<MeshDto> Meshes, List<EntityDto>? Entities,
-        ExportDto? Export = null);
+        ExportDto? Export = null,
+        List<GroupDto>? Groups = null); // stream H: outliner groups (optional, no version bump)
 
     sealed record MeshDto(int Id, string Name, bool Hidden, List<float[]> Positions, List<FaceDto> Faces,
         bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null);
@@ -35,7 +36,11 @@ public static partial class DocumentSerializer
         List<float[]>? Uvs = null, bool? Dominant = null);
 
     sealed record EntityDto(int Id, string ClassName, string Name, float[] Position, float[] Rotation, bool Hidden,
-        Dictionary<string, string>? Properties);
+        Dictionary<string, string>? Properties,
+        bool Locked = false); // stream H
+
+    // stream H: a group's direct members are object ids; Parent 0 = top level.
+    sealed record GroupDto(int Id, string Name, int Parent, int[] Members, bool Hidden = false, bool Locked = false);
 
     public static string Serialize(Document doc) => JsonSerializer.Serialize(new FileDto(
         CurrentVersion, doc.ExportScale, doc.ExportPath, doc.ExportCollision, doc.NextId,
@@ -48,9 +53,11 @@ public static partial class DocumentSerializer
             m.SoftEdges.Count > 0 ? m.SoftEdges.OrderBy(e => e.A).ThenBy(e => e.B).Select(e => new[] { e.A, e.B }).ToList() : null)).ToList(),
         doc.Entities.Count > 0
             ? doc.Entities.Select(e => new EntityDto(e.Id, e.ClassName, e.Name, Arr(e.Position), Arr(e.Rotation), e.Hidden,
-                e.Properties.Count > 0 ? e.Properties : null)).ToList()
+                e.Properties.Count > 0 ? e.Properties : null,
+                e.Locked)).ToList()
             : null,
-        ExportToDto(doc.Export)), Options);
+        ExportToDto(doc.Export),
+        doc.Groups.Count > 0 ? doc.Groups.Select(g => new GroupDto(g.Id, g.Name, g.Parent, g.Members.ToArray(), g.Hidden, g.Locked)).ToList() : null), Options);
 
     public static Document Deserialize(string json)
     {
@@ -92,8 +99,15 @@ public static partial class DocumentSerializer
                 {
                     Id = e.Id, ClassName = e.ClassName, Name = e.Name, Position = Vec(e.Position), Rotation = Vec(e.Rotation),
                     Hidden = e.Hidden, Properties = e.Properties ?? new(),
+                    Locked = e.Locked,
                 });
                 doc.NextId = Math.Max(doc.NextId, e.Id + 1);
+            }
+        if (dto.Groups != null) // stream H
+            foreach (var g in dto.Groups)
+            {
+                doc.Groups.Add(new Group { Id = g.Id, Name = g.Name ?? "Group", Parent = g.Parent, Members = (g.Members ?? []).ToList(), Hidden = g.Hidden, Locked = g.Locked });
+                doc.NextId = Math.Max(doc.NextId, g.Id + 1);
             }
         return doc;
     }

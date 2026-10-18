@@ -15,7 +15,7 @@ public enum GestureKind { Transform, Extrude, PushPull }
 /// One transform of the current selection as an undoable gesture (gizmo drag, nudge, numeric entry).
 /// <see cref="Apply"/> is absolute relative to the start state, so repeated calls never accumulate error.
 /// Object-mode rigid moves keep textures locked to the geometry (unless <see cref="Session.TextureLock"/> is off);
-/// everything else stays world-projected.
+/// everything else stays world-projected. Selected entities (object mode) move with the selection and turn with rotations.
 /// </summary>
 public sealed class TransformGesture
 {
@@ -24,6 +24,7 @@ public sealed class TransformGesture
     readonly List<(PolyMesh Mesh, int Face, TextureMapping Start)> _lockedFaces = new();
     readonly List<(PolyMesh Mesh, List<int> Faces)> _extrudeSides = new();
     readonly List<(PolyMesh Mesh, HashSet<int> Pushed)> _pushed = new();
+    readonly List<(Entity Entity, Vector3 Position, Vector3 Rotation)> _entities = new();
     /// <summary>Push/pull only moves along this direction (the selected faces' average normal).</summary>
     readonly Vector3? _constraint;
 
@@ -97,7 +98,13 @@ public sealed class TransformGesture
             if (sel.Mode == SelectMode.Object && session.TextureLock)
                 for (int f = 0; f < mesh.Faces.Count; f++) _lockedFaces.Add((mesh, f, mesh.Faces[f].Map));
         }
-        StartBounds = _parts.Count == 0 ? (Vector3.Zero, Vector3.Zero) : (min, max);
+        foreach (var e in sel.Entities(doc))
+        {
+            _entities.Add((e, e.Position, e.Rotation));
+            min = Vector3.Min(min, e.Position);
+            max = Vector3.Max(max, e.Position);
+        }
+        StartBounds = _parts.Count + _entities.Count == 0 ? (Vector3.Zero, Vector3.Zero) : (min, max);
         Pivot = (StartBounds.Min + StartBounds.Max) * 0.5f;
     }
 
@@ -120,6 +127,17 @@ public sealed class TransformGesture
                 mesh.Positions[verts[i]] = Vector3.Transform(start[i], m);
         foreach (var (mesh, face, start) in _lockedFaces)
             mesh.Faces[face].Map = rigid ? start.MovedRigidly(m) : start;
+        if (_entities.Count > 0)
+        {
+            // Entities keep their size: only the rotation part of the transform turns them.
+            var turn = Matrix4x4.Decompose(m, out _, out var q, out _) ? Quaternion.Normalize(q) : Quaternion.Identity;
+            bool turned = MathF.Abs(turn.W) < 0.999999f;
+            foreach (var (e, pos, rot) in _entities)
+            {
+                e.Position = Vector3.Transform(pos, m);
+                e.Rotation = turned ? EntityOps.ToEuler(Quaternion.Concatenate(EntityOps.Orientation(rot), turn)) : rot;
+            }
+        }
         _last = m;
         _session.Touch();
     }

@@ -43,7 +43,7 @@ public sealed class EditFeature : IEditorFeature
         c.Add("edit.delete", "Delete", Delete, "Edit", "Del", HasSelection, "2-edit", 0);
         c.Add("edit.duplicate", "Duplicate", Duplicate, "Edit", "Shift+D", HasFaceTargets, "2-edit", 1);
         c.Add("edit.hide", "Hide selected", Hide, "Edit", "H", HasSelection, "3-visibility", 0);
-        c.Add("edit.unhideAll", "Unhide all", UnhideAll, "Edit", "Alt+H", () => ctx.Doc.Meshes.Any(m => m.Hidden), "3-visibility", 1);
+        c.Add("edit.unhideAll", "Unhide all", UnhideAll, "Edit", "Alt+H", () => SceneOps.AnyHidden(ctx.Doc), "3-visibility", 1);
 
         c.Add("mesh.flip", "Flip normals", () => ctx.ForFaces("Flip Normals", MeshOps.FlipFaces), "Mesh", "Shift+N", HasFaceTargets, "5-normals");
         c.Add("mesh.snapVertices", "Snap vertices to grid", SnapVertices, "Mesh", "Ctrl+Shift+Alt+V", HasSelection, "6-snap");
@@ -85,8 +85,7 @@ public sealed class EditFeature : IEditorFeature
             var doc = _ctx.Doc;
             if (sel.Mode == SelectMode.Object)
             {
-                var ids = sel.MeshIds();
-                doc.Meshes.RemoveAll(m => ids.Contains(m.Id));
+                SceneOps.Delete(doc, sel.MeshIds()); // meshes, entities, and groups left empty
             }
             else
             {
@@ -119,11 +118,7 @@ public sealed class EditFeature : IEditorFeature
             var doc = _ctx.Doc;
             var copies = new List<ElementRef>();
             if (sel.Mode == SelectMode.Object)
-                foreach (var id in sel.MeshIds())
-                {
-                    if (doc.Find(id) is not { } src) continue;
-                    copies.Add(ElementRef.Object(doc.Add(src.Clone()).Id));
-                }
+                copies.AddRange(SceneOps.Duplicate(doc, sel.MeshIds()).Select(id => ElementRef.Object(id))); // meshes and entities
             else
                 foreach (var (mesh, faces) in sel.FaceSets(doc))
                     copies.AddRange(MeshOps.DuplicateFaces(mesh, faces).Select(f => ElementRef.Face(mesh.Id, f)));
@@ -137,12 +132,12 @@ public sealed class EditFeature : IEditorFeature
         var ids = _ctx.Sel.MeshIds();
         _ctx.Session.Do("Hide", () =>
         {
-            foreach (var m in _ctx.Doc.Meshes) if (ids.Contains(m.Id)) m.Hidden = true;
+            SceneOps.SetHidden(_ctx.Doc, ids, true); // meshes and entities
             _ctx.Sel.Clear();
         });
     }
 
-    void UnhideAll() => _ctx.Session.Do("Unhide All", () => { foreach (var m in _ctx.Doc.Meshes) m.Hidden = false; });
+    void UnhideAll() => _ctx.Session.Do("Unhide All", () => SceneOps.UnhideAll(_ctx.Doc));
 
     void SnapVertices() => _ctx.Session.Do("Snap Vertices to Grid", () =>
     {
