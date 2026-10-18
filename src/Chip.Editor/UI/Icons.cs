@@ -3,7 +3,8 @@ using ImGuiNET;
 
 namespace Chip.Editor.UI;
 
-public enum Icon { Select, Block, Vertex, Edge, Face, Object, Move, Rotate, Scale, Snap, Backfaces, FlipU, FlipV, Rectangle, Polygon }
+public enum Icon { Select, Block, Vertex, Edge, Face, Object, Move, Rotate, Scale, Snap, Backfaces, FlipU, FlipV,
+    Rectangle, Polygon, Clip, Knife, Bevel, KeepFront, KeepBack, KeepBoth, Eye }
 
 /// <summary>Tool glyphs from the Tabler icon font (MIT), drawn on whole pixels so they stay crisp at small sizes.</summary>
 public static class Icons
@@ -25,6 +26,13 @@ public static class Icons
         [Icon.FlipV] = '',     // flip-vertical
         [Icon.Rectangle] = '', // rectangle
         [Icon.Polygon] = '',   // polygon
+        [Icon.Clip] = '',      // cut
+        [Icon.Knife] = '',     // slice
+        [Icon.Bevel] = '',     // border-radius
+        [Icon.KeepFront] = '', // box-align-top
+        [Icon.KeepBack] = '',  // box-align-bottom
+        [Icon.KeepBoth] = '',  // layout-rows
+        [Icon.Eye] = '',       // eye
     };
 
     /// <summary>Codepoints to bake into the icon atlas.</summary>
