@@ -38,7 +38,7 @@ public sealed class ConstructionPlane
         _snap = ctx.Snap;
         var ray = ctx.MouseRay();
         Vector3 normal, point;
-        if (Picker.RaycastFace(ctx.Doc, ray, ctx.Backfaces) is { } hit)
+        if (ctx.Picks.RaycastFace(ray, ctx.Backfaces) is { } hit)
         {
             normal = TextureMapping.DominantAxis(hit.Normal);
             point = normal * S(Vector3.Dot(hit.Point, normal));
