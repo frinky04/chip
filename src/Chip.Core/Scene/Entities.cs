@@ -86,6 +86,36 @@ public static class EntityOps
 
     public static Quaternion Orientation(Entity e) => Orientation(e.Rotation);
 
+    // ---- Edits (run inside a Session step) ----
+
+    /// <summary>Changes the class, adding the new class's default keys the entity doesn't have yet (existing values stay).</summary>
+    public static void SetClass(Entity e, string className)
+    {
+        e.ClassName = className.Trim();
+        foreach (var (k, v) in EntityClasses.Get(e.ClassName).Defaults) e.Properties.TryAdd(k, v);
+    }
+
+    /// <summary>Sets or adds a key-value. Returns an error message (and changes nothing) when the key is blank.</summary>
+    public static string? SetProperty(Entity e, string key, string value)
+    {
+        key = key.Trim();
+        if (key.Length == 0) return "Type a key for the property";
+        e.Properties[key] = value;
+        return null;
+    }
+
+    /// <summary>Renames a key, keeping its value. Returns an error message (and changes nothing) when the new key is blank or taken.</summary>
+    public static string? RenameProperty(Entity e, string oldKey, string newKey)
+    {
+        newKey = newKey.Trim();
+        if (newKey == oldKey) return null;
+        if (newKey.Length == 0) return "A property key can't be empty. Use the remove button to delete it";
+        if (e.Properties.ContainsKey(newKey)) return $"There is already a property called {newKey}";
+        if (!e.Properties.Remove(oldKey, out var value)) return $"There is no property called {oldKey}";
+        e.Properties[newKey] = value;
+        return null;
+    }
+
     /// <summary>Entity space to world.</summary>
     public static Matrix4x4 World(Entity e) => Matrix4x4.CreateFromQuaternion(Orientation(e)) * Matrix4x4.CreateTranslation(e.Position);
 

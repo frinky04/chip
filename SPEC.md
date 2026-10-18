@@ -181,9 +181,12 @@ Each face stores a planar projection: U axis, V axis, offset (u, v), scale (u, v
 
 | Feature | Tag |
 |---|---|
-| Outliner (mesh list, rename, hide, lock) | v2 |
+| Outliner (mesh list, rename, hide, lock) | v2 (done: `Ctrl+Shift+O`; groups, meshes and entities; rename by double-click/F2, eye and lock toggles, multi-select synced with the viewport, drag into groups, search, counts) |
+| Groups (nested; selecting a member selects the group; hide/lock per group) | v2 (done: `Ctrl+G` / `Ctrl+Alt+G`, "Select whole groups" toggle; stored as optional `groups` in the file) |
+| Lock selected / unlock all | v2 (done: `Ctrl+L` / `Ctrl+Shift+L`; meshes and entities) |
 | Visgroups / layers, hide/show by group | later |
-| Entities / markers (player start, lights, generic point entity with key-values) exported as glTF empty nodes with `extras` | v2 |
+| Entities / markers (player start, lights, generic point entity with key-values) exported as glTF empty nodes with `extras` | v2 (editor done: entity tool `Shift+E`, glyphs in every pane, object-mode select/gizmo/delete/duplicate, inspector with key-values; glTF export is stream J) |
+| Per-object origin / pivot for the gizmo | later |
 | Prefabs / instances (referenced `.chip` files) | later |
 | Collision-only meshes / nodraw-style tool materials (`tools/clip`, `nodraw`, `trigger`) exported with a name suffix (`-col`, `-colonly`) for Godot's import hints | v2 |
 
