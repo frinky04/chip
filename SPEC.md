@@ -23,13 +23,17 @@ Tags: **[v1]** = first shippable slice. **[v2]** = next. **[later]** = backlog. 
 | Feature | Notes |
 |---|---|
 | Dark, minimal, utilitarian theme with a Hammer-orange accent (#FF8A1F-ish) | Flat panels, 1px separators, dense spacing, monospace numerals in fields. Orange is used only for active, selected and focused states. |
-| Fixed panel layout (v1; docking v2) | Menu bar, left tool strip, centre viewport, right inspector, bottom status bar. Every command is also in a menu with its hotkey. |
+| Fixed panel layout with resizable splitters (v1) | Menu bar, left tool strip, centre viewport, right inspector, bottom status bar. Every command is also in a menu with its hotkey. Tool strip and inspector widths drag and persist (double-click an edge to reset; View > Reset panel sizes). Docking is not planned while ImGui.NET lacks DockBuilder. |
 | Status bar | Selection mode, element count, grid size, snap state, active tool hint. |
 | File: New / Open / Save / Save As (`Ctrl+N/O/S`, `Ctrl+Shift+S`) | JSON `.chip` document. |
 | Export glTF binary (`Ctrl+E`) | `.glb` with one node per mesh, one primitive per material, flat normals, UVs, and embedded dev textures (PNG). |
 | Undo / Redo (`Ctrl+Z`, `Ctrl+Y` / `Ctrl+Shift+Z`) | Document snapshot per command. |
 | Unsaved-changes marker in the title bar | |
-| Preferences: units, grid presets, hotkey remap, theme | **[later]** |
+| Preferences (`Ctrl+Shift+P`) **[v1]** | Settings in `%APPDATA%/Chip/settings.json`: interface scale, autosave interval, starting grid, hotkey remap (search, click to rebind, conflicts rejected), extra texture folders. Units display and theme accents are **[later]**. |
+| Command palette (`Ctrl+P`) **[v1]** | Fuzzy search over every registered command (label, menu, id) with hotkeys; unavailable commands greyed; recent commands first. |
+| Recent files, autosave and crash recovery **[v1]** | File > Open recent. Unsaved changes autosave to `%APPDATA%/Chip/autosave/` (atomic writes); at startup an autosave newer than its file is offered back (Restore / Discard). |
+| Live re-scale on monitor DPI change **[v1]** | Fonts and style rebuild when the window moves to a monitor with a different scale, or when Preferences changes it. |
+| Single-file Windows build **[v1]** | `scripts/publish.ps1`: self-contained `Chip.exe` plus `assets/`, with an app icon. |
 | Multiple viewports (2D top/front/side + 3D) **[S2]** | **[v2]** |
 
 ## 2. Viewport and camera

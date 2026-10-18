@@ -22,8 +22,10 @@ public sealed partial class EditorApp
 
         foreach (var tool in Ctx.Tools)
         {
-            string key = tool.Hotkey is { Length: 1 } k ? k : "";
-            string tip = tool.Hotkey != null ? $"{tool.Name}  ({tool.Hotkey})" : tool.Name;
+            // The command's current binding, so a remapped tool shows its new key.
+            string? hotkey = Ctx.Commands.Find($"tool.{tool.Id}")?.HotkeyText;
+            string key = hotkey is { Length: 1 } k ? k : "";
+            string tip = hotkey != null && key.Length == 0 ? $"{tool.Name}  ({hotkey})" : tool.Name; // ToolButton appends a corner key itself
             if (ToolButton(tool.Icon, key, tip, Ctx.ActiveTool == tool, btn)) Ctx.ToggleTool(tool);
         }
         StripGap();

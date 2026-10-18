@@ -33,7 +33,7 @@ public sealed partial class EditorApp
         ImGui.PushClipRect(ImGui.GetCursorScreenPos(), new Vector2(pos.X + rightX - Theme.Px(16), pos.Y + size.Y), true);
         if (showMessage)
         {
-            ImGui.TextColored(Ctx.StatusIsError ? Theme.Error : Theme.Text, Ctx.StatusMessage);
+            ImGui.TextColored(Ctx.StatusIsError ? Theme.Error : Theme.Text, Esc(Ctx.StatusMessage)); // messages carry file names
             if (Ctx.StatusIsError)
             {
                 ImGui.SameLine();

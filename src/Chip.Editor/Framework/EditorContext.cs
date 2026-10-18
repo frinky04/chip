@@ -163,6 +163,9 @@ public sealed class EditorContext
     public Action Quit { get; set; } = () => { };
     public bool ShowShortcuts { get; set; }
 
+    /// <summary>Extra texture folders from Preferences (besides the bundled <c>assets/textures</c>). The host fills this from settings.</summary>
+    public IReadOnlyList<string> TextureFolders { get; set; } = [];
+
     /// <summary>ImGui texture handle for a material's preview. The host wires this to the renderer.</summary>
     public Func<string, nint> TextureId { get; set; } = _ => 0;
 

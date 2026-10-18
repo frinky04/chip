@@ -17,7 +17,7 @@ using var window = Window.Create(options);
 if (shot)
 {
     window.Initialize();
-    using var snapApp = new EditorApp(window);
+    using var snapApp = new EditorApp(window, persistent: false); // captures never read or write user settings
     var rest = args.Skip(3).ToList();
     int runAt = rest.IndexOf("--run");
     var commands = runAt >= 0 && runAt + 1 < rest.Count ? rest[runAt + 1].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) : [];

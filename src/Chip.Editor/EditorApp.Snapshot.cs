@@ -1,6 +1,8 @@
 using Chip.Core.IO;
 using Chip.Core.Scene;
 using Chip.Editor.Framework;
+using Chip.Editor.Settings;
+using Chip.Editor.UI;
 using Silk.NET.OpenGL;
 using StbImageWriteSharp;
 
@@ -8,12 +10,17 @@ namespace Chip.Editor;
 
 /// <summary>
 /// <c>Chip --shot [level.chip|-] out.png [state] [--run cmd.id,cmd.id]</c>: renders the whole editor UI from an invisible
-/// window into an offscreen buffer, after an optional preset <c>state</c> (empty|objects|faces|block|blockpreview|polygonpreview|backfaces|shortcuts)
-/// and a comma-separated list of command ids. Every feature can prove its UI headlessly this way.
+/// window into an offscreen buffer, after an optional preset <c>state</c> (empty|objects|faces|block|blockpreview|polygonpreview|
+/// backfaces|shortcuts|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale) and a
+/// comma-separated list of command ids. Every feature can prove its UI headlessly this way.
 /// </summary>
 public sealed partial class EditorApp
 {
     uint _captureFbo;
+    string? _snapshotPaletteQuery;
+    Action? _snapshotAfterPrefsOpen;
+    /// <summary>"rescale" state: rebuild fonts and style at this scale before the first frame (the DPI-change path).</summary>
+    float? _snapshotRescaleTo;
 
     /// <summary>Returns a process exit code: 0 ok, 2 unknown command id.</summary>
     public int RunSnapshot(string? chipPath, string pngPath, string state, IReadOnlyList<string> commands)
@@ -55,6 +62,43 @@ public sealed partial class EditorApp
             case "polygonpreview":
                 ctx.SetTool("polygon");
                 (ctx.ActiveTool as Tools.PolygonTool)?.PreviewForCapture();
+                break;
+            case "palette":
+                _settings.Current.RecentCommands.AddRange(["view.focus", "edit.undo"]);
+                _shell.PaletteRequested = true;
+                break;
+            case "palette-search":
+                _shell.PaletteRequested = true;
+                _snapshotPaletteQuery = "grid";
+                break;
+            case "preferences" or "prefs-general":
+                _shell.PreferencesRequested = true;
+                break;
+            case "prefs-viewport":
+                _prefSection = 1;
+                _shell.PreferencesRequested = true;
+                break;
+            case "prefs-hotkeys":
+                _prefSection = 2;
+                ctx.Commands.Rebind("view.focus", [Hotkey.Parse("Shift+F2")]);
+                _hotkeySearch = "view";
+                _snapshotAfterPrefsOpen = () =>
+                {
+                    _captureId = "view.frameAll";
+                    _hotkeyMessage = "Focus selection is now Shift+F2";
+                };
+                _shell.PreferencesRequested = true;
+                break;
+            case "prefs-paths":
+                _prefSection = 3;
+                _settings.Current.TextureFolders.AddRange([@"D:\Art\textures\dev", @"C:\missing\folder"]);
+                _shell.PreferencesRequested = true;
+                break;
+            case "rescale":
+                _snapshotRescaleTo = Theme.Scale >= 1.5f ? 1f : 2f;
+                break;
+            case "recovery":
+                _recovery = [new AutosaveInfo("level-0000", chipPath == null ? null : Path.GetFullPath(chipPath), DateTime.UtcNow.AddMinutes(-3), 0, DateTime.UtcNow)];
                 break;
         }
         foreach (var id in commands)

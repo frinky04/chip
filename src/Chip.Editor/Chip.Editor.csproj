@@ -21,10 +21,22 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <ApplicationIcon>chip.ico</ApplicationIcon>
+    <Product>Chip</Product>
+    <Description>Chip level blockout editor</Description>
+    <Version>0.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\..\assets\**\*" LinkBase="assets" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Assets stay loose beside Chip.exe (also when published as a single file) so users can add textures and fonts. -->
+    <None Include="..\..\assets\**\*" LinkBase="assets" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
+
+  <!-- Publish only what runs: no native import libraries or loose debug symbols next to Chip.exe. -->
+  <Target Name="DropPublishClutter" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.lib' Or '%(Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
 
 </Project>

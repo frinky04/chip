@@ -14,6 +14,7 @@ public sealed class MaterialsFeature : IEditorFeature
     {
         var lib = ctx.Materials;
         lib.AddFolder(Path.Combine(AppContext.BaseDirectory, "assets", "tools"));
+        foreach (var folder in ctx.TextureFolders) lib.AddFolder(folder); // from settings (Preferences > Paths)
         foreach (var folder in MaterialLibrary.EnvironmentFolders()) lib.AddFolder(folder);
         lib.Rescan();
         var missing = lib.Folders.Where(f => !Directory.Exists(f) && !f.StartsWith(AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase)).ToList();

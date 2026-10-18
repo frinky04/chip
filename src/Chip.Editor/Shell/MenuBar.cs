@@ -29,6 +29,7 @@ public sealed partial class EditorApp
                     if (ImGui.MenuItem(c.CurrentLabel, c.HotkeyText, c.IsChecked?.Invoke() ?? false, c.Enabled)) c.Execute();
                     if (c.Description != null && ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort)) ImGui.SetTooltip(c.Description);
                 }
+                if (menu == "File" && group.Key == "1-doc") DrawRecentFilesMenu();
             }
             ImGui.EndMenu();
         }
@@ -44,5 +45,30 @@ public sealed partial class EditorApp
         ImGui.TextColored(session.Dirty ? Theme.Text : Theme.TextDim, state);
         ImGui.EndMainMenuBar();
         ImGui.PopStyleVar();
+    }
+
+    /// <summary>File > Open recent: file names, with the folder dimmed on the right (full path in the tooltip).</summary>
+    void DrawRecentFilesMenu()
+    {
+        var files = _shell.RecentFiles;
+        if (!ImGui.BeginMenu("Open recent", files.Count > 0)) return;
+        string? open = null;
+        for (int i = 0; i < files.Count; i++)
+        {
+            var path = files[i];
+            if (ImGui.MenuItem($"{Path.GetFileName(path)}##{i}", ShortFolder(Path.GetDirectoryName(path) ?? ""))) open = path;
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort)) ImGui.SetTooltip(path);
+        }
+        ImGui.Separator();
+        if (ImGui.MenuItem("Clear recent files")) Ctx.Commands.Execute("file.clearRecent");
+        ImGui.EndMenu();
+        if (open != null) _shell.OpenRecent(open);
+    }
+
+    /// <summary>"…\levels\act1" for long folders: the end of a path is the part that tells files apart.</summary>
+    static string ShortFolder(string folder)
+    {
+        const int max = 36;
+        return folder.Length <= max ? folder : "…" + folder[^(max - 1)..];
     }
 }

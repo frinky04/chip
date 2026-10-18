@@ -42,9 +42,16 @@ public static class Theme
     public static Vector4 Rgb(uint hex, float a = 1f) =>
         new(((hex >> 16) & 0xFF) / 255f, ((hex >> 8) & 0xFF) / 255f, (hex & 0xFF) / 255f, a);
 
+    /// <summary>Applies the theme at a display scale. Safe to call again (DPI change): it starts from ImGui's default style.</summary>
     public static void Apply(float scale)
     {
         Scale = scale;
+        unsafe
+        {
+            var fresh = ImGuiNative.ImGuiStyle_ImGuiStyle();
+            *ImGui.GetStyle().NativePtr = *fresh;
+            ImGuiNative.ImGuiStyle_destroy(fresh);
+        }
         var s = ImGui.GetStyle();
         s.WindowRounding = 0;
         s.ChildRounding = 0;
