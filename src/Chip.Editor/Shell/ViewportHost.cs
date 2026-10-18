@@ -230,7 +230,7 @@ public sealed partial class EditorApp
     }
 
     static string PaneLabelText(ViewportPane pane) =>
-        pane.Mode == ViewMode.Lit ? pane.Name : $"{pane.Name}  {ViewportPane.ModeLabel(pane.Mode).ToLowerInvariant()}";
+        pane.Mode == ViewMode.Lit ? pane.Name : $"{pane.Name}  {ViewportPane.ModeInline(pane.Mode)}";
 
     void DrawPaneChrome(ImDrawListPtr dl, ViewportLayout layout, ViewportPane pane)
     {

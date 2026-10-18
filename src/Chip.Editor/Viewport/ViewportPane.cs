@@ -58,4 +58,7 @@ public sealed class ViewportPane
     {
         ViewMode.Unlit => "Unlit", ViewMode.Wireframe => "Wireframe", ViewMode.UvChecker => "UV checker", _ => "Lit",
     };
+
+    /// <summary>The mode in running text ("wireframe", "UV checker"): sentence case keeps the acronym.</summary>
+    public static string ModeInline(ViewMode m) => m == ViewMode.UvChecker ? "UV checker" : ModeLabel(m).ToLowerInvariant();
 }

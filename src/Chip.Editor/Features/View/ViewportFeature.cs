@@ -58,7 +58,7 @@ public sealed class ViewportFeature : IEditorFeature
         {
             var pane = Layout().Active;
             pane.Mode = modes[(Array.IndexOf(modes, pane.Mode) + 1) % modes.Length];
-            ctx.Status($"{pane.Name} view: {ViewportPane.ModeLabel(pane.Mode).ToLowerInvariant()}");
+            ctx.Status($"{pane.Name} view: {ViewportPane.ModeInline(pane.Mode)}");
         }, "View", "Alt+Z", group: "4-shading", order: 10);
         c.Add(new Command
         {
