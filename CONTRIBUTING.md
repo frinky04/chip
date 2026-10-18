@@ -35,7 +35,7 @@ Units are **metres**, Y-up, right-handed. Texel density is 512 px/m.
 Create one feature class. It is discovered automatically:
 
 ```csharp
-namespace Chip.Editor.Features.MeshOps;   // your stream's folder
+namespace Chip.Editor.Features.MeshEditing;   // your stream's folder; never name a namespace after a type (MeshOps, Selection...)
 
 public sealed class MeshOpsFeature : IEditorFeature
 {
