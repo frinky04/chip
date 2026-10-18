@@ -114,7 +114,7 @@ public sealed class HotspotState
         var active = TextureOps.ActiveFace(ctx);
         var results = new List<HotspotRegionResult>();
         string label = individual ? "Hotspot Individual Faces" : "Apply Hotspot";
-        ctx.Session.Begin(label);
+        ctx.Session.Begin(label, sets.Keys.Select(m => m.Id));
         try
         {
             foreach (var (mesh, faces) in sets)

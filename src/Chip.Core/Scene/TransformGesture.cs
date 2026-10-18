@@ -39,7 +39,7 @@ public sealed class TransformGesture
     {
         Kind = kind;
         _session = session;
-        session.Begin(label);
+        session.Begin(label, session.Sel.MeshIds());
         var doc = session.Doc;
         var sel = session.Sel;
 

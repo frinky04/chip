@@ -462,7 +462,7 @@ public sealed class FastTextureTool : IViewportTool
             _pressMouse = mouse;
             _moved = false;
             _startBounds = b;
-            ctx.Session.Begin(_drag == Drag.Scale ? "Scale UVs" : "Move UVs");
+            ctx.Session.Begin(_drag == Drag.Scale ? "Scale UVs" : "Move UVs", ctx.Sel.MeshIds());
             _start.Clear();
             foreach (var f in faces) _start.Add((f.Face, (Vector2[])UvSpace.Bake(f, sizeOf).Clone()));
         }

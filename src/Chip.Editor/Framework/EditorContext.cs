@@ -214,7 +214,7 @@ public sealed class EditorContext
     public void ForFaces(string label, Action<PolyMesh, List<int>> edit)
     {
         if (Sel.FaceSets(Doc).Count == 0) { Status($"Select faces or objects to {label.ToLowerInvariant()}"); return; }
-        Session.Do(label, () =>
+        Session.Do(label, Sel.MeshIds(), () =>
         {
             foreach (var (mesh, faces) in Sel.FaceSets(Doc)) edit(mesh, faces);
         });

@@ -46,9 +46,12 @@ public sealed class Document
 
     public Entity? FindEntity(int id) => Entities.Find(e => e.Id == id);
 
-    public Document Clone() => new()
+    public Document Clone() => Clone(null);
+
+    /// <summary>Only scoped meshes are copied; other mesh references are temporary undo baselines.</summary>
+    internal Document Clone(IReadOnlySet<int>? meshIds) => new()
     {
-        Meshes = Meshes.Select(m => m.Clone()).ToList(),
+        Meshes = Meshes.Select(m => meshIds == null || meshIds.Contains(m.Id) ? m.Clone() : m).ToList(),
         Entities = Entities.Select(e => e.Clone()).ToList(),
         Groups = Groups.Select(g => g.Clone()).ToList(),
         NextId = NextId,

@@ -80,7 +80,7 @@ public sealed class EditFeature : IEditorFeature
     void Delete()
     {
         var sel = _ctx.Sel;
-        _ctx.Session.Do("Delete", () =>
+        _ctx.Session.Do("Delete", sel.MeshIds(), () =>
         {
             var doc = _ctx.Doc;
             if (sel.Mode == SelectMode.Object)
@@ -113,7 +113,7 @@ public sealed class EditFeature : IEditorFeature
     void Duplicate()
     {
         var sel = _ctx.Sel;
-        _ctx.Session.Do("Duplicate", () =>
+        _ctx.Session.Do("Duplicate", sel.MeshIds(), () =>
         {
             var doc = _ctx.Doc;
             var copies = new List<ElementRef>();
@@ -130,7 +130,7 @@ public sealed class EditFeature : IEditorFeature
     void Hide()
     {
         var ids = _ctx.Sel.MeshIds();
-        _ctx.Session.Do("Hide", () =>
+        _ctx.Session.Do("Hide", ids, () =>
         {
             SceneOps.SetHidden(_ctx.Doc, ids, true); // meshes and entities
             _ctx.Sel.Clear();
@@ -139,7 +139,7 @@ public sealed class EditFeature : IEditorFeature
 
     void UnhideAll() => _ctx.Session.Do("Unhide All", () => SceneOps.UnhideAll(_ctx.Doc));
 
-    void SnapVertices() => _ctx.Session.Do("Snap Vertices to Grid", () =>
+    void SnapVertices() => _ctx.Session.Do("Snap Vertices to Grid", _ctx.Sel.MeshIds(), () =>
     {
         foreach (var (mesh, verts) in _ctx.Sel.VertexSets(_ctx.Doc)) MeshOps.SnapToGrid(mesh, verts, _ctx.Grid);
     });

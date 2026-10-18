@@ -52,7 +52,7 @@ public sealed class InsetTool : IViewportTool
             Leave(ctx);
             return;
         }
-        ctx.Session.Begin(Name);
+        ctx.Session.Begin(Name, sets.Keys.Select(m => m.Id));
         _parts = sets.Select(kv => (kv.Key, Ops.Inset(kv.Key, kv.Value))).ToList();
         _faces = sets.Sum(kv => kv.Value.Count);
         _max = _outset ? float.MaxValue : _parts.Min(p => p.Inset.MaxInset);

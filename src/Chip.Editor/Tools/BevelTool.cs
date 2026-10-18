@@ -68,7 +68,7 @@ public sealed class BevelTool : IViewportTool
         if (!HasTargets(ctx)) { ctx.Status("Select edges or vertices to bevel", error: true); return 0; }
         var targets = Collect(ctx);
         int added = 0;
-        ctx.Session.Begin("Bevel");
+        ctx.Session.Begin("Bevel", ctx.Sel.MeshIds());
         try { added = Run(ctx, targets, width, segments); }
         catch { ctx.Session.Cancel(); throw; }
         if (added == 0)
@@ -132,7 +132,7 @@ public sealed class BevelTool : IViewportTool
         _press = ctx.Mouse;
         _shownWidth = -1;
         _previewCut = false;
-        ctx.Session.Begin("Bevel");
+        ctx.Session.Begin("Bevel", ctx.Sel.MeshIds());
         ctx.Sel.Clear(); // indices go stale as soon as the preview runs; Esc restores the selection with the snapshot
         _dragging = true;
     }

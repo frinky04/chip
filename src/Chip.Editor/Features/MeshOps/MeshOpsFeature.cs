@@ -55,7 +55,7 @@ public sealed class MeshOpsFeature : IEditorFeature
     /// </summary>
     void Edit(string label, Func<string?> edit)
     {
-        _ctx.Session.Begin(label);
+        _ctx.Session.Begin(label, Sel.MeshIds());
         string? error;
         try { error = edit(); }
         catch { _ctx.Session.Cancel(); throw; }

@@ -152,7 +152,7 @@ public sealed class TexturingFeature : IEditorFeature
             ctx.Status("Alt+RMB a face that shares an edge with a selected face", error: true);
             return;
         }
-        ctx.Session.Do("Wrap Texture", () =>
+        ctx.Session.Do("Wrap Texture", [mesh.Id], () =>
         {
             Wrap.Across(mesh, src, hit.Face, TextureOps.SizeOf(ctx));
             ctx.Sel.Add(ElementRef.Face(mesh.Id, hit.Face));
@@ -174,7 +174,7 @@ public sealed class TexturingFeature : IEditorFeature
             return;
         }
         int done = 0;
-        ctx.Session.Do("Wrap Texture to Selection", () => done = Wrap.ToSelection(mesh, hit.Face, targets, TextureOps.SizeOf(ctx)).Count);
+        ctx.Session.Do("Wrap Texture to Selection", [mesh.Id], () => done = Wrap.ToSelection(mesh, hit.Face, targets, TextureOps.SizeOf(ctx)).Count);
         ctx.Status(done == 0
             ? "None of the selected faces connect to that face. Pick a face that touches the selection"
             : $"Wrapped texture onto {TextureOps.Plural(done)}" + (done < targets.Count ? $" ({targets.Count - done} not connected)" : ""));
@@ -197,7 +197,7 @@ public sealed class TexturingFeature : IEditorFeature
             return;
         }
         int count = 0;
-        ctx.Session.Do("Flow Texture", () =>
+        ctx.Session.Do("Flow Texture", [mesh.Id], () =>
         {
             var strip = Wrap.Flow(mesh, src, hit.Face, TextureOps.SizeOf(ctx), options.Spacing);
             foreach (var f in strip) ctx.Sel.Items.Add(ElementRef.Face(mesh.Id, f));
