@@ -1,12 +1,11 @@
 using System.Numerics;
-using Chip.Core.Geometry;
 
-namespace Chip.Editor.Rendering;
+namespace Chip.Core.Geometry;
 
 /// <summary>
 /// Cheap 64-bit content hash of everything a mesh's GPU buffers depend on (positions, face loops, materials, mappings,
-/// explicit UVs, soft edges, dominant faces). The renderer rebuilds a mesh only when this changes, so a gizmo drag re-uploads
-/// just the meshes it touches.
+/// explicit UVs, soft edges, dominant faces). Per-mesh caches (GPU buffers, picking) key on it, so a gizmo drag rebuilds
+/// only the meshes it moves.
 /// </summary>
 public static class MeshHash
 {
