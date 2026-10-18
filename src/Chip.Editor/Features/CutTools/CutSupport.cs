@@ -25,13 +25,13 @@ public static class CutSnap
     {
         var view = ctx.View;
         var ray = view.ScreenRay(mouse);
-        var hit = Picker.RaycastFace(ctx.Doc, ray, ctx.Backfaces);
+        var hit = ctx.Picks.RaycastFace(ray, ctx.Backfaces);
         var normal = hit?.Normal ?? Vector3.UnitY;
 
-        if (Picker.Pick(ctx.Doc, view, mouse, SelectMode.Vertex, Theme.Scale, ctx.Backfaces) is { } v && ctx.Doc.Find(v.Mesh) is { } vm)
+        if (ctx.Picks.Pick(view, mouse, SelectMode.Vertex, Theme.Scale, ctx.Backfaces) is { } v && ctx.Doc.Find(v.Mesh) is { } vm)
             return new CutPoint(vm.Positions[v.A], normal, CutSnapKind.Vertex);
 
-        if (Picker.Pick(ctx.Doc, view, mouse, SelectMode.Edge, Theme.Scale, ctx.Backfaces) is { } e && ctx.Doc.Find(e.Mesh) is { } em)
+        if (ctx.Picks.Pick(view, mouse, SelectMode.Edge, Theme.Scale, ctx.Backfaces) is { } e && ctx.Doc.Find(e.Mesh) is { } em)
         {
             var a = em.Positions[e.A];
             var b = em.Positions[e.B];

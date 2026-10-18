@@ -161,8 +161,8 @@ public sealed class SelectTool : IViewportTool
     void Marquee(EditorContext ctx, ImGuiIOPtr io)
     {
         var sel = ctx.Sel;
-        var picked = Picker.Marquee(ctx.Doc, ctx.View, _pressPos, ctx.Mouse, sel.Mode, ctx.Backfaces);
-        if (VisibleOnly) picked = Visibility.FilterVisible(ctx.Doc, ctx.View, picked, sel.Mode, ctx.Backfaces);
+        var picked = ctx.Picks.Marquee(ctx.View, _pressPos, ctx.Mouse, sel.Mode, ctx.Backfaces);
+        if (VisibleOnly) picked = Visibility.FilterVisible(ctx.Doc, ctx.View, picked, sel.Mode, ctx.Backfaces, ctx.Picks);
         var active = sel.Active;
         if (!io.KeyShift && !io.KeyCtrl) sel.Clear();
         foreach (var e in picked)

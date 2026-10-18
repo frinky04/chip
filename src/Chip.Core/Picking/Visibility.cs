@@ -11,12 +11,13 @@ namespace Chip.Core.Picking;
 public static class Visibility
 {
     /// <summary>True if nothing visible lies between the eye and <paramref name="point"/>.</summary>
-    public static bool IsVisible(Document doc, Vector3 eye, Vector3 point, bool backfaces = false)
+    public static bool IsVisible(Document doc, Vector3 eye, Vector3 point, bool backfaces = false, PickCache? cache = null)
     {
         var d = point - eye;
         float dist = d.Length();
         if (dist < 1e-5f) return true;
-        var hit = Picker.RaycastFace(doc, new Ray(eye, d / dist), backfaces);
+        var ray = new Ray(eye, d / dist);
+        var hit = cache is null ? Picker.RaycastFace(doc, ray, backfaces) : cache.RaycastFace(ray, backfaces);
         float slack = MathF.Max(1e-3f, dist * 1e-3f); // the element's own faces meet the ray at the element
         return hit is not { } h || h.Distance >= dist - slack;
     }
@@ -25,13 +26,13 @@ public static class Visibility
     /// Keeps the marquee results the eye can see. Vertices test their position, edges either end or the midpoint, faces their
     /// centre. Objects pass through unchanged.
     /// </summary>
-    public static List<ElementRef> FilterVisible(Document doc, ViewInfo view, IEnumerable<ElementRef> picked, SelectMode mode, bool backfaces = false)
+    public static List<ElementRef> FilterVisible(Document doc, ViewInfo view, IEnumerable<ElementRef> picked, SelectMode mode, bool backfaces = false, PickCache? cache = null)
     {
         var result = new List<ElementRef>();
         foreach (var e in picked)
         {
             if (mode == SelectMode.Object || doc.Find(e.Mesh) is not { } m) { result.Add(e); continue; }
-            bool Seen(Vector3 p) => IsVisible(doc, view.Eye, p, backfaces);
+            bool Seen(Vector3 p) => IsVisible(doc, view.Eye, p, backfaces, cache);
             bool visible = mode switch
             {
                 SelectMode.Vertex => Seen(m.Positions[e.A]),

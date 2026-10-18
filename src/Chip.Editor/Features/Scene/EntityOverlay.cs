@@ -54,7 +54,7 @@ public static class EntityOverlay
             {
                 if (e.Hidden) continue;
                 var look = selected.Contains(e.Id) ? EntityLook.Selected : hovered == e.Id ? EntityLook.Hovered : EntityLook.Normal;
-                bool occluded = occlusion && !view.IsOrthographic && !Visibility.IsVisible(doc, view.Eye, EntityOps.Center(e), ctx.Backfaces);
+                bool occluded = occlusion && !view.IsOrthographic && !Visibility.IsVisible(doc, view.Eye, EntityOps.Center(e), ctx.Backfaces, ctx.Picks);
                 EntityDraw.Draw(dl, pane.Origin, view, e, look, occluded, e.Locked);
             }
             if (pane == layout.Active && ctx.ActiveTool == ctx.DefaultTool && sel.Entities(doc).Count > 0 && ctx.SelectionPivot() is { } pivot)

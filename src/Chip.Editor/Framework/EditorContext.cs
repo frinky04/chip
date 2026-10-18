@@ -27,6 +27,7 @@ public sealed class EditorContext
     public EditorContext(Session session, MaterialLibrary materials, Func<double>? clock = null)
     {
         Session = session;
+        Picks = new PickCache(session);
         Materials = materials;
         ActiveMaterial = materials.All.Count > 0 ? materials.All[0].Name : MaterialLibrary.Missing.Name;
         _clock = clock ?? ImGui.GetTime;
@@ -204,11 +205,13 @@ public sealed class EditorContext
 
     public Ray MouseRay() => View.ScreenRay(Mouse);
 
+    public PickCache Picks { get; }
+
     /// <summary>Face under the mouse, honouring backface mode. <paramref name="selectable"/> skips locked meshes.</summary>
-    public FaceHit? RaycastFace(bool selectable = false) => Picker.RaycastFace(Doc, MouseRay(), Backfaces, selectable);
+    public FaceHit? RaycastFace(bool selectable = false) => Picks.RaycastFace(MouseRay(), Backfaces, selectable);
 
     /// <summary>Element of the current mode under the mouse.</summary>
-    public ElementRef? PickAtMouse(float pixelScale) => Picker.Pick(Doc, View, Mouse, Sel.Mode, pixelScale, Backfaces);
+    public ElementRef? PickAtMouse(float pixelScale) => Picks.Pick(View, Mouse, Sel.Mode, pixelScale, Backfaces);
 
     /// <summary>Runs one undoable edit over the faces the selection addresses (faces, or all faces of objects).</summary>
     public void ForFaces(string label, Action<PolyMesh, List<int>> edit)

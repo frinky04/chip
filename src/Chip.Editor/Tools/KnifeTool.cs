@@ -110,7 +110,7 @@ public sealed class KnifeTool : IViewportTool
                 var p = Vector3.Lerp(path[i], path[i + 1], s / 24f);
                 var dir = p - eye;
                 if (dir.LengthSquared() < 1e-12f) continue;
-                if (Picker.RaycastFace(ctx.Doc, new Ray(eye, Vector3.Normalize(dir)), ctx.Backfaces, selectable: true) is { } hit) meshes.Add(hit.Mesh);
+                if (ctx.Picks.RaycastFace(new Ray(eye, Vector3.Normalize(dir)), ctx.Backfaces, selectable: true) is { } hit) meshes.Add(hit.Mesh);
             }
         return meshes.Select(m => (m, (List<int>?)null, !ctx.Backfaces)).ToList();
     }
