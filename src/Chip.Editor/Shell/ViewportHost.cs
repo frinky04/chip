@@ -61,7 +61,7 @@ public sealed partial class EditorApp
         TrackPivotAfterDrag();
         _construction = ConstructionPlane();
 
-        _renderer.BeginFrame(Ctx.Session, Ctx.Hover);
+        _renderer.BeginFrame(Ctx.Session, Ctx.Hover, ViewSettings.Of(Ctx).ShowNormals);
         foreach (var pane in layout.Visible)
         {
             var settings = new RenderSettings(pane.Mode, Ctx.Grid, Ctx.Backfaces, ViewSettings.Of(Ctx).BoundaryEdges, _construction);

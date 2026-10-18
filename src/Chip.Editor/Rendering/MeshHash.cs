@@ -5,7 +5,7 @@ namespace Chip.Editor.Rendering;
 
 /// <summary>
 /// Cheap 64-bit content hash of everything a mesh's GPU buffers depend on (positions, face loops, materials, mappings,
-/// explicit UVs, soft edges). The renderer rebuilds a mesh only when this changes, so a gizmo drag re-uploads
+/// explicit UVs, soft edges, dominant faces). The renderer rebuilds a mesh only when this changes, so a gizmo drag re-uploads
 /// just the meshes it touches.
 /// </summary>
 public static class MeshHash
@@ -40,6 +40,7 @@ public static class MeshHash
                 foreach (var uv in uvs) { AddF(uv.X); AddF(uv.Y); }
             }
             else Add(0xFFFFFFFF);
+            if (f.Dominant) Add(0xD0D0D0D0); // dominant normals change corner normals
         }
         // Order-independent: a cloned HashSet may enumerate differently.
         ulong soft = 0;

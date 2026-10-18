@@ -13,6 +13,9 @@ public sealed class ViewSettings
     /// <summary>Scythe: open (boundary) edges drawn dashed in a distinct colour.</summary>
     public bool BoundaryEdges { get; set; } = true;
 
+    /// <summary>Short corner-normal lines on the selection (stream L, View > Show normals).</summary>
+    public bool ShowNormals { get; set; }
+
     /// <summary>
     /// Tools whose construction grid follows the hovered face. Creation tools from other streams add their ids here
     /// (e.g. in their feature's Register) to get the same behaviour.

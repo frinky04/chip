@@ -27,6 +27,12 @@ public sealed unsafe class Renderer : IDisposable
     static readonly Vector4 WireframeColor = new(0.78f, 0.80f, 0.84f, 0.85f);
     /// <summary>Open (boundary) edges: dashed cyan, distinct from selection orange and hover yellow.</summary>
     static readonly Vector4 BoundaryColor = new(0.30f, 0.85f, 1.0f, 0.95f);
+    /// <summary>Soft (smoothed) edges: faint outside edge mode so curved shapes read as surfaces (stream L).</summary>
+    static readonly Vector4 SoftWireColor = WireColor with { W = 0.1f };
+    /// <summary>Soft edges in edge mode: light and dotted, so smoothing is visible while picking edges (stream L).</summary>
+    static readonly Vector4 SoftEdgeModeColor = new(0.86f, 0.88f, 0.92f, 0.75f);
+    /// <summary>"Show normals" overlay lines (stream L): lavender, apart from selection orange, hover yellow and boundary cyan.</summary>
+    static readonly Vector4 NormalColor = new(0.72f, 0.56f, 1.0f, 0.95f);
     static readonly Vector4 Accent = Theme.Accent, HoverCol = Theme.Hover;
     static readonly Vector4 Backing = new(0.05f, 0.05f, 0.06f, 0.9f);
     static readonly Vector4 White = Vector4.One;
@@ -36,7 +42,8 @@ public sealed unsafe class Renderer : IDisposable
         public ulong Hash;
         public uint Vao, Vbo, WireVao, WireVbo;
         public readonly List<(string Material, int First, int Count)> Batches = new();
-        public int EdgeVerts, BoundaryVerts;
+        /// <summary>Wire buffer layout: [hard interior edges][soft interior edges][boundary edges].</summary>
+        public int EdgeVerts, SoftVerts, BoundaryVerts;
     }
 
     readonly GL _gl;
@@ -52,6 +59,7 @@ public sealed unsafe class Renderer : IDisposable
     int _builtVersion = -1;
     Document? _builtDoc;
     Overlay _overlay = new();
+    bool _edgeMode;
 
     /// <summary>Meshes re-uploaded by the last scene sync (diagnostics and tests of the dirty tracking).</summary>
     public int LastRebuildCount { get; private set; }
@@ -108,11 +116,15 @@ public sealed unsafe class Renderer : IDisposable
         return _targets[index];
     }
 
-    /// <summary>Once per frame, before any pane renders: syncs mesh buffers with the document and builds the shared overlay.</summary>
-    public void BeginFrame(Session session, ElementRef? hover)
+    /// <summary>
+    /// Once per frame, before any pane renders: syncs mesh buffers with the document and builds the shared overlay.
+    /// <paramref name="showNormals"/> adds short corner-normal lines for the selection (View > Show normals).
+    /// </summary>
+    public void BeginFrame(Session session, ElementRef? hover, bool showNormals = false)
     {
         if (session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc)) SyncScene(session.Doc, session.Version);
-        _overlay = BuildOverlay(session, hover);
+        _edgeMode = session.Sel.Mode == SelectMode.Edge;
+        _overlay = BuildOverlay(session, hover, showNormals);
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _overlayVbo);
         _gl.BufferData<float>(BufferTargetARB.ArrayBuffer, _overlay.Data.ToArray(), BufferUsageARB.StreamDraw);
     }
@@ -195,7 +207,7 @@ public sealed unsafe class Renderer : IDisposable
         }
         if (s.Construction is { } cp) DrawConstructionGrid(view, cp, s.Grid);
 
-        // Scene edges: interior edges solid, open (boundary) edges dashed.
+        // Scene edges: interior edges solid, soft edges faint (dotted in edge mode), open (boundary) edges dashed.
         SetColorUniforms(_lineProg, view, Pull(0.0015f));
         _gl.Uniform2(Loc(_lineProg, "uViewport"), size);
         bool wire = s.Mode == ViewMode.Wireframe;
@@ -203,8 +215,11 @@ public sealed unsafe class Renderer : IDisposable
         {
             if (mesh.Hidden || !_meshes.TryGetValue(mesh.Id, out var gpu)) continue;
             DrawLines(gpu.WireVao, 0, gpu.EdgeVerts, wire ? 1.25f : 1.0f, 1, wire ? WireframeColor : WireColor);
-            if (s.BoundaryEdges) DrawLines(gpu.WireVao, gpu.EdgeVerts, gpu.BoundaryVerts, 1.75f, 1, BoundaryColor, dash: 7 * Theme.Scale);
-            else DrawLines(gpu.WireVao, gpu.EdgeVerts, gpu.BoundaryVerts, wire ? 1.25f : 1.0f, 1, wire ? WireframeColor : WireColor);
+            if (_edgeMode) DrawLines(gpu.WireVao, gpu.EdgeVerts, gpu.SoftVerts, 1.25f, 1, SoftEdgeModeColor, dash: 3 * Theme.Scale);
+            else DrawLines(gpu.WireVao, gpu.EdgeVerts, gpu.SoftVerts, 1.0f, 1, wire ? WireframeColor with { W = 0.35f } : SoftWireColor);
+            int boundaryFirst = gpu.EdgeVerts + gpu.SoftVerts;
+            if (s.BoundaryEdges) DrawLines(gpu.WireVao, boundaryFirst, gpu.BoundaryVerts, 1.75f, 1, BoundaryColor, dash: 7 * Theme.Scale);
+            else DrawLines(gpu.WireVao, boundaryFirst, gpu.BoundaryVerts, wire ? 1.25f : 1.0f, 1, wire ? WireframeColor : WireColor);
         }
 
         // Overlay: tinted faces, then lines/points twice: depth-tested, then a faint x-ray pass.
@@ -377,11 +392,15 @@ public sealed unsafe class Renderer : IDisposable
 
         var boundary = mesh.BoundaryEdges();
         var wire = new List<float>();
-        foreach (var e in mesh.Edges())
-            if (!boundary.Contains(e)) { Vertex(wire, mesh.Positions[e.A], White); Vertex(wire, mesh.Positions[e.B], White); }
+        var interior = mesh.Edges().Where(e => !boundary.Contains(e)).ToList();
+        foreach (var e in interior)
+            if (!mesh.SoftEdges.Contains(e)) { Vertex(wire, mesh.Positions[e.A], White); Vertex(wire, mesh.Positions[e.B], White); }
         gpu.EdgeVerts = wire.Count / 7;
+        foreach (var e in interior)
+            if (mesh.SoftEdges.Contains(e)) { Vertex(wire, mesh.Positions[e.A], White); Vertex(wire, mesh.Positions[e.B], White); }
+        gpu.SoftVerts = wire.Count / 7 - gpu.EdgeVerts;
         foreach (var e in boundary) { Vertex(wire, mesh.Positions[e.A], White); Vertex(wire, mesh.Positions[e.B], White); }
-        gpu.BoundaryVerts = wire.Count / 7 - gpu.EdgeVerts;
+        gpu.BoundaryVerts = wire.Count / 7 - gpu.EdgeVerts - gpu.SoftVerts;
         Upload(gpu.WireVbo, wire.ToArray(), BufferUsageARB.DynamicDraw);
     }
 
@@ -394,7 +413,7 @@ public sealed unsafe class Renderer : IDisposable
         public int VertexCount => Data.Count / 7;
     }
 
-    static Overlay BuildOverlay(Session session, ElementRef? hover)
+    static Overlay BuildOverlay(Session session, ElementRef? hover, bool showNormals)
     {
         var o = new Overlay();
         var doc = session.Doc;
@@ -476,8 +495,45 @@ public sealed unsafe class Renderer : IDisposable
         if (sel.Mode == SelectMode.Vertex)
             OutlinedPoints(sel.Items.Select(e => doc.Find(e.Mesh) is { } m && e.A < m.Positions.Count ? m.Positions[e.A] : (Vector3?)null)
                 .Where(p => p.HasValue).Select(p => p!.Value), Accent, 8);
+        if (showNormals) Lines(NormalLines(session), NormalColor, 1.5f);
         return o;
     }
+
+    /// <summary>
+    /// Short corner-normal strokes for the faces the selection touches (objects: every face). Each starts slightly inside
+    /// its face, so split normals at a hard vertex read as separate strokes. Length follows the face size.
+    /// </summary>
+    static List<(Vector3, Vector3)> NormalLines(Session session)
+    {
+        var segs = new List<(Vector3, Vector3)>();
+        var sel = session.Sel;
+        foreach (var group in sel.Items.GroupBy(i => i.Mesh))
+        {
+            if (session.Doc.Find(group.Key) is not { } m || m.Hidden) continue;
+            var faces = sel.Mode switch
+            {
+                SelectMode.Face => group.Select(i => i.A).Where(f => f >= 0 && f < m.Faces.Count).Distinct().ToList(),
+                SelectMode.Object => Enumerable.Range(0, m.Faces.Count).ToList(),
+                _ => FacesTouching(m, group.SelectMany(i => sel.Mode == SelectMode.Edge ? new[] { i.A, i.B } : [i.A]).ToHashSet()),
+            };
+            var normals = Topology.CornerNormals(m);
+            foreach (var f in faces)
+            {
+                var c = m.FaceCenter(f);
+                float len = Math.Clamp(MathF.Sqrt(Topology.FaceArea(m, f)) * 0.35f, 0.05f, 0.5f);
+                var verts = m.Faces[f].Verts;
+                for (int i = 0; i < verts.Length; i++)
+                {
+                    var p = Vector3.Lerp(m.Positions[verts[i]], c, 0.08f);
+                    segs.Add((p, p + normals[f][i] * len));
+                }
+            }
+        }
+        return segs;
+    }
+
+    static List<int> FacesTouching(PolyMesh m, HashSet<int> verts) =>
+        Enumerable.Range(0, m.Faces.Count).Where(f => m.Faces[f].Verts.Any(verts.Contains)).ToList();
 
     static void Vertex(List<float> d, Vector3 p, Vector4 c) => d.AddRange([p.X, p.Y, p.Z, c.X, c.Y, c.Z, c.W]);
 
