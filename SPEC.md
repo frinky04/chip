@@ -134,26 +134,26 @@ Commands act on the current selection and mode. Each command is one undo step.
 
 ## 8. Texturing and UVs
 
-Each face stores a planar projection: U axis, V axis, offset (u, v), scale (u, v) and rotation. UVs are derived from world position, as in Hammer's face edit. Moving geometry keeps world-aligned textures stable. Explicit per-vertex UVs (from unwraps or hotspots) override the projection **[v2]**.
+Each face stores a planar projection: U axis, V axis, offset (u, v), scale (u, v) and rotation. UVs are derived from world position, as in Hammer's face edit. Moving geometry keeps world-aligned textures stable. Explicit per-vertex UVs (from unwraps or hotspots) override the projection **[v2]**. Precedence: a face with `Face.UVs` set shows those UVs everywhere (render, export, picking) and its projection is ignored; clearing them (Texture > Clear explicit UVs) brings the projection back. Explicit UVs stay on the geometry through any move, so texture lock only affects projected faces. Justify, fit, shift, scale, rotate and flip keep a projected face projected (they are exact projection edits); unwraps, Flow, wraps from an explicit face and Fast Texture Tool edits write explicit UVs.
 
 | Feature | Hotkey | Tag |
 |---|---|---|
 | Align to Grid (world-aligned, dominant-axis projection, texel density) | `Shift+Ctrl+G` | v1 |
 | Align to Face (face-plane projection from the longest edge) | `Shift+Ctrl+F` | v1 |
-| Shift U/V by one step (8 directions) | `Numpad 1–4, 6–9` | v1 |
-| Scale X/Y up/down | `Ctrl+Alt+Numpad 4/6/8/2` | v1 |
-| Rotate CW / CCW (15°) | `Alt+Numpad 9 / 7` | v1 |
-| Fit to face | `Ctrl+Alt+Numpad5` | v1 |
-| Justify left/right/top/bottom/centre | `Alt+Numpad 4/6/8/2/5` | v2 |
-| Flip texture horizontal/vertical | `Alt+D` / `Alt+E` | v1 |
-| Flip face UV horizontal/vertical | `Alt+R` / `Alt+T` | v2 |
-| Modify Texture panel: numeric shift/scale/rotation, Fit to Height/Width, Keep Ratio, Treat as One | | v1 (numeric) / v2 (fit options) |
+| Shift U/V by one step (8 directions) | `Numpad 1–4, 6–9` | v1, done |
+| Scale X/Y up/down | `Ctrl+Alt+Numpad 4/6/8/2` | v1, done |
+| Rotate CW / CCW (15°) | `Alt+Numpad 9 / 7` | v1, done |
+| Fit to face | `Ctrl+Alt+Numpad5` | v1, done |
+| Justify left/right/top/bottom/centre | `Alt+Numpad 4/6/8/2/5` | v2, done |
+| Flip texture horizontal/vertical | `Alt+D` / `Alt+E` | v1, done |
+| Flip face UV horizontal/vertical | `Alt+R` / `Alt+T` | v2, done |
+| Modify Texture panel: numeric shift/scale/rotation, Fit to Height/Width, Keep Ratio, Treat as One | | v1 (numeric) / v2 (fit options), done |
 | Texel density setting (px per metre, default 256) | | v1 (global) |
-| Wrap Texture onto the hovered adjacent face (continue the projection across the edge, copy the material) | `Alt+RMB` | v2 |
-| Wrap Texture to Selection | `Shift+Alt+RMB` | v2 |
-| Flow Texture along curves (follow quads) | `Ctrl+Alt+RMB` | v2 |
-| Texture lock toggle for moves **[S2]** | | v2 |
-| **Fast Texture Tool** (`Shift+Q`): a 2D UV editor overlay with a grid (`[`/`]`), frame (`F`), reset (`R`), rotate (`Q`/`E`), flip (`Alt+R/T`), repeat background (`B`), coordinates (`C`), original material (`T`), world scale (`G`). Unwraps: Use Existing (1), Conforming (2), Square (3), Follow Quads (4), Planar (5). Follow-quads spacing: Length / Even / Length Avg (`Ctrl+1/2/3`). The blue rect shows the ideal texel-density footprint | | v2 |
+| Wrap Texture onto the hovered adjacent face (continue the projection across the edge, copy the material) | `Alt+RMB` | v2, done |
+| Wrap Texture to Selection | `Shift+Alt+RMB` | v2, done |
+| Flow Texture along curves (follow quads) | `Ctrl+Alt+RMB` | v2, done |
+| Texture lock toggle for moves **[S2]** | | v2, done |
+| **Fast Texture Tool** (`Shift+Q`): a 2D UV editor overlay with a grid (`[`/`]`), frame (`F`), reset (`R`), rotate (`Q`/`E`), flip (`Alt+R/T`), repeat background (`B`), coordinates (`C`), original material (`T`), world scale (`G`). Unwraps: Use Existing (1), Conforming (2), Square (3), Follow Quads (4), Planar (5). Follow-quads spacing: Length / Even / Length Avg (`Ctrl+1/2/3`). The blue rect shows the ideal texel-density footprint | | v2, done |
 
 ## 9. Hotspots
 
