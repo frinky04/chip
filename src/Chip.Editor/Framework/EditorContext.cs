@@ -134,8 +134,8 @@ public sealed class EditorContext
 
     public float Grid { get; set; } = 0.25f;
     public bool Snap { get; set; } = true;
-    /// <summary>Scythe-style backface selection: picking and rendering include faces pointing away.</summary>
-    public bool Backfaces { get; set; }
+    /// <summary>Scythe-style backface selection: picking can hit faces pointing away (rendering never changes). On by default.</summary>
+    public bool Backfaces { get; set; } = true;
     /// <summary>The active viewport pane's camera. The view layout swaps it when another pane becomes active.</summary>
     public Camera Camera { get; set; } = new();
     public Gizmo Gizmo { get; } = new();
