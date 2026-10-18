@@ -82,10 +82,10 @@ Tags: **[v1]** = first shippable slice. **[v2]** = next. **[later]** = backlog. 
 
 | Tool | Hotkey | Tag | Notes |
 |---|---|---|---|
-| Add Block | `Shift+B` | v1 | Drag the base on the grid plane, release, move for height, click to confirm. Ctrl flips the base plane toward the camera. Shift places on the hovered face. `Enter` accepts, `Esc` cancels. Uses the active material and world-aligned UVs. |
-| Add Rectangle (single quad, open plane) | `Shift+R` | v2 | Produces boundary edges for edge-extrude workflows. |
-| Primitive shapes: cylinder, wedge, stairs, arch, sphere, torus, spiral stairs **[S2]** | | v2/later | Hammer Block tool shape dropdown with per-shape parameters (sides, steps…). |
-| Polygon draw tool (click points, extrude) **[S2]** | | v2 | |
+| Add Block | `Shift+B` | v1 | Drag the base on the grid plane, release, move for height, click to confirm. Ctrl at the start of the drag flips the base plane toward the camera: the plane passes through the start point and uses the world axis that faces the view most (other than the surface normal), so a base can be drawn face-on. The base starts on the hovered face, or on the grid when no face is under the cursor. `Enter` accepts, `Esc` cancels. Uses the active material and world-aligned UVs. |
+| Add Rectangle (single quad, open plane) | `Shift+R` | v1 | Drag like a block base, release to create one quad facing the camera's side of the plane. Its four boundary edges feed edge-extrude workflows. Ctrl stands the plane up toward the camera. |
+| Primitive shapes: cylinder, wedge, stairs, arch, sphere, torus, spiral stairs **[S2]** | | v1 | Shape dropdown in the block tool's inspector section, with per-shape parameters remembered for the session: cylinder sides; stair steps by count or by step height; arch segments, arc (5 to 180 degrees) and band width; sphere rings and segments; torus segments, sides and tube size; spiral stairs steps, turn, inner opening, solid-to-floor and direction; Rotate 90° for wedge, stairs and arch; Smooth (soft edges) for curved shapes. Every shape exactly fills the dragged box and previews as a wireframe while you set the height. Wedges, stairs and arches run along the longer side of the base, in the drag direction. Palette commands `block.shape<Name>`. |
+| Polygon draw tool (click points, extrude) **[S2]** | `Shift+P` | v1 | Click snapped points on a surface or the grid (Ctrl on the first click stands the plane up toward the camera). Backspace removes the last point. Enter or a click on the first point closes the outline, and outlines that cross themselves are refused. Move to set the height, then click or press Enter to create a closed prism. Concave outlines are supported. |
 | Path/pipe extrude along spline **[S2]** | | later | |
 
 ## 6. Geometry commands

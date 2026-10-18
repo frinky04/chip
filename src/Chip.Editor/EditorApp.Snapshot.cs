@@ -8,7 +8,7 @@ namespace Chip.Editor;
 
 /// <summary>
 /// <c>Chip --shot [level.chip|-] out.png [state] [--run cmd.id,cmd.id]</c>: renders the whole editor UI from an invisible
-/// window into an offscreen buffer, after an optional preset <c>state</c> (empty|objects|faces|block|backfaces|shortcuts)
+/// window into an offscreen buffer, after an optional preset <c>state</c> (empty|objects|faces|block|blockpreview|polygonpreview|backfaces|shortcuts)
 /// and a comma-separated list of command ids. Every feature can prove its UI headlessly this way.
 /// </summary>
 public sealed partial class EditorApp
@@ -47,6 +47,14 @@ public sealed partial class EditorApp
                 break;
             case "block":
                 ctx.SetTool("block");
+                break;
+            case "blockpreview": // mid-drag shape preview; pick the shape with --run block.shapeArch etc.
+                ctx.SetTool("block");
+                (ctx.ActiveTool as Tools.BlockTool)?.PreviewForCapture();
+                break;
+            case "polygonpreview":
+                ctx.SetTool("polygon");
+                (ctx.ActiveTool as Tools.PolygonTool)?.PreviewForCapture();
                 break;
         }
         foreach (var id in commands)
