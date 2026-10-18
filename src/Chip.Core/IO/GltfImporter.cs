@@ -66,6 +66,8 @@ public static class GltfImporter
             if (depth > 64 || nodes[nodeIndex] is not JsonObject node) return;
             var world = LocalMatrix(node) * parent;
             var extras = node["extras"] as JsonObject;
+            // Baked world collision is derived from the meshes it came from; re-importing those is enough.
+            if (extras?["chip_baked"]?.GetValue<bool>() == true) return;
             string nodeName = node["name"]?.GetValue<string>() ?? "";
             if (node["mesh"]?.GetValue<int>() is int meshIndex && meshes?[meshIndex] is JsonObject mesh)
             {

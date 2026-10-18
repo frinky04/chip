@@ -8,7 +8,13 @@ using Chip.Core.Scene;
 namespace Chip.Core.IO;
 
 /// <summary>What an export produced: the main file's bytes, files to write beside it, and counts for the status bar.</summary>
-public sealed record ExportResult(byte[] Data, IReadOnlyList<SideFile> SideFiles, int Meshes, int Entities);
+public sealed record ExportResult(byte[] Data, IReadOnlyList<SideFile> SideFiles, int Meshes, int Entities)
+{
+    /// <summary>Baked world collision, when <see cref="ExportSettings.BakeCollision"/> ran.</summary>
+    public CollisionBakeStats? Collision { get; init; }
+    /// <summary>Render triangles before and after tessellation, when <see cref="ExportSettings.Tessellate"/> ran.</summary>
+    public (int Before, int After)? Tessellated { get; init; }
+}
 
 /// <summary>
 /// Writes a glTF 2.0 binary. One node per mesh at the world origin (stable across re-exports), one primitive per material,
@@ -99,15 +105,19 @@ public static class GlbExporter
         }
 
         var tri = new List<int>();
+        var bakeSources = new List<CollisionSource>();
         foreach (var mesh in doc.Meshes)
         {
             if (mesh.Hidden && !opt.IncludeHidden) continue;
             var cornerNormals = opt.Smoothing ? Topology.CornerNormals(mesh) : FlatNormals(mesh);
             bool collisionOnly = mesh.Collision is CollisionMode.Only or CollisionMode.ConvexOnly;
             bool collides = collisionOnly || (mesh.Collision == CollisionMode.Default && doc.ExportCollision);
+            // Default meshes' colliders are baked into world collision; the render node then doesn't collide itself.
+            bool baked = opt.BakeCollision && !collisionOnly && collides;
             var faces = new List<int>();
             var clipFaces = new List<int>();
             var triggerFaces = new List<int>();
+            var nodrawFaces = new List<int>();
             for (int f = 0; f < mesh.Faces.Count; f++)
             {
                 var tool = MaterialLibrary.ToolKind(mesh.Faces[f].Material);
@@ -118,10 +128,12 @@ public static class GlbExporter
                     ToolMaterial.Skip => null,
                     _ when collisionOnly => faces, // the whole mesh is collision already
                     ToolMaterial.Clip => clipFaces,
+                    _ when baked => nodrawFaces, // nodraw: solid but unseen, so it collides with the rest
                     _ => collides ? clipFaces : null, // nodraw
                 };
                 target?.Add(f);
             }
+            if (baked) bakeSources.Add(new CollisionSource(mesh, [.. faces, .. nodrawFaces], AllowConvex: opt.CollisionHulls));
 
             string name = $"{mesh.Name}_{mesh.Id}";
             string suffix = mesh.Collision switch
@@ -129,7 +141,7 @@ public static class GlbExporter
                 CollisionMode.Only => "-colonly",
                 CollisionMode.ConvexOnly => "-convcolonly",
                 CollisionMode.None => "",
-                _ => doc.ExportCollision ? "-col" : "",
+                _ => doc.ExportCollision && !baked ? "-col" : "",
             };
             int before = nodes.Count;
             var meshExtras = new JsonObject { ["chip_mesh"] = mesh.Name, ["chip_id"] = mesh.Id };
@@ -149,6 +161,19 @@ public static class GlbExporter
             AddNode(name + "_trigger", "-colonly", Primitives(mesh, cornerNormals, triggerFaces, withMaterial: false),
                 new JsonObject { ["chip_tool"] = "trigger", ["chip_id"] = mesh.Id });
             if (nodes.Count > before) meshCount++;
+        }
+
+        // Baked world collision (Source 2 style): one merged, simplified trimesh in chunks, plus convex hulls if asked.
+        CollisionBakeStats? collisionStats = null;
+        if (bakeSources.Count > 0)
+        {
+            var bakedCollision = CollisionBake.Bake(bakeSources, new CollisionBakeOptions());
+            collisionStats = bakedCollision.Stats;
+            var tag = new Func<JsonObject>(() => new JsonObject { ["chip_baked"] = true });
+            for (int i = 0; i < bakedCollision.Chunks.Count; i++)
+                AddNode($"chip_world_collision_{i}", "-colonly", CollisionPrimitive(bakedCollision.Chunks[i].Positions, bakedCollision.Chunks[i].Triangles), tag());
+            foreach (var hull in bakedCollision.Convex)
+                AddNode($"chip_hull_{hull.SourceMeshId}", "-convcolonly", CollisionPrimitive(hull.Points, hull.Triangles), tag());
         }
 
         foreach (var e in doc.Entities)
@@ -174,6 +199,23 @@ public static class GlbExporter
             if (primitives.Count == 0) return;
             meshes.Add(new JsonObject { ["name"] = name, ["primitives"] = primitives });
             nodes.Add(new JsonObject { ["name"] = name + suffix, ["mesh"] = meshes.Count - 1, ["extras"] = extras });
+        }
+
+        // Positions and triangles only: Godot builds the shape from them and drops the mesh.
+        JsonArray CollisionPrimitive(Vector3[] positions, int[] triangles)
+        {
+            if (triangles.Length == 0) return new JsonArray();
+            var pos = positions.Select(p => p * s).ToList();
+            var min = pos.Aggregate(new Vector3(float.MaxValue), Vector3.Min);
+            var max = pos.Aggregate(new Vector3(float.MinValue), Vector3.Max);
+            return new JsonArray(new JsonObject
+            {
+                ["attributes"] = new JsonObject
+                {
+                    ["POSITION"] = Accessor(pos, 5126, "VEC3", 34962, new JsonObject { ["min"] = new JsonArray(min.X, min.Y, min.Z), ["max"] = new JsonArray(max.X, max.Y, max.Z) }),
+                },
+                ["indices"] = Accessor(triangles.Select(t => (uint)t).ToList(), 5125, "SCALAR", 34963),
+            });
         }
 
         JsonArray Primitives(PolyMesh mesh, Vector3[][] cornerNormals, List<int> faces, bool withMaterial)
@@ -265,7 +307,7 @@ public static class GlbExporter
             for (long i = bin.Length; i < binLen; i++) w.Write((byte)0);
         }
         w.Flush();
-        return new ExportResult(outStream.ToArray(), sideFiles, meshCount, entityCount);
+        return new ExportResult(outStream.ToArray(), sideFiles, meshCount, entityCount) { Collision = collisionStats };
     }
 
     /// <summary>The entity's node name: its name, else <c>class_id</c>.</summary>

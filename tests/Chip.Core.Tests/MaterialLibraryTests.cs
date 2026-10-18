@@ -294,6 +294,7 @@ public sealed class MaterialLibraryTests : IDisposable
     public void Export_omits_nodraw_and_skip_and_emits_colonly_for_clip()
     {
         var doc = new Document { ExportCollision = true };
+        doc.Export.BakeCollision = false; // the per-mesh collider path (baking is covered in CollisionBakeExportTests)
         var a = doc.Add(MeshOps.CreateBox(Vector3.Zero, Vector3.One, "wall", TextureMapping.Default));
         a.Faces[2].Material = "nodraw"; // bottom: hidden but solid
         a.Faces[3].Material = "skip";   // top: gone entirely

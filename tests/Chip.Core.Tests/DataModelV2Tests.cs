@@ -126,6 +126,7 @@ public class DataModelV2Tests
     public void Export_uses_collision_modes_and_smoothed_normals()
     {
         var doc = new Document { ExportCollision = true };
+        doc.Export.BakeCollision = false; // the per-mesh collider path (baking is covered in CollisionBakeExportTests)
         var a = doc.Add(Box());
         var b = doc.Add(Box());
         var c = doc.Add(Box());

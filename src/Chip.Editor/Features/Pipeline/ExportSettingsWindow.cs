@@ -83,7 +83,29 @@ public sealed class ExportSettingsWindow
         Label("Collision");
         bool col = doc.ExportCollision;
         if (ImGui.Checkbox("Static collision by default", ref col)) ctx.Session.Do("Export Collision", () => ctx.Doc.ExportCollision = col);
-        Tip("Meshes set to Default get -col: Godot builds a trimesh collider. Set per mesh in the inspector's Collision section.");
+        Tip("Meshes set to Default collide. Set per mesh in the inspector's Collision section.");
+        Label("");
+        Check(ctx, "Bake world collision", "Source 2 style: Default meshes' colliders are merged and simplified (welded, faces touching back to back removed, coplanar faces merged so characters don't snag) and convex meshes become convex hulls. Off: each mesh's render geometry is its collider (-col).",
+            opt.BakeCollision, "Export Collision Bake", (d, v) => d.Export.BakeCollision = v);
+        if (opt.BakeCollision)
+        {
+            Label("");
+            Check(ctx, "Convex hulls for convex meshes", "Closed convex meshes (blocks, ramps) become their own convex hulls: robust and fast, but separate shapes keep the seams between them, so characters can catch where floor tiles meet. Off: everything merges into one world mesh.",
+                opt.CollisionHulls, "Export Collision Hulls", (d, v) => d.Export.CollisionHulls = v);
+        }
+
+        Label("Lighting", "For per-vertex lighting: render faces are cut into a world-aligned grid so lights have vertices to land on. Only the exported render meshes change; colliders use the original geometry.");
+        Check(ctx, "Tessellate for vertex lighting", "Cut render faces into a grid at export. The level in Chip is untouched.",
+            opt.Tessellate, "Export Tessellation", (d, v) => d.Export.Tessellate = v);
+        if (opt.Tessellate)
+        {
+            Label("");
+            float spacing = opt.TessellateSpacing;
+            ImGui.SetNextItemWidth(Theme.Px(120));
+            if (ImGui.InputFloat("##tessSpacing", ref spacing, 0, 0, "every %.3g m", ImGuiInputTextFlags.EnterReturnsTrue) && spacing >= 0.05f)
+                ctx.Session.Do("Export Tessellation Spacing", () => ctx.Doc.Export.TessellateSpacing = spacing);
+            Tip("Grid spacing. Smaller gives smoother vertex lighting and more triangles; the export report shows the count.");
+        }
         Label("Normals");
         Check(ctx, "Smooth across soft edges", "Off exports every face flat", opt.Smoothing, "Export Smoothing", (d, v) => d.Export.Smoothing = v);
         Label("Hidden");

@@ -210,6 +210,7 @@ public class CoreTests
     public void Glb_has_valid_header_scaled_bounds_and_collision_names()
     {
         var doc = new Document { ExportScale = 100f }; // metres -> centimetres
+        doc.Export.BakeCollision = false; // the per-mesh collider path (baking is covered in CollisionBakeExportTests)
         doc.Add(Box(Vector3.Zero, new Vector3(2.54f, 1, 1)));
         var lib = new MaterialLibrary();
         var glb = GlbExporter.Build(doc, lib);

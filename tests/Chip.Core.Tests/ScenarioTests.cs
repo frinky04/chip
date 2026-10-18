@@ -92,8 +92,13 @@ public class ScenarioTests
         GlbExporter.Export(reopened, lib, glbPath);
         var glb = File.ReadAllBytes(glbPath);
         var json = JsonNode.Parse(Encoding.UTF8.GetString(glb, 20, (int)BitConverter.ToUInt32(glb, 12)))!;
-        Assert.Equal(7, json["nodes"]!.AsArray().Count);
-        Assert.All(json["nodes"]!.AsArray(), n => Assert.EndsWith("-col", n!["name"]!.GetValue<string>()));
+        // Seven render nodes that don't collide themselves, plus baked world collision (tagged so re-import skips it).
+        var names = json["nodes"]!.AsArray().Select(n => n!["name"]!.GetValue<string>()).ToList();
+        var bakedNodes = json["nodes"]!.AsArray().Where(n => n!["extras"]?["chip_baked"] != null).ToList();
+        Assert.Equal(7, names.Count - bakedNodes.Count);
+        Assert.NotEmpty(bakedNodes);
+        Assert.All(bakedNodes, n => Assert.EndsWith("colonly", n!["name"]!.GetValue<string>()));
+        Assert.DoesNotContain(names, n => n.EndsWith("-col"));
         Assert.Equal(2, json["images"]!.AsArray().Count);   // only the two materials in use are embedded
 
         // Re-export after an edit keeps every node at the world origin (stable placement in Godot).

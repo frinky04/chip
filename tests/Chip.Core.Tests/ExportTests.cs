@@ -46,6 +46,7 @@ public class ExportTests
     public void Entities_export_as_empty_nodes_with_scaled_translation_rotation_and_extras()
     {
         var doc = new Document { ExportScale = 2 };
+        doc.Export.BakeCollision = false; // the per-mesh collider path (baking is covered in CollisionBakeExportTests)
         doc.Add(Box(Vector3.Zero, Vector3.One));
         var light = doc.Add(new Entity { ClassName = "light_point", Position = new Vector3(1, 2, 3), Rotation = new Vector3(0, 90, 0) });
         light.Properties["color"] = "255 128 0";
@@ -106,6 +107,7 @@ public class ExportTests
     public void Collision_mode_picks_the_godot_suffix(CollisionMode mode, bool documentCollision, string suffix)
     {
         var doc = new Document { ExportCollision = documentCollision };
+        doc.Export.BakeCollision = false; // the per-mesh collider path (baking is covered in CollisionBakeExportTests)
         var box = doc.Add(Box(Vector3.Zero, Vector3.One));
         box.Collision = mode;
         var json = Glb.Json(GlbExporter.Build(doc, new MaterialLibrary()));
@@ -149,6 +151,7 @@ public class ExportTests
     public void Hidden_meshes_and_entities_are_skipped_only_when_asked()
     {
         var doc = new Document();
+        doc.Export.BakeCollision = false; // the per-mesh collider path (baking is covered in CollisionBakeExportTests)
         doc.Add(Box(Vector3.Zero, Vector3.One));
         doc.Add(Box(Vector3.One, Vector3.One * 2)).Hidden = true;
         doc.Add(new Entity { ClassName = "info_target" }).Hidden = true;

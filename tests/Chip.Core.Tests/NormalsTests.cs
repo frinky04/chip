@@ -336,6 +336,7 @@ public class NormalsTests
     public void Auto_smoothed_cylinder_exports_shared_side_normals_and_split_cap_normals()
     {
         var doc = new Document();
+        doc.Export.BakeCollision = false; // the per-mesh collider path (baking is covered in CollisionBakeExportTests)
         var m = doc.Add(Cylinder());
         MeshOps.AutoSmooth(m, 30);
         var (positions, normals) = ExportedVertices(GlbExporter.Build(doc, new MaterialLibrary()));

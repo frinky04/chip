@@ -18,6 +18,16 @@ public static class PipelineActions
         return Path.GetFullPath(baseDir != null ? Path.Combine(baseDir, path) : path);
     }
 
+    /// <summary>What the export did beyond writing meshes: baked collision and tessellation, for the status bar.</summary>
+    public static string Report(ExportResult r)
+    {
+        var parts = new List<string>();
+        if (r.Collision is { } c)
+            parts.Add($"Collision {c.InputTriangles:N0} → {c.OutputTriangles:N0} triangles" + (c.ConvexPieces > 0 ? $", {c.ConvexPieces} hulls" : ""));
+        if (r.Tessellated is { } t) parts.Add($"render {t.Before:N0} → {t.After:N0} triangles");
+        return parts.Count == 0 ? "" : $". {string.Join("; ", parts)}";
+    }
+
     public static string Describe(int meshes, int entities)
     {
         string m = meshes == 1 ? "1 mesh" : $"{meshes} meshes";
@@ -37,7 +47,7 @@ public static class PipelineActions
         try
         {
             var r = GlbExporter.Export(ctx.Doc, ctx.Materials, glb);
-            ctx.Status($"Saved {saved} and exported {Describe(r.Meshes, r.Entities)} to {Path.GetFileName(glb)}");
+            ctx.Status($"Saved {saved} and exported {Describe(r.Meshes, r.Entities)} to {Path.GetFileName(glb)}{Report(r)}");
         }
         catch (Exception e)
         {

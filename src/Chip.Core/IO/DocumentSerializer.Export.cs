@@ -7,11 +7,13 @@ namespace Chip.Core.IO;
 public static partial class DocumentSerializer
 {
     sealed record ExportDto(bool Smoothing = true, bool IncludeHidden = true, bool EmbedTextures = true, bool ExportOnSave = false,
-        Dictionary<string, string>? MaterialRemap = null);
+        Dictionary<string, string>? MaterialRemap = null, bool BakeCollision = true, bool Tessellate = false, float TessellateSpacing = 1f,
+        bool CollisionHulls = false);
 
     static ExportDto? ExportToDto(ExportSettings s) => s.IsDefault ? null : new ExportDto(
         s.Smoothing, s.IncludeHidden, s.EmbedTextures, s.ExportOnSave,
-        s.MaterialRemap.Count > 0 ? s.MaterialRemap.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).ToDictionary() : null);
+        s.MaterialRemap.Count > 0 ? s.MaterialRemap.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).ToDictionary() : null,
+        s.BakeCollision, s.Tessellate, s.TessellateSpacing, s.CollisionHulls);
 
     static ExportSettings ExportFromDto(ExportDto? dto)
     {
@@ -21,6 +23,10 @@ public static partial class DocumentSerializer
         s.IncludeHidden = dto.IncludeHidden;
         s.EmbedTextures = dto.EmbedTextures;
         s.ExportOnSave = dto.ExportOnSave;
+        s.BakeCollision = dto.BakeCollision;
+        s.CollisionHulls = dto.CollisionHulls;
+        s.Tessellate = dto.Tessellate;
+        s.TessellateSpacing = dto.TessellateSpacing > 0 ? dto.TessellateSpacing : 1f;
         if (dto.MaterialRemap != null)
             foreach (var (k, v) in dto.MaterialRemap)
                 if (!string.IsNullOrWhiteSpace(k)) s.MaterialRemap[k] = v ?? "";
