@@ -11,7 +11,7 @@ if ($LASTEXITCODE -ne 0) { throw "editor build failed" }
 New-Item -ItemType Directory -Force $Out | Out-Null
 $level = Join-Path $root "tests/fixtures/level.chip"
 $env:CHIP_UI_SCALE = $Scale
-foreach ($state in "palette", "palette-search", "preferences", "prefs-viewport", "prefs-hotkeys", "prefs-paths", "recovery") {
+foreach ($state in "palette", "palette-search", "preferences", "prefs-viewport", "prefs-hotkeys", "prefs-paths", "recovery", "rescale") {
     # Chip is a GUI-subsystem exe: wait for it explicitly so exit codes are real.
     $p = Start-Process -FilePath (Join-Path $bin "Chip.exe") -ArgumentList @("--shot", "`"$level`"", "`"$(Join-Path $Out "$state.png")`"", $state) -Wait -PassThru -NoNewWindow
     if ($p.ExitCode -ne 0) { throw "capture '$state' failed ($($p.ExitCode))" }

@@ -23,6 +23,7 @@ public sealed partial class EditorApp
     /// <summary>Polls a few times a second (GetDpiForWindow is cheap), or at once after Preferences changed.</summary>
     void UpdateUiScale()
     {
+        if (_snapshotRescaleTo is { } forced) { _snapshotRescaleTo = null; Rescale(forced); return; }
         if (!_persistent) return;
         if (!_scaleCheckNow && ++_scaleCheckFrame % 20 != 0) return;
         _scaleCheckNow = false;
