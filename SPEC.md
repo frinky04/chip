@@ -70,13 +70,15 @@ Tags: **[v1]** = first shippable slice. **[v2]** = next. **[later]** = backlog. 
 | Select all / invert | `Ctrl+A` / `Ctrl+I` | v1 |
 | Clear selection | `Esc` (when no tool is active) | v1 |
 | Convert selection on mode switch (edges→faces etc.) | switch mode | v1 |
-| Flood fill (faces: connected; edges: loop) | double-click | v2 |
-| Select faces on plane (coplanar flood) | CapsLock/Mouse4/Mouse5 + double-click | v2 |
-| Path selection (shortest path between picks) | LMB drag | later |
-| Grow / shrink selection | `Alt+Num+` / `Alt+Num-` | v2 |
-| Edge ring / edge loop | `X` / `L` | v2 |
+| Flood fill (faces: connected; edges: loop; verts: connected). Shift adds, Ctrl removes | double-click | v2 (done) |
+| Select faces on plane (coplanar flood, 1° from the clicked face) | CapsLock/Mouse4/Mouse5 + double-click | v2 (done) |
+| Path selection (shortest path from the active element; by edge length for verts/edges, adjacency for faces) | Ctrl+Shift+click | v2 (done) |
+| Grow / shrink selection (faces by shared edges, verts/edges along edges; open borders count as rim) | `Alt+Num+` / `Alt+Num-` | v2 (done) |
+| Edge ring / edge loop (quad topology; stops at poles, n-gons, borders; a border edge follows the border) | `X` / `L` | v2 (done) |
+| Select by material (active face's, else the active material) / select connected | Select menu | v2 (done) |
+| Box select visible only (toggle; off = vertices and edges select through) | Select menu | v2 (done) |
 | Select through (x-ray) toggle **[S2]** | | later |
-| Selection sets (named, saved in doc) **[S2]** | | later |
+| Selection sets (named) **[S2]** | Select menu, inspector | v2 (done, session only; saving in the doc needs a schema bump) |
 
 ## 5. Creation tools
 
