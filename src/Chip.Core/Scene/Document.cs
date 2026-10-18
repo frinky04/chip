@@ -1,4 +1,5 @@
 using Chip.Core.Geometry;
+using Chip.Core.IO;
 
 namespace Chip.Core.Scene;
 
@@ -11,6 +12,8 @@ public sealed class Document
     public float ExportScale = 1f;
     public string? ExportPath;
     public bool ExportCollision = true;
+    /// <summary>Further export options (smoothing, hidden, textures, watch mode, material remap). Stream J.</summary>
+    public ExportSettings Export = new();
 
     public PolyMesh Add(PolyMesh m)
     {
@@ -39,5 +42,6 @@ public sealed class Document
         ExportScale = ExportScale,
         ExportPath = ExportPath,
         ExportCollision = ExportCollision,
+        Export = Export.Clone(),
     };
 }

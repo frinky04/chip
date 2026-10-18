@@ -7,22 +7,40 @@ using Chip.Core.Scene;
 
 namespace Chip.Core.IO;
 
+/// <summary>What an export produced: the main file's bytes, files to write beside it, and counts for the status bar.</summary>
+public sealed record ExportResult(byte[] Data, IReadOnlyList<SideFile> SideFiles, int Meshes, int Entities);
+
 /// <summary>
 /// Writes a glTF 2.0 binary. One node per mesh at the world origin (stable across re-exports), one primitive per material,
-/// per-corner normals (flat, or smoothed across soft edges), explicit UVs where present else the face projection,
-/// and material images embedded as PNG. Collision follows Godot's import suffixes: <c>-col</c> (render + trimesh
-/// collider, from <see cref="Document.ExportCollision"/> or <see cref="CollisionMode.Default"/>) and <c>-colonly</c>.
+/// per-corner normals (flat, or smoothed across soft edges unless <see cref="ExportSettings.Smoothing"/> is off), explicit
+/// UVs where present else the face projection, and material images embedded as PNG (or referenced, see
+/// <see cref="ExportSettings.EmbedTextures"/>). Collision follows Godot's import suffixes: <c>-col</c> (render + trimesh
+/// collider, from <see cref="Document.ExportCollision"/> or <see cref="CollisionMode.Default"/>), <c>-colonly</c> and
+/// <c>-convcolonly</c> (<see cref="CollisionMode.ConvexOnly"/>). Collision-only nodes carry no material.
 /// Tool materials (<see cref="ToolMaterial"/>): nodraw and skip faces never render; clip faces, and nodraw faces of a
-/// colliding mesh, go to a <c>name_clip-colonly</c> node; trigger faces go to <c>name_trigger-colonly</c> with
-/// <c>extras.chip_tool = "trigger"</c>. Collision-only sections carry no material.
+/// colliding mesh, go to a <c>name_clip-colonly</c> node (<c>extras.chip_tool = "clip"</c>); trigger faces go to
+/// <c>name_trigger-colonly</c> with <c>extras.chip_tool = "trigger"</c>.
+/// Mesh nodes carry <c>extras.chip_mesh</c>/<c>chip_id</c> (and <c>chip_remap</c>, material name to path, for the remaps
+/// they use); remapped materials carry <c>extras.godot_path</c>. Entities
+/// follow as empty nodes (translation, rotation) with <c>extras = { chip_class, chip_id, chip_name?, properties }</c>.
 /// </summary>
 public static class GlbExporter
 {
-    public static void Export(Document doc, MaterialLibrary materials, string path) =>
-        AtomicFile.Write(path, Build(doc, materials));
-
-    public static byte[] Build(Document doc, MaterialLibrary materials)
+    /// <summary>Builds and writes the file (plus any referenced texture copies beside it).</summary>
+    public static ExportResult Export(Document doc, MaterialLibrary materials, string path)
     {
+        var result = Build(doc, materials, path);
+        ExportImages.WriteAll(path, result.SideFiles);
+        AtomicFile.Write(path, result.Data);
+        return result;
+    }
+
+    /// <summary>The GLB bytes, with textures always embedded (no output path to reference from).</summary>
+    public static byte[] Build(Document doc, MaterialLibrary materials) => Build(doc, materials, null).Data;
+
+    public static ExportResult Build(Document doc, MaterialLibrary materials, string? outputPath)
+    {
+        var opt = doc.Export;
         var bin = new MemoryStream();
         var bufferViews = new JsonArray();
         var accessors = new JsonArray();
@@ -32,7 +50,9 @@ public static class GlbExporter
         var textures = new JsonArray();
         var meshes = new JsonArray();
         var nodes = new JsonArray();
+        var sideFiles = new List<SideFile>();
         float s = doc.ExportScale;
+        int meshCount = 0, entityCount = 0;
 
         int View(ReadOnlySpan<byte> data, int? target)
         {
@@ -61,22 +81,30 @@ public static class GlbExporter
             if (materialIndex.TryGetValue(name, out var idx)) return idx;
             var info = materials.Get(name);
             var pbr = new JsonObject { ["metallicFactor"] = 0f, ["roughnessFactor"] = 1f };
-            if (MaterialLibrary.ExportImage(info) is { } image)
+            if (ExportImages.Resolve(info, outputPath, opt.EmbedTextures) is { } image)
             {
-                images.Add(new JsonObject { ["bufferView"] = View(image.Data, null), ["mimeType"] = image.MimeType, ["name"] = info.Name });
+                var img = new JsonObject { ["mimeType"] = image.MimeType, ["name"] = info.Name };
+                if (image.Embedded != null) img["bufferView"] = View(image.Embedded, null);
+                else img["uri"] = ExportImages.ToUri(image.RelativePath!);
+                if (image.Copy != null) sideFiles.Add(image.Copy);
+                images.Add(img);
                 textures.Add(new JsonObject { ["source"] = images.Count - 1, ["sampler"] = 0 });
                 pbr["baseColorTexture"] = new JsonObject { ["index"] = textures.Count - 1 };
             }
             else pbr["baseColorFactor"] = new JsonArray(1f, 0f, 1f, 1f);
-            gltfMaterials.Add(new JsonObject { ["name"] = name, ["pbrMetallicRoughness"] = pbr });
+            var mat = new JsonObject { ["name"] = name, ["pbrMetallicRoughness"] = pbr };
+            if (opt.Remap(name) is { } path) mat["extras"] = new JsonObject { ["godot_path"] = path };
+            gltfMaterials.Add(mat);
             return materialIndex[name] = gltfMaterials.Count - 1;
         }
 
         var tri = new List<int>();
         foreach (var mesh in doc.Meshes)
         {
-            var cornerNormals = Topology.CornerNormals(mesh);
-            bool collides = mesh.Collision == CollisionMode.Only || (mesh.Collision == CollisionMode.Default && doc.ExportCollision);
+            if (mesh.Hidden && !opt.IncludeHidden) continue;
+            var cornerNormals = opt.Smoothing ? Topology.CornerNormals(mesh) : FlatNormals(mesh);
+            bool collisionOnly = mesh.Collision is CollisionMode.Only or CollisionMode.ConvexOnly;
+            bool collides = collisionOnly || (mesh.Collision == CollisionMode.Default && doc.ExportCollision);
             var faces = new List<int>();
             var clipFaces = new List<int>();
             var triggerFaces = new List<int>();
@@ -88,7 +116,7 @@ public static class GlbExporter
                     ToolMaterial.None => faces,
                     ToolMaterial.Trigger => triggerFaces,
                     ToolMaterial.Skip => null,
-                    _ when mesh.Collision == CollisionMode.Only => faces, // the whole mesh is collision already
+                    _ when collisionOnly => faces, // the whole mesh is collision already
                     ToolMaterial.Clip => clipFaces,
                     _ => collides ? clipFaces : null, // nodraw
                 };
@@ -99,22 +127,51 @@ public static class GlbExporter
             string suffix = mesh.Collision switch
             {
                 CollisionMode.Only => "-colonly",
+                CollisionMode.ConvexOnly => "-convcolonly",
                 CollisionMode.None => "",
                 _ => doc.ExportCollision ? "-col" : "",
             };
-            AddNode(name, suffix, Primitives(mesh, cornerNormals, faces, withMaterial: true));
-            AddNode(name + "_clip", "-colonly", Primitives(mesh, cornerNormals, clipFaces, withMaterial: false));
+            int before = nodes.Count;
+            var meshExtras = new JsonObject { ["chip_mesh"] = mesh.Name, ["chip_id"] = mesh.Id };
+            if (!collisionOnly)
+            {
+                // The same remaps per node, keyed by material name: a fallback for importers that drop material extras.
+                var remap = new JsonObject();
+                foreach (var m in faces.Select(f => mesh.Faces[f].Material).Distinct(StringComparer.OrdinalIgnoreCase))
+                    if (opt.Remap(m) is { } path) remap[m] = path;
+                if (remap.Count > 0) meshExtras["chip_remap"] = remap;
+            }
+            AddNode(name, suffix, Primitives(mesh, cornerNormals, faces, withMaterial: !collisionOnly), meshExtras);
+            AddNode(name + "_clip", "-colonly", Primitives(mesh, cornerNormals, clipFaces, withMaterial: false),
+                new JsonObject { ["chip_tool"] = "clip", ["chip_id"] = mesh.Id });
             AddNode(name + "_trigger", "-colonly", Primitives(mesh, cornerNormals, triggerFaces, withMaterial: false),
-                new JsonObject { ["chip_tool"] = "trigger" });
+                new JsonObject { ["chip_tool"] = "trigger", ["chip_id"] = mesh.Id });
+            if (nodes.Count > before) meshCount++;
         }
 
-        void AddNode(string name, string suffix, JsonArray primitives, JsonObject? extras = null)
+        foreach (var e in doc.Entities)
+        {
+            if (e.Hidden && !opt.IncludeHidden) continue;
+            var node = new JsonObject { ["name"] = EntityNodeName(e) };
+            var t = e.Position * s;
+            if (t != Vector3.Zero) node["translation"] = new JsonArray(t.X, t.Y, t.Z);
+            var q = EntityRotation(e.Rotation);
+            if (q != Quaternion.Identity) node["rotation"] = new JsonArray(q.X, q.Y, q.Z, q.W);
+            var props = new JsonObject();
+            foreach (var (k, v) in e.Properties.OrderBy(kv => kv.Key, StringComparer.Ordinal)) props[k] = v;
+            var extras = new JsonObject { ["chip_class"] = e.ClassName, ["chip_id"] = e.Id };
+            if (e.Name.Length > 0) extras["chip_name"] = e.Name;
+            extras["properties"] = props;
+            node["extras"] = extras;
+            nodes.Add(node);
+            entityCount++;
+        }
+
+        void AddNode(string name, string suffix, JsonArray primitives, JsonObject extras)
         {
             if (primitives.Count == 0) return;
             meshes.Add(new JsonObject { ["name"] = name, ["primitives"] = primitives });
-            var node = new JsonObject { ["name"] = name + suffix, ["mesh"] = meshes.Count - 1 };
-            if (extras != null) node["extras"] = extras;
-            nodes.Add(node);
+            nodes.Add(new JsonObject { ["name"] = name + suffix, ["mesh"] = meshes.Count - 1, ["extras"] = extras });
         }
 
         JsonArray Primitives(PolyMesh mesh, Vector3[][] cornerNormals, List<int> faces, bool withMaterial)
@@ -179,7 +236,11 @@ public static class GlbExporter
             root["textures"] = textures;
             root["samplers"] = new JsonArray(new JsonObject { ["magFilter"] = 9729, ["minFilter"] = 9987, ["wrapS"] = 10497, ["wrapT"] = 10497 });
         }
-        if (nodes.Count == 0) { root.Remove("meshes"); root.Remove("materials"); root.Remove("accessors"); root.Remove("bufferViews"); root.Remove("buffers"); }
+        // glTF arrays must not be empty: drop whatever this document didn't use.
+        foreach (var key in new[] { "nodes", "meshes", "materials", "accessors", "bufferViews" })
+            if (root[key] is JsonArray { Count: 0 }) root.Remove(key);
+        if (bin.Length == 0) root.Remove("buffers");
+        if (nodes.Count == 0) root["scenes"]![0]!.AsObject().Remove("nodes");
 
         var json = Encoding.UTF8.GetBytes(root.ToJsonString());
         int jsonLen = (int)Align4(json.Length);
@@ -202,7 +263,24 @@ public static class GlbExporter
             for (long i = bin.Length; i < binLen; i++) w.Write((byte)0);
         }
         w.Flush();
-        return outStream.ToArray();
+        return new ExportResult(outStream.ToArray(), sideFiles, meshCount, entityCount);
+    }
+
+    /// <summary>The entity's node name: its name, else <c>class_id</c>.</summary>
+    public static string EntityNodeName(Entity e) => e.Name.Length > 0 ? e.Name : $"{e.ClassName}_{e.Id}";
+
+    /// <summary><see cref="Entity.Rotation"/> (degrees; yaw Y, then pitch X, then roll Z) as a unit quaternion.</summary>
+    public static Quaternion EntityRotation(Vector3 degrees)
+    {
+        const float k = MathF.PI / 180f;
+        return Quaternion.Normalize(Quaternion.CreateFromYawPitchRoll(degrees.Y * k, degrees.X * k, degrees.Z * k));
+    }
+
+    static Vector3[][] FlatNormals(PolyMesh m)
+    {
+        var result = new Vector3[m.Faces.Count][];
+        for (int f = 0; f < m.Faces.Count; f++) result[f] = Enumerable.Repeat(m.FaceNormal(f), m.Faces[f].Verts.Length).ToArray();
+        return result;
     }
 
     static long Align4(long n) => (n + 3) & ~3L;

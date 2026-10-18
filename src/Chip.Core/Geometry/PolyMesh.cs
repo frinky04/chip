@@ -46,7 +46,7 @@ public readonly record struct Edge
 }
 
 /// <summary>How a mesh takes part in export collision.</summary>
-public enum CollisionMode { Default, None, Only }
+public enum CollisionMode { Default, None, Only, ConvexOnly }
 
 /// <summary>
 /// Editable n-gon mesh. Vertices live in world space; edges are derived from face loops.
@@ -59,7 +59,7 @@ public sealed class PolyMesh
     public bool Hidden;
     /// <summary>Visible but not pickable.</summary>
     public bool Locked;
-    /// <summary>Default follows <c>Document.ExportCollision</c>; None never collides; Only collides without rendering.</summary>
+    /// <summary>Default follows <c>Document.ExportCollision</c>; None never collides; Only collides without rendering; ConvexOnly is Only with a convex hull collider.</summary>
     public CollisionMode Collision;
     public List<Vector3> Positions = new();
     public List<Face> Faces = new();

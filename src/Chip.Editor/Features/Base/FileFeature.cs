@@ -57,8 +57,8 @@ public sealed class FileFeature : IEditorFeature
         try
         {
             DocumentSerializer.Save(ctx.Doc, path);
-            ctx.Session.MarkSaved(path);
             ctx.Status($"Saved {Path.GetFileName(path)}");
+            ctx.Session.MarkSaved(path); // after the status, so Saved handlers (export on save) can report over it
             return true;
         }
         catch (Exception e)

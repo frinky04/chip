@@ -11,7 +11,7 @@ namespace Chip.Core.IO;
 /// Versioned JSON for <c>.chip</c> files. Vectors are float arrays so files stay readable and diffable.
 /// v2 adds per-corner UVs, soft edges, per-mesh lock/collision and entities; every v2 field is optional, so v1 loads as is.
 /// </summary>
-public static class DocumentSerializer
+public static partial class DocumentSerializer
 {
     public const int CurrentVersion = 2;
 
@@ -24,7 +24,8 @@ public static class DocumentSerializer
     };
 
     sealed record FileDto(int Version, float ExportScale, string? ExportPath, bool ExportCollision, int NextId,
-        List<MeshDto> Meshes, List<EntityDto>? Entities);
+        List<MeshDto> Meshes, List<EntityDto>? Entities,
+        ExportDto? Export = null);
 
     sealed record MeshDto(int Id, string Name, bool Hidden, List<float[]> Positions, List<FaceDto> Faces,
         bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null);
@@ -47,13 +48,15 @@ public static class DocumentSerializer
         doc.Entities.Count > 0
             ? doc.Entities.Select(e => new EntityDto(e.Id, e.ClassName, e.Name, Arr(e.Position), Arr(e.Rotation), e.Hidden,
                 e.Properties.Count > 0 ? e.Properties : null)).ToList()
-            : null), Options);
+            : null,
+        ExportToDto(doc.Export)), Options);
 
     public static Document Deserialize(string json)
     {
         var dto = JsonSerializer.Deserialize<FileDto>(json, Options) ?? throw new InvalidDataException("Empty .chip file");
         if (dto.Version > CurrentVersion) throw new InvalidDataException($".chip version {dto.Version} is newer than this editor ({CurrentVersion})");
         var doc = new Document { ExportScale = dto.ExportScale <= 0 ? 1 : dto.ExportScale, ExportPath = dto.ExportPath, ExportCollision = dto.ExportCollision, NextId = dto.NextId };
+        doc.Export = ExportFromDto(dto.Export);
         foreach (var m in dto.Meshes)
         {
             var mesh = new PolyMesh
