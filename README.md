@@ -32,3 +32,11 @@ The UI follows the monitor's display scale (Windows DPI). Override it with `CHIP
 Godot: drop the `.glb` into the project. With *Static collision* on, nodes are named `*-col` and Godot generates trimesh colliders.
 
 See `SPEC.md` for the full Scythe/S2 feature map, the v1 scope, and the review log.
+
+## Frame benchmark
+
+Build Release, then run `Chip.exe --bench [stress|level.chip] [out.json]` (or `dotnet run -c Release --project src/Chip.Editor -- --bench stress artifacts/frame.json`). The default is `stress`: 2,000 meshes, about 100k faces, 200 entities and 20 groups. The window stays hidden, uses a fixed 1600?900 backbuffer with vsync off, respects `CHIP_UI_SCALE`, and never reads or writes user settings. All mouse positions, camera motion and `TransformGesture` moves are scripted inside the app.
+
+Each scenario reports CPU median/p95/max, process-wide managed bytes per frame (including worker threads), GL elapsed timer-query results, stage medians and changed-mesh upload counts. GPU waits happen outside the CPU sample; GL elapsed time includes gaps while the CPU submits the frame, so it is not isolated GPU execution time. Gesture setup and cancel are outside the frame samples. There are 240 driver/JIT warmup frames, then 15 warmup and 60 measured frames per scenario.
+
+Set `CHIP_BENCH_FRAMES`, `CHIP_BENCH_WARMUP` or the scenario prefix `CHIP_BENCH_FILTER` to adjust a run. For diagnosis, `CHIP_BENCH_SKIP_OCCLUSION=1` skips entity visibility rays, and `CHIP_BENCH_SKIP_PICKING=1` skips hover picks. Both flags are recorded in the JSON; leave them unset for full-editor results. Compare the same build configuration, scale, frame counts and flags on the same machine. CPU timings include script application and rendering submission; inspector section timings are subsets of `shell`.

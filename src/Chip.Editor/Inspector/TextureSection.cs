@@ -17,18 +17,27 @@ public sealed class TextureSection : IInspectorSection
 {
     static readonly uint[] UvTags = [0xFFA8A0A0, 0xFFA8A0A0];
 
+    readonly Rendering.FrameCache<TextureFrameStats> _faces = new();
+
+    TextureFrameStats Stats(EditorContext ctx)
+    {
+        if (!_faces.IsCurrent(ctx.Session)) _faces.Store(ctx.Session, TextureFrameStats.Build(TextureOps.Faces(ctx)));
+        return _faces.Value;
+    }
+
     public string Id => "texture";
     public int Order => 300;
-    public bool Visible(EditorContext ctx) => ctx.Sel.FaceSets(ctx.Doc).Count > 0;
+    public bool Visible(EditorContext ctx) => Stats(ctx).Faces.Count > 0;
 
     public void Draw(EditorContext ctx)
     {
-        var faces = TextureOps.Faces(ctx);
+        var stats = Stats(ctx);
+        var faces = stats.Faces;
         if (faces.Count == 0) return;
         var options = TextureOptions.For(ctx);
         Heading("Texture", TextureOps.Plural(faces.Count));
 
-        int explicitCount = faces.Count(f => f.Face.UVs != null);
+        int explicitCount = stats.ExplicitCount;
         RowLabel("UVs", "Explicit UVs (from unwraps, wraps or the fast texture tool) override the projection and stay on the geometry");
         ImGui.Text(explicitCount == 0 ? "Projection" : explicitCount == faces.Count ? "Explicit" : $"{explicitCount} explicit, {faces.Count - explicitCount} projected");
         if (explicitCount > 0)
@@ -39,9 +48,7 @@ public sealed class TextureSection : IInspectorSection
             Tip("Clear explicit UVs: go back to the planar projection");
         }
 
-        var maps = faces.Select(f => f.Face.Map).ToList();
-        var m0 = maps[0];
-        bool Mixed(Func<TextureMapping, float> f) => maps.Any(m => f(m) != f(m0));
+        var m0 = stats.First;
         if (explicitCount == faces.Count)
         {
             ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
@@ -51,15 +58,15 @@ public sealed class TextureSection : IInspectorSection
         else
         {
             RowLabel("Shift", "Offset in texels");
-            if (TaggedFields("##shift", ["U", "V"], UvTags, [m0.ShiftU, m0.ShiftV], [Mixed(m => m.ShiftU), Mixed(m => m.ShiftV)], "%.1f", out int si, out float sv))
+            if (TaggedFields("##shift", ["U", "V"], UvTags, [m0.ShiftU, m0.ShiftV], [stats.MixedShiftU, stats.MixedShiftV], "%.1f", out int si, out float sv))
                 ctx.EditMapping("Texture Shift", si == 0 ? m => m with { ShiftU = sv } : m => m with { ShiftV = sv });
             // Scale is shown as a multiple of the default density (1 = 512 px per metre).
             float k = TextureMapping.DefaultScale;
             RowLabel("Scale", "1 = 512 px per metre");
-            if (TaggedFields("##scale", ["U", "V"], UvTags, [m0.ScaleU / k, m0.ScaleV / k], [Mixed(m => m.ScaleU), Mixed(m => m.ScaleV)], "%.3g", out int ci, out float cv))
+            if (TaggedFields("##scale", ["U", "V"], UvTags, [m0.ScaleU / k, m0.ScaleV / k], [stats.MixedScaleU, stats.MixedScaleV], "%.3g", out int ci, out float cv))
                 ctx.EditMapping("Texture Scale", ci == 0 ? m => m with { ScaleU = cv * k } : m => m with { ScaleV = cv * k });
             RowLabel("Rotate", "Degrees");
-            if (TaggedFields("##rot", ["°"], UvTags, [m0.Rotation], [Mixed(m => m.Rotation)], "%.1f", out _, out float rv))
+            if (TaggedFields("##rot", ["°"], UvTags, [m0.Rotation], [stats.MixedRotation], "%.1f", out _, out float rv))
                 ctx.EditMapping("Texture Rotation", m => m with { Rotation = rv });
         }
 

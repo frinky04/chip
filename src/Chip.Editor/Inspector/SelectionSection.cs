@@ -10,6 +10,8 @@ namespace Chip.Editor.Inspector;
 /// <summary>What is selected, with exact bounds entry (min corner and size in metres).</summary>
 public sealed class SelectionSection : IInspectorSection
 {
+    readonly Rendering.FrameCache<(Vector3 Min, Vector3 Max)?> _bounds = new();
+
     public string Id => "selection";
     public int Order => 100;
     public bool Visible(EditorContext ctx) => true;
@@ -23,7 +25,8 @@ public sealed class SelectionSection : IInspectorSection
             ImGui.TextColored(Theme.TextDim, $"Click or drag to select {sel.Mode.Plural()}");
             return;
         }
-        if (ctx.SelectionBounds() is not { } b) return;
+        if (!_bounds.IsCurrent(ctx.Session)) _bounds.Store(ctx.Session, ctx.SelectionBounds());
+        if (_bounds.Value is not { } b) return;
         var min = b.Min;
         var sz = b.Max - b.Min;
         RowLabel("Min", "Bounds minimum corner in metres. Type a value, then Enter.");

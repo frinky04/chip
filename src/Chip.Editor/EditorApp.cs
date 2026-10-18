@@ -84,13 +84,14 @@ public sealed partial class EditorApp : IDisposable
 
     public void Frame(float dt)
     {
-        SyncModifiers();
+        if (_bench == null) SyncModifiers();
         UpdateUiScale(); // between frames: may rebuild the font atlas
         _imgui.Update(dt);
         var bg = Theme.Bg;
         _gl.ClearColor(bg.X, bg.Y, bg.Z, 1);
         _gl.Clear(ClearBufferMask.ColorBufferBit);
 
+        _bench?.Mark("backend");
         DrawMenuBar();
         var vp = ImGui.GetMainViewport();
         float statusH = Theme.Px(30);
@@ -100,10 +101,12 @@ public sealed partial class EditorApp : IDisposable
         DrawToolStrip(pos, new Vector2(toolW, size.Y - statusH));
         DrawInspector(new Vector2(pos.X + size.X - inspectorW, pos.Y), new Vector2(inspectorW, size.Y - statusH));
         DrawStatusBar(new Vector2(pos.X, pos.Y + size.Y - statusH), new Vector2(size.X, statusH));
+        _bench?.Mark("shell");
         DrawViewport(new Vector2(pos.X + toolW, pos.Y), new Vector2(size.X - toolW - inspectorW, size.Y - statusH), dt);
         foreach (var panel in Ctx.Panels) panel(Ctx);
+        _bench?.Mark("panels");
         DrawSplitters(pos, size, size.Y - statusH, toolW, inspectorW);
-        HandleHotkeys();
+        if (_bench == null) HandleHotkeys();
         DrawConfirmModal();
         DrawShortcutsSheet();
         DrawCommandPalette();
@@ -118,6 +121,7 @@ public sealed partial class EditorApp : IDisposable
         _gl.Viewport(0, 0, (uint)fb.X, (uint)fb.Y);
         if (_captureFbo != 0) _gl.Clear(ClearBufferMask.ColorBufferBit);
         _imgui.Render();
+        _bench?.Mark("imgui");
     }
 
     void HandleHotkeys()

@@ -18,6 +18,7 @@ public sealed class MaterialSection : IInspectorSection
     public int Order => 200;
     public bool Visible(EditorContext ctx) => true;
 
+    readonly Rendering.FrameCache<List<(string Name, int Count)>> _selectionMaterials = new();
     float _tileEdit;
     string? _tileFor;
 
@@ -99,10 +100,12 @@ public sealed class MaterialSection : IInspectorSection
     }
 
     /// <summary>The materials on the addressed faces; click one to make it active.</summary>
-    static void DrawSelectionMaterials(EditorContext ctx, MaterialBrowser browser)
+    void DrawSelectionMaterials(EditorContext ctx, MaterialBrowser browser)
     {
-        var counts = ctx.Sel.FaceSets(ctx.Doc).SelectMany(kv => kv.Value.Select(f => kv.Key.Faces[f].Material))
-            .GroupBy(m => m, StringComparer.OrdinalIgnoreCase).Select(g => (Name: g.Key, Count: g.Count())).OrderByDescending(g => g.Count).ToList();
+        if (!_selectionMaterials.IsCurrent(ctx.Session))
+            _selectionMaterials.Store(ctx.Session, ctx.Sel.FaceSets(ctx.Doc).SelectMany(kv => kv.Value.Select(f => kv.Key.Faces[f].Material))
+            .GroupBy(m => m, StringComparer.OrdinalIgnoreCase).Select(g => (Name: g.Key, Count: g.Count())).OrderByDescending(g => g.Count).ToList());
+        var counts = _selectionMaterials.Value;
         if (counts.Count == 0) return;
         ImGui.Dummy(Theme.Px(0, 2));
         ImGui.TextColored(Theme.TextDim, counts.Count == 1 ? "Selection uses" : $"Selection uses {counts.Count}");

@@ -59,6 +59,7 @@ public sealed class MeshOpsFeature : IEditorFeature
 - **Helpers inside `MeshOps` partials share one class**: give private helpers op-specific names, or promote common ones (like `SafeNormalize`) to `Ops/MeshOps.cs`.
 - **Per-mesh caches** key on `Session.MeshRevision(mesh)`, which changes whenever that mesh's content does (undo and cancel included). Don't hash meshes yourself.
 - **Performance**: `dotnet run -c Release --project tests/Chip.Bench [-- prefix]` times core operations on `StressLevel.Generate()` (2,000 meshes, ~100k faces). Add benches as `tests/Chip.Bench/Benches/<Area>.cs`.
+- **Editor frame performance**: `Chip.exe --bench stress artifacts/frame.json` runs the hidden full-editor scenarios (Release; `CHIP_UI_SCALE` respected); see README for timing and diagnostic flags.
 - **Selection after topology edits**: use `Selection.Remap` or rebuild the selection explicitly; `Session.End` prunes anything invalid.
 
 ## Shared files: who may touch them
