@@ -14,6 +14,9 @@ public readonly record struct Hotkey(ImGuiKey Key, bool Ctrl = false, bool Shift
         ["Up"] = ImGuiKey.UpArrow, ["Down"] = ImGuiKey.DownArrow, ["Home"] = ImGuiKey.Home, ["End"] = ImGuiKey.End,
         ["PageUp"] = ImGuiKey.PageUp, ["PageDown"] = ImGuiKey.PageDown, ["Insert"] = ImGuiKey.Insert,
         ["NumPlus"] = ImGuiKey.KeypadAdd, ["NumMinus"] = ImGuiKey.KeypadSubtract, ["NumEnter"] = ImGuiKey.KeypadEnter,
+        ["NumMultiply"] = ImGuiKey.KeypadMultiply, ["NumDivide"] = ImGuiKey.KeypadDivide, ["NumDecimal"] = ImGuiKey.KeypadDecimal,
+        [","] = ImGuiKey.Comma, ["."] = ImGuiKey.Period, ["/"] = ImGuiKey.Slash, [";"] = ImGuiKey.Semicolon,
+        ["'"] = ImGuiKey.Apostrophe, ["\\"] = ImGuiKey.Backslash, ["CapsLock"] = ImGuiKey.CapsLock, ["Pause"] = ImGuiKey.Pause,
     };
 
     /// <summary>Parses "Shift+Ctrl+G", "Ctrl+Alt+Num5", "F1", "[", "Del", "Alt+Left", "NumPlus".</summary>
@@ -39,6 +42,8 @@ public readonly record struct Hotkey(ImGuiKey Key, bool Ctrl = false, bool Shift
         if (key.Length == 1 && char.IsDigit(key[0])) return ImGuiKey._0 + (key[0] - '0');
         if (key.StartsWith("Num", StringComparison.OrdinalIgnoreCase) && key.Length == 4 && char.IsDigit(key[3])) return ImGuiKey.Keypad0 + (key[3] - '0');
         if (key.StartsWith('F') && int.TryParse(key[1..], out int f) && f is >= 1 and <= 12) return ImGuiKey.F1 + (f - 1);
+        // Any other ImGui key by its enum name, so every key a user can capture also round-trips through settings.
+        if (char.IsLetter(key[0]) && Enum.TryParse<ImGuiKey>(key, true, out var any) && any is >= ImGuiKey.Tab and < ImGuiKey.GamepadStart) return any;
         throw new FormatException($"Unknown key '{key}' in '{text}'");
     }
 

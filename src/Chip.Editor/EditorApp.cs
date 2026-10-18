@@ -1,7 +1,9 @@
 using System.Numerics;
 using Chip.Core.Scene;
+using Chip.Editor.Features.Shell;
 using Chip.Editor.Framework;
 using Chip.Editor.Rendering;
+using Chip.Editor.Settings;
 using Chip.Editor.UI;
 using Chip.Editor.Viewport;
 using ImGuiNET;
@@ -24,18 +26,25 @@ public sealed partial class EditorApp : IDisposable
     readonly ImGuiController _imgui;
     readonly Renderer _renderer;
     readonly Navigator _nav = new();
+    readonly SettingsStore _settings;
+    readonly AutosaveManager _autosave;
+    readonly ShellFeature _shell;
+    /// <summary>False for headless captures: no settings file, no autosave, no DPI tracking.</summary>
+    readonly bool _persistent;
     string _title = "";
 
     public EditorContext Ctx { get; }
 
-    public EditorApp(IWindow window)
+    public EditorApp(IWindow window, bool persistent = true)
     {
         _window = window;
+        _persistent = persistent;
+        _settings = persistent ? new SettingsStore(SettingsStore.DefaultFolder) : SettingsStore.InMemory();
         _gl = window.CreateOpenGL();
         _input = window.CreateInput();
-        float scale = Dpi.ScaleFor(window);
-        _imgui = new ImGuiController(_gl, window, _input, null, () => ConfigureImGui(scale));
-        Theme.Apply(scale);
+        _uiScale = TargetUiScale();
+        _imgui = new ImGuiController(_gl, window, _input, null, () => ConfigureImGui(_uiScale));
+        Theme.Apply(_uiScale);
 
         var lib = MaterialLibrary.LoadFolder(Path.Combine(AppContext.BaseDirectory, "assets", "textures"));
         _renderer = new Renderer(_gl, lib);
@@ -48,23 +57,33 @@ public sealed partial class EditorApp : IDisposable
             Quit = () => _window.Close(),
         };
         _nav.CaptureCursor = SetCursorCaptured;
-        FeatureLoader.LoadAll(Ctx);
+        _shell = FeatureLoader.LoadAll(Ctx).OfType<ShellFeature>().First();
+        _autosave = new AutosaveManager(persistent ? Path.Combine(_settings.Folder!, "autosave") : null, () => _settings.Current.AutosaveSeconds)
+        {
+            OnError = message => Ctx.Status(message, error: true),
+        };
+        ApplySettings();
+        if (persistent) _recovery = _autosave.FindRecoverable();
 
         _window.Closing += OnClosing;
         DarkTitleBar.Apply(window);
+        AppIcon.Apply(window);
     }
 
     static void ConfigureImGui(float scale)
     {
         var io = ImGui.GetIO();
         io.ConfigWindowsMoveFromTitleBarOnly = true;
-        Fonts.Load(Path.Combine(AppContext.BaseDirectory, "assets", "fonts"), scale);
-        unsafe { io.NativePtr->IniFilename = null; } // fixed layout; nothing to persist
+        Fonts.Load(FontDir, scale);
+        unsafe { io.NativePtr->IniFilename = null; } // fixed layout with persisted splitters; nothing for ImGui to save
     }
+
+    static string FontDir => Path.Combine(AppContext.BaseDirectory, "assets", "fonts");
 
     public void Frame(float dt)
     {
         SyncModifiers();
+        UpdateUiScale(); // between frames: may rebuild the font atlas
         _imgui.Update(dt);
         var bg = Theme.Bg;
         _gl.ClearColor(bg.X, bg.Y, bg.Z, 1);
@@ -72,17 +91,24 @@ public sealed partial class EditorApp : IDisposable
 
         DrawMenuBar();
         var vp = ImGui.GetMainViewport();
-        float toolW = Theme.Px(44), inspectorW = Theme.Px(320), statusH = Theme.Px(30);
+        float statusH = Theme.Px(30);
         var pos = vp.WorkPos;
         var size = vp.WorkSize;
+        var (toolW, inspectorW) = PanelWidths(size.X);
         DrawToolStrip(pos, new Vector2(toolW, size.Y - statusH));
         DrawInspector(new Vector2(pos.X + size.X - inspectorW, pos.Y), new Vector2(inspectorW, size.Y - statusH));
         DrawStatusBar(new Vector2(pos.X, pos.Y + size.Y - statusH), new Vector2(size.X, statusH));
         DrawViewport(new Vector2(pos.X + toolW, pos.Y), new Vector2(size.X - toolW - inspectorW, size.Y - statusH), dt);
+        DrawSplitters(pos, size, size.Y - statusH, toolW, inspectorW);
         HandleHotkeys();
         DrawConfirmModal();
         DrawShortcutsSheet();
+        DrawCommandPalette();
+        DrawPreferences();
+        DrawRecoveryModal();
         UpdateTitle();
+        TrackRecentFile();
+        _autosave.Tick(Ctx.Session, Ctx.Now);
 
         var fb = _window.FramebufferSize;
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _captureFbo);
@@ -228,6 +254,8 @@ public sealed partial class EditorApp : IDisposable
 
     public void Dispose()
     {
+        _autosave.DeleteCurrent(); // a normal exit: the user saved or chose not to
+        DeleteFontTexture();
         _renderer.Dispose();
         _imgui.Dispose();
         _input.Dispose();
