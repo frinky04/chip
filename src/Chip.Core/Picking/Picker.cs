@@ -47,7 +47,14 @@ public readonly record struct FaceHit(PolyMesh Mesh, int Face, float Distance, V
 /// </summary>
 public static class Picker
 {
-    const float VertexRadius = 10f, EdgeRadius = 7f;
+    /// <summary>
+    /// Hover radii in logical pixels. Generous on purpose: the nearest element that is actually visible wins, so a wide
+    /// radius never reaches through a wall.
+    /// </summary>
+    public const float VertexRadius = 14f, EdgeRadius = 16f;
+
+    /// <summary>Visibility rays per hover at most (nearest candidates first), so dense zoomed-out views stay cheap.</summary>
+    public const int MaxVisibilityTests = 32;
     /// <summary>Radius of an entity's screen glyph (logical pixels), drawn at the centre of its box.</summary>
     public const float EntityGlyphRadius = 11f;
 
@@ -90,39 +97,81 @@ public static class Picker
             case SelectMode.Face: return hit is { } hf ? ElementRef.Face(hf.Mesh.Id, hf.Face) : null;
         }
 
-        // Elements at or in front of the first surface count; a small slack keeps silhouette elements pickable.
-        float limit = hit is { } hh ? hh.Distance * 1.02f + 0.01f : float.MaxValue;
-        ElementRef? best = null;
-        float bestPx = float.MaxValue;
-        foreach (var mesh in doc.Meshes)
+        // Every vertex/edge within the radius, nearest first; the first one that is actually visible wins.
+        float radius = (mode == SelectMode.Vertex ? VertexRadius : EdgeRadius) * pixelScale;
+        var candidates = new List<ElementCandidate>();
+        for (int mi = 0; mi < doc.Meshes.Count; mi++)
         {
+            var mesh = doc.Meshes[mi];
             if (mesh.Hidden || mesh.Locked) continue;
             if (mode == SelectMode.Vertex)
             {
                 for (int v = 0; v < mesh.Positions.Count; v++)
-                {
-                    var p = mesh.Positions[v];
-                    if (!view.Project(p, out var s) || Vector3.Distance(p, view.Eye) > limit) continue;
-                    float d = Vector2.Distance(s, mouse);
-                    if (d < VertexRadius * pixelScale && d < bestPx) { bestPx = d; best = ElementRef.Vertex(mesh.Id, v); }
-                }
+                    if (view.Project(mesh.Positions[v], out var s) && Vector2.Distance(s, mouse) is var d && d < radius)
+                        candidates.Add(new(d, mi, v, mesh, mesh.Positions[v], v, -1));
             }
             else
             {
+                int i = 0;
                 foreach (var e in mesh.Edges())
                 {
-                    var pa = mesh.Positions[e.A];
-                    var pb = mesh.Positions[e.B];
-                    if (!view.Project(pa, out var sa) || !view.Project(pb, out var sb)) continue;
-                    float d = DistanceToSegment(mouse, sa, sb, out float t);
-                    if (d >= EdgeRadius * pixelScale || d >= bestPx) continue;
-                    if (Vector3.Distance(Vector3.Lerp(pa, pb, t), view.Eye) > limit) continue;
-                    bestPx = d;
-                    best = ElementRef.EdgeOf(mesh.Id, e);
+                    if (EdgeUnderMouse(view, mesh.Positions[e.A], mesh.Positions[e.B], mouse, out float d, out var q) && d < radius)
+                        candidates.Add(new(d, mi, i, mesh, q, e.A, e.B));
+                    i++;
                 }
             }
         }
-        return best;
+        candidates.Sort(ElementCandidate.Order);
+        foreach (var c in candidates.Take(MaxVisibilityTests))
+            if (Visible(view, c.Point, r => RaycastFace(doc, r), c.Mesh, c.A, c.B))
+                return mode == SelectMode.Vertex ? ElementRef.Vertex(c.Mesh.Id, c.A) : ElementRef.EdgeOf(c.Mesh.Id, new Edge(c.A, c.B));
+        return null;
+    }
+
+    /// <summary>A vertex or edge near the cursor: screen distance, document order (for ties), and the 3D point nearest the cursor.</summary>
+    public readonly record struct ElementCandidate(float Px, int MeshIndex, int Element, PolyMesh Mesh, Vector3 Point, int A, int B)
+    {
+        public static readonly Comparison<ElementCandidate> Order = (x, y) =>
+            x.Px != y.Px ? x.Px.CompareTo(y.Px) : x.MeshIndex != y.MeshIndex ? x.MeshIndex.CompareTo(y.MeshIndex) : x.Element.CompareTo(y.Element);
+    }
+
+    /// <summary>
+    /// Screen distance from <paramref name="mouse"/> to edge a–b, and the point on the 3D edge under the nearest screen point
+    /// (perspective-correct: halfway along on screen is not halfway along in 3D). Edges running behind the camera are clipped
+    /// to the part in front of it instead of being skipped. False when none of the edge is in front.
+    /// </summary>
+    public static bool EdgeUnderMouse(ViewInfo view, Vector3 a, Vector3 b, Vector2 mouse, out float px, out Vector3 point)
+    {
+        const float MinW = 0.01f; // just in front of the near plane
+        px = float.MaxValue;
+        point = default;
+        float wa = ClipW(view, a), wb = ClipW(view, b);
+        if (wa <= MinW && wb <= MinW) return false;
+        if (wa < MinW) { a = Vector3.Lerp(a, b, (MinW - wa) / (wb - wa)); wa = MinW; }
+        else if (wb < MinW) { b = Vector3.Lerp(b, a, (MinW - wb) / (wa - wb)); wb = MinW; }
+        if (!view.Project(a, out var sa) || !view.Project(b, out var sb)) return false;
+        px = DistanceToSegment(mouse, sa, sb, out float s);
+        float den = (1 - s) * wb + s * wa;
+        point = Vector3.Lerp(a, b, den > 1e-12f ? s * wa / den : s);
+        return true;
+    }
+
+    static float ClipW(ViewInfo view, Vector3 p) => Vector4.Transform(new Vector4(p, 1), view.ViewProj).W;
+
+    /// <summary>
+    /// Whether <paramref name="point"/> (on an element of <paramref name="mesh"/> with vertices <paramref name="a"/> and,
+    /// for an edge, <paramref name="b"/>) can be seen: nothing in front of it along its own view ray, or what's in front is
+    /// a face the element lies on (silhouettes and grazing views). Back faces aren't drawn, so they never hide anything.
+    /// </summary>
+    public static bool Visible(ViewInfo view, Vector3 point, Func<Ray, FaceHit?> raycast, PolyMesh mesh, int a, int b = -1)
+    {
+        if (!view.Project(point, out var s)) return false;
+        var ray = view.ScreenRay(s);
+        float depth = Vector3.Dot(point - ray.Origin, ray.Dir);
+        if (raycast(ray) is not { } hit || hit.Distance >= depth - (0.005f + 0.002f * MathF.Abs(depth))) return true;
+        if (!ReferenceEquals(hit.Mesh, mesh)) return false;
+        var verts = hit.Mesh.Faces[hit.Face].Verts;
+        return Array.IndexOf(verts, a) >= 0 && (b < 0 || Array.IndexOf(verts, b) >= 0);
     }
 
     /// <summary>Elements inside a screen rectangle. Vertices and edges select through; faces must face the camera unless <paramref name="backfaces"/>.</summary>

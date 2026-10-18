@@ -145,63 +145,57 @@ public sealed class PickCache(Session session)
     /// <inheritdoc cref="Picker.Pick"/>
     public ElementRef? Pick(ViewInfo view, Vector2 mouse, SelectMode mode, float pixelScale = 1, bool backfaces = false)
     {
-        var hit = RaycastFace(view.ScreenRay(mouse), backfaces, selectable: true);
-        if (mode == SelectMode.Object)
+        if (mode is SelectMode.Object or SelectMode.Face)
         {
+            var hit = RaycastFace(view.ScreenRay(mouse), backfaces, selectable: true);
+            if (mode == SelectMode.Face) return hit is { } hf ? ElementRef.Face(hf.Mesh.Id, hf.Face) : null;
             if (PickEntity(view, mouse, pixelScale, hit?.Distance) is { } entity) return ElementRef.Object(entity.Id);
             return hit is { } h ? ElementRef.Object(h.Mesh.Id) : null;
         }
-        if (mode == SelectMode.Face) return hit is { } hf ? ElementRef.Face(hf.Mesh.Id, hf.Face) : null;
-        float limit = hit is { } hh ? hh.Distance * 1.02f + 0.01f : float.MaxValue;
-        float radius = (mode == SelectMode.Vertex ? 10 : 7) * pixelScale;
+
+        // Same rule as Picker.Pick: every element within the radius, nearest first; the first visible one wins.
+        Sync();
+        float radius = (mode == SelectMode.Vertex ? Picker.VertexRadius : Picker.EdgeRadius) * pixelScale;
         var box = new PickScreenBox(view, mouse - new Vector2(radius), mouse + new Vector2(radius));
-        ElementRef? best = null;
-        float bestPx = float.MaxValue;
-        int bestMesh = int.MaxValue, bestElement = int.MaxValue;
-        if (_scene.Nodes.Length > 0)
-            VisitElements(0, box, view, mouse, mode, radius, limit, ref best, ref bestPx, ref bestMesh, ref bestElement);
-        return best;
+        _candidates.Clear();
+        if (_scene.Nodes.Length > 0) CollectElements(0, box, view, mouse, mode, radius);
+        _candidates.Sort(Picker.ElementCandidate.Order);
+        for (int i = 0; i < Math.Min(_candidates.Count, Picker.MaxVisibilityTests); i++)
+            if (_candidates[i] is var c && Picker.Visible(view, c.Point, _occluder, c.Mesh, c.A, c.B))
+                return mode == SelectMode.Vertex ? ElementRef.Vertex(c.Mesh.Id, c.A) : ElementRef.EdgeOf(c.Mesh.Id, new Edge(c.A, c.B));
+        return null;
     }
 
-    void VisitElements(int node, PickScreenBox box, ViewInfo view, Vector2 mouse, SelectMode mode, float radius, float limit,
-        ref ElementRef? best, ref float bestPx, ref int bestMesh, ref int bestElement)
+    readonly List<Picker.ElementCandidate> _candidates = new();
+    Func<Ray, FaceHit?>? _occluderField;
+    /// <summary>Visibility rays: unlocked or not, any drawn (front) face hides what's behind it.</summary>
+    Func<Ray, FaceHit?> _occluder => _occluderField ??= r => RaycastFace(r);
+
+    void CollectElements(int node, PickScreenBox box, ViewInfo view, Vector2 mouse, SelectMode mode, float radius)
     {
         ref readonly var n = ref _scene.Nodes[node];
         if (!box.Intersects(n.Bounds)) return;
         if (n.Item < 0)
         {
-            VisitElements(n.Left, box, view, mouse, mode, radius, limit, ref best, ref bestPx, ref bestMesh, ref bestElement);
-            VisitElements(n.Right, box, view, mouse, mode, radius, limit, ref best, ref bestPx, ref bestMesh, ref bestElement);
+            CollectElements(n.Left, box, view, mouse, mode, radius);
+            CollectElements(n.Right, box, view, mouse, mode, radius);
             return;
         }
         var data = _meshes[n.Item];
         var mesh = data.Mesh;
         if (mesh.Hidden || mesh.Locked) return;
-        int count = mode == SelectMode.Vertex ? data.Positions.Length : data.Edges.Length;
-        for (int i = 0; i < count; i++)
+        if (mode == SelectMode.Vertex)
         {
-            float d;
-            if (mode == SelectMode.Vertex)
-            {
-                var p = data.Positions[i];
-                if (!view.Project(p, out var screen) || Vector3.Distance(p, view.Eye) > limit) continue;
-                d = Vector2.Distance(screen, mouse);
-            }
-            else
-            {
-                var edge = data.Edges[i];
-                var a = data.Positions[edge.A];
-                var b = data.Positions[edge.B];
-                if (!view.Project(a, out var sa) || !view.Project(b, out var sb)) continue;
-                d = Picker.DistanceToSegment(mouse, sa, sb, out float t);
-                if (d >= radius || d > bestPx) continue;
-                if (Vector3.Distance(Vector3.Lerp(a, b, t), view.Eye) > limit) continue;
-            }
-            if (d >= radius || d > bestPx || (d == bestPx && (bestMesh < n.Item || (bestMesh == n.Item && bestElement <= i)))) continue;
-            bestPx = d;
-            bestMesh = n.Item;
-            bestElement = i;
-            best = mode == SelectMode.Vertex ? ElementRef.Vertex(mesh.Id, i) : ElementRef.EdgeOf(mesh.Id, data.Edges[i]);
+            for (int v = 0; v < data.Positions.Length; v++)
+                if (view.Project(data.Positions[v], out var s) && Vector2.Distance(s, mouse) is var d && d < radius)
+                    _candidates.Add(new(d, n.Item, v, mesh, data.Positions[v], v, -1));
+            return;
+        }
+        for (int i = 0; i < data.Edges.Length; i++)
+        {
+            var e = data.Edges[i];
+            if (Picker.EdgeUnderMouse(view, data.Positions[e.A], data.Positions[e.B], mouse, out float d, out var q) && d < radius)
+                _candidates.Add(new(d, n.Item, i, mesh, q, e.A, e.B));
         }
     }
 
