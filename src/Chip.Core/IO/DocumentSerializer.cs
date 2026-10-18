@@ -10,6 +10,7 @@ namespace Chip.Core.IO;
 /// <summary>
 /// Versioned JSON for <c>.chip</c> files. Vectors are float arrays so files stay readable and diffable.
 /// v2 adds per-corner UVs, soft edges, per-mesh lock/collision and entities; every v2 field is optional, so v1 loads as is.
+/// Later additive v2 fields (also optional, omitted when default): per-face <c>dominant</c> (dominant normals).
 /// </summary>
 public static class DocumentSerializer
 {
@@ -30,7 +31,7 @@ public static class DocumentSerializer
         bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null);
 
     sealed record FaceDto(int[] Verts, string Material, float[] U, float[] V, float[] Shift, float[] Scale, float Rotation,
-        List<float[]>? Uvs = null);
+        List<float[]>? Uvs = null, bool? Dominant = null);
 
     sealed record EntityDto(int Id, string ClassName, string Name, float[] Position, float[] Rotation, bool Hidden,
         Dictionary<string, string>? Properties);
@@ -41,7 +42,7 @@ public static class DocumentSerializer
             m.Positions.Select(Arr).ToList(),
             m.Faces.Select(f => new FaceDto(f.Verts, f.Material, Arr(f.Map.UAxis), Arr(f.Map.VAxis),
                 [f.Map.ShiftU, f.Map.ShiftV], [f.Map.ScaleU, f.Map.ScaleV], f.Map.Rotation,
-                f.UVs?.Select(uv => new[] { uv.X, uv.Y }).ToList())).ToList(),
+                f.UVs?.Select(uv => new[] { uv.X, uv.Y }).ToList(), f.Dominant ? true : null)).ToList(),
             m.Locked, m.Collision,
             m.SoftEdges.Count > 0 ? m.SoftEdges.OrderBy(e => e.A).ThenBy(e => e.B).Select(e => new[] { e.A, e.B }).ToList() : null)).ToList(),
         doc.Entities.Count > 0
@@ -72,7 +73,7 @@ public static class DocumentSerializer
                     UAxis = Vec(f.U), VAxis = Vec(f.V), ShiftU = f.Shift[0], ShiftV = f.Shift[1],
                     ScaleU = f.Scale[0], ScaleV = f.Scale[1], Rotation = f.Rotation,
                 })
-                { UVs = f.Uvs?.Select(uv => new Vector2(uv[0], uv[1])).ToArray() });
+                { UVs = f.Uvs?.Select(uv => new Vector2(uv[0], uv[1])).ToArray(), Dominant = f.Dominant == true });
             }
             if (m.SoftEdges != null)
                 foreach (var e in m.SoftEdges)

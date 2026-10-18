@@ -26,7 +26,7 @@ Tags: **[v1]** = first shippable slice. **[v2]** = next. **[later]** = backlog. 
 | Fixed panel layout with resizable splitters (v1) | Menu bar, left tool strip, centre viewport, right inspector, bottom status bar. Every command is also in a menu with its hotkey. Tool strip and inspector widths drag and persist (double-click an edge to reset; View > Reset panel sizes). Docking is not planned while ImGui.NET lacks DockBuilder. |
 | Status bar | Selection mode, element count, grid size, snap state, active tool hint. |
 | File: New / Open / Save / Save As (`Ctrl+N/O/S`, `Ctrl+Shift+S`) | JSON `.chip` document. |
-| Export glTF binary (`Ctrl+E`) | `.glb` with one node per mesh, one primitive per material, flat normals, UVs, and embedded dev textures (PNG). |
+| Export glTF binary (`Ctrl+E`) | `.glb` with one node per mesh, one primitive per material, per-corner normals (flat, or smoothed across soft edges), UVs, and embedded dev textures (PNG). |
 | Undo / Redo (`Ctrl+Z`, `Ctrl+Y` / `Ctrl+Shift+Z`) | Document snapshot per command. |
 | Unsaved-changes marker in the title bar | |
 | Preferences (`Ctrl+Shift+P`) **[v1]** | Settings in `%APPDATA%/Chip/settings.json`: interface scale, autosave interval, starting grid, hotkey remap (search, click to rebind, conflicts rejected), extra texture folders. Units display and theme accents are **[later]**. |
@@ -112,7 +112,9 @@ Commands act on the current selection and mode. Each command is one undo step.
 | Merge Meshes | `M` | v1 shipped | Object mode, ≥2 meshes → one mesh (the active one, else the first). Vertices are not welded. |
 | Detach faces → new mesh | `N` | v1 shipped | The new mesh's faces stay selected. |
 | Extract (detach a copy) | `Alt+N` | v1 shipped | |
-| Soft / Hard / Dominant normals | `J` / `H` / `K` | v2 | Per-edge smoothing flags. Export smooth groups. |
+| Soft / Hard / Dominant normals | `J` / `Ctrl+J` / `K` | v2 shipped | Per-edge smoothing flags (`H` stays hide, so Hard is `Ctrl+J`). Edges act on themselves, vertices on the edges between them, faces on all their edges, objects on the whole mesh. Soft/Hard on faces or objects also clear dominance. Dominant (face mode): the faces stay flat and neighbours meeting them at under 60° (bevels, chamfers) take their normal at shared corners; saved as an optional per-face `dominant` flag. Hard edges split smoothing per vertex, so one hard seam creases a soft surface. Viewport and glTF export use the same per-corner normals. Edge mode draws soft edges dotted; elsewhere they are faint. Smoothing section in the inspector. |
+| Auto-smooth by angle / Clear smoothing | | v2 shipped | Mesh menu. Auto-smooth: soft where the two faces meet at less than the angle (Smoothing section, 45° default, 30/45/60 presets), hard elsewhere, over the selection's edges. Clear smoothing: every edge of the selected meshes hard, no dominant faces. |
+| Show normals | | v2 shipped | View menu. Short lavender strokes along each corner normal of the selection's faces. |
 | Connect (split faces between selected verts/edges) | `V` | v2 shipped | Vertices: chords between selected corners of each face. Edges: midpoints, joined across faces holding two or more (edge-ring connect). |
 | Merge Faces (dissolve shared edges) | `Backspace` | v2 shipped | Each connected region becomes one n-gon with the active face's surface. Regions with holes are skipped. Leftover straight-through vertices are dissolved. |
 | Bridge (two faces or two edge loops) | `Shift+C` | v2 shipped | Same mesh, same corner/edge count. Faces are removed and their outlines joined by world-aligned quads. Open edge chains or closed loops of boundary edges. |
