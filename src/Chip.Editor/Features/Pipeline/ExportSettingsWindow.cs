@@ -27,7 +27,7 @@ public sealed class ExportSettingsWindow
         if (!Open) { _wasOpen = false; return; }
         var vp = ctx.ViewportSize;
         ImGui.SetNextWindowPos(ctx.ViewportOrigin + new Vector2(MathF.Max(Theme.Px(10), (vp.X - Theme.Px(460)) * 0.5f), Theme.Px(56)), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(Theme.Px(460, 560), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(Theme.Px(460, 0), ImGuiCond.FirstUseEver); // height 0: fit the contents on first open
         ImGui.SetNextWindowSizeConstraints(Theme.Px(380, 300), new Vector2(float.MaxValue));
         if (!_wasOpen) ImGui.SetNextWindowFocus();
         _wasOpen = true;
