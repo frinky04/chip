@@ -31,7 +31,7 @@ public class UndoDeltaTests
 
     [Theory]
     [InlineData(12, 300)]
-    [InlineData(2000, 28)]
+    [InlineData(2000, 6)] // stress spot-check: every step serializes the whole level twice in Debug
     public void RandomEditsMatchFullSnapshots(int meshes, int count)
     {
         var doc = StressLevel.Generate(meshes, entities: meshes == 2000 ? 200 : 8);
