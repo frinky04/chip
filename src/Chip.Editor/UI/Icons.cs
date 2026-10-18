@@ -4,7 +4,9 @@ using ImGuiNET;
 namespace Chip.Editor.UI;
 
 public enum Icon { Select, Block, Vertex, Edge, Face, Object, Move, Rotate, Scale, Snap, Backfaces, FlipU, FlipV,
-    Rectangle, Polygon, Clip, Knife, Bevel, KeepFront, KeepBack, KeepBoth, Eye }
+    Rectangle, Polygon, Clip, Knife, Bevel, KeepFront, KeepBack, KeepBoth, Eye,
+    Texture, Repeat, Grid, Coordinates, Photo, Ruler, KeepRatio, TreatAsOne, Lock,
+    JustifyLeft, JustifyRight, JustifyTop, JustifyBottom, JustifyCenter, FitBoth, FitWidth, FitHeight }
 
 /// <summary>Tool glyphs from the Tabler icon font (MIT), drawn on whole pixels so they stay crisp at small sizes.</summary>
 public static class Icons
@@ -33,6 +35,23 @@ public static class Icons
         [Icon.KeepBack] = '',  // box-align-bottom
         [Icon.KeepBoth] = '',  // layout-rows
         [Icon.Eye] = '',       // eye
+        [Icon.Texture] = '',       // texture
+        [Icon.Repeat] = '',        // repeat
+        [Icon.Grid] = 'ﲥ',          // grid-4x4
+        [Icon.Coordinates] = '',   // number
+        [Icon.Photo] = '',         // photo
+        [Icon.Ruler] = '',         // ruler
+        [Icon.KeepRatio] = '',     // aspect-ratio
+        [Icon.TreatAsOne] = '',    // layers-union
+        [Icon.Lock] = '',          // lock
+        [Icon.JustifyLeft] = '',   // layout-align-left
+        [Icon.JustifyRight] = '',  // layout-align-right
+        [Icon.JustifyTop] = '',    // layout-align-top
+        [Icon.JustifyBottom] = '', // layout-align-bottom
+        [Icon.JustifyCenter] = '', // focus-centered
+        [Icon.FitBoth] = '',       // arrows-maximize
+        [Icon.FitWidth] = '',      // arrows-horizontal
+        [Icon.FitHeight] = '',     // arrows-vertical
     };
 
     /// <summary>Codepoints to bake into the icon atlas.</summary>

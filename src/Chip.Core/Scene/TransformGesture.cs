@@ -14,7 +14,8 @@ public enum GestureKind { Transform, Extrude, PushPull }
 /// <summary>
 /// One transform of the current selection as an undoable gesture (gizmo drag, nudge, numeric entry).
 /// <see cref="Apply"/> is absolute relative to the start state, so repeated calls never accumulate error.
-/// Object-mode rigid moves keep textures locked to the geometry; everything else stays world-projected.
+/// Object-mode rigid moves keep textures locked to the geometry (unless <see cref="Session.TextureLock"/> is off);
+/// everything else stays world-projected.
 /// </summary>
 public sealed class TransformGesture
 {
@@ -93,7 +94,7 @@ public sealed class TransformGesture
             var start = arr.Select(v => mesh.Positions[v]).ToArray();
             foreach (var p in start) { min = Vector3.Min(min, p); max = Vector3.Max(max, p); }
             _parts.Add((mesh, arr, start));
-            if (sel.Mode == SelectMode.Object)
+            if (sel.Mode == SelectMode.Object && session.TextureLock)
                 for (int f = 0; f < mesh.Faces.Count; f++) _lockedFaces.Add((mesh, f, mesh.Faces[f].Map));
         }
         StartBounds = _parts.Count == 0 ? (Vector3.Zero, Vector3.Zero) : (min, max);

@@ -23,6 +23,11 @@ public sealed class Session
     public bool InGesture => _pending != null;
     public string? UndoLabel => _undo.Count > 0 ? _undo[^1].Label : null;
     public string? RedoLabel => _redo.Count > 0 ? _redo[^1].Label : null;
+    /// <summary>
+    /// Texture lock for object moves: projected textures follow rigidly moved objects (default). Off, they stay
+    /// world-aligned and slide. An editor setting, not document state; explicit UVs always stay on the geometry.
+    /// </summary>
+    public bool TextureLock { get; set; } = true;
 
     public void Reset(Document doc, string? path)
     {

@@ -1,5 +1,6 @@
 using Chip.Core.Scene;
 using Chip.Core.Texturing;
+using Chip.Editor.Features.Texturing;
 using Chip.Editor.Framework;
 using ImGuiNET;
 
@@ -38,16 +39,10 @@ public sealed class MaterialFeature : IEditorFeature
         {
             foreach (var f in faces) mesh.Faces[f].Map = TextureMapping.AlignToFace(mesh.FaceNormal(f), mesh.Faces[f].Map);
         }), "Texture", "Ctrl+Shift+F", HasFaceTargets, "2-align", 1);
-        c.Add("texture.fit", "Fit to face", () => ctx.ForFaces("Fit Texture", (mesh, faces) =>
-        {
-            foreach (var f in faces)
-            {
-                var info = ctx.Materials.Get(mesh.Faces[f].Material);
-                mesh.Faces[f].Map = mesh.Faces[f].Map.FitTo(mesh.FacePoints(f), info.Width, info.Height);
-            }
-        }), "Texture", "Ctrl+Alt+Num5", HasFaceTargets, "2-align", 2);
-        c.Add("texture.flipU", "Flip horizontally", () => ctx.EditMapping("Flip U", m => m with { ScaleU = -m.ScaleU }), "Texture", null, HasFaceTargets, "3-flip", 0);
-        c.Add("texture.flipV", "Flip vertically", () => ctx.EditMapping("Flip V", m => m with { ScaleV = -m.ScaleV }), "Texture", null, HasFaceTargets, "3-flip", 1);
+        // Fit honours the fit options (mode, Keep Ratio, Treat as One) from the texture section.
+        c.Add("texture.fit", "Fit to face", () => TexturingFeature.Fit(ctx), "Texture", "Ctrl+Alt+Num5", HasFaceTargets, "2-align", 2);
+        c.Add("texture.flipU", "Flip horizontally", () => FlipTexture(ctx, horizontal: true), "Texture", "Alt+D", HasFaceTargets, "3-flip", 0);
+        c.Add("texture.flipV", "Flip vertically", () => FlipTexture(ctx, horizontal: false), "Texture", "Alt+E", HasFaceTargets, "3-flip", 1);
 
         ctx.AddMouseBinding(new MouseBinding(ImGuiMouseButton.Right, Ctrl: false, Shift: true, Alt: false, "Texture", "pick up material", context =>
         {
@@ -55,5 +50,19 @@ public sealed class MaterialFeature : IEditorFeature
             context.ActiveMaterial = hit.Mesh.Faces[hit.Face].Material;
             context.Status($"Picked up {context.ActiveMaterial}");
         }));
+    }
+
+    /// <summary>Mirrors the texture: projections negate their scale (mirror about the texture origin), explicit UVs mirror in place.</summary>
+    static void FlipTexture(EditorContext ctx, bool horizontal)
+    {
+        var size = TextureOps.SizeOf(ctx);
+        TextureOps.Edit(ctx, horizontal ? "Flip U" : "Flip V", faces =>
+        {
+            foreach (var f in faces)
+            {
+                if (UvSpace.IsExplicit(f.Face)) Justify.Flip([f], horizontal, size);
+                else f.Face.Map = horizontal ? f.Face.Map with { ScaleU = -f.Face.Map.ScaleU } : f.Face.Map with { ScaleV = -f.Face.Map.ScaleV };
+            }
+        });
     }
 }
