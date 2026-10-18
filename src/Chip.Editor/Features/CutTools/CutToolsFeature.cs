@@ -22,6 +22,8 @@ public sealed class CutToolsFeature : IEditorFeature
         ctx.Commands.AddReference("Tools", "Tab", "clip: keep front, back or both");
         ctx.Commands.AddReference("Tools", "Enter", "clip or knife: apply the cut");
         ctx.Commands.AddReference("Tools", "Backspace", "knife: remove the last point");
-        ctx.Commands.AddReference("Tools", "1 – 8", "bevel: segments while dragging");
+        ctx.Commands.AddReference("Tools", "Wheel / 1 – 9", "bevel: segments");
+        ctx.Commands.AddReference("Tools", "Ctrl + drag", "bevel: width off the grid");
+        ctx.Commands.AddReference("Tools", "Enter / Esc", "bevel: apply / cancel");
     }
 }

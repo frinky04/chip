@@ -11,7 +11,7 @@ namespace Chip.Editor;
 /// <summary>
 /// <c>Chip --shot [level.chip|-] out.png [state] [--run cmd.id,cmd.id]</c>: renders the whole editor UI from an invisible
 /// window into an offscreen buffer, after an optional preset <c>state</c> (empty|objects|faces|block|blockpreview|polygonpreview|
-/// backfaces|shortcuts|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale|hotspot-editor) and a
+/// backfaces|bevelpending|shortcuts|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale|hotspot-editor) and a
 /// comma-separated list of command ids. Every feature can prove its UI headlessly this way.
 /// </summary>
 public sealed partial class EditorApp
@@ -59,6 +59,17 @@ public sealed partial class EditorApp
                 ctx.SetTool("block");
                 (ctx.ActiveTool as Tools.BlockTool)?.PreviewForCapture();
                 break;
+            case "bevelpending" when doc.Meshes.Count > 2: // a wall's top edges, 3-segment bevel waiting for Enter
+            {
+                ctx.SetMode(SelectMode.Edge);
+                var wall = doc.Meshes[2];
+                float top = wall.Positions.Max(p => p.Y);
+                foreach (var e in wall.Edges())
+                    if (wall.Positions[e.A].Y > top - 1e-4f && wall.Positions[e.B].Y > top - 1e-4f) ctx.Sel.Add(ElementRef.EdgeOf(wall.Id, e));
+                ctx.SetTool("bevel");
+                if (ctx.ActiveTool is Tools.BevelTool bevel) { bevel.Width = 0.125f; bevel.Segments = 3; bevel.Refresh(ctx); }
+                break;
+            }
             case "polygonpreview":
                 ctx.SetTool("polygon");
                 (ctx.ActiveTool as Tools.PolygonTool)?.PreviewForCapture();

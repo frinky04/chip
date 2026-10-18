@@ -98,7 +98,7 @@ public sealed class EditorContext
     public void SetTool(IViewportTool tool)
     {
         if (ActiveTool == tool) return;
-        ActiveTool?.Cancel(this);
+        ActiveTool?.Deactivate(this);
         ActiveTool = tool;
         tool.Activate(this);
     }
@@ -111,8 +111,8 @@ public sealed class EditorContext
         if (_tools.Find(t => t.Id == id) is { } t) SetTool(t);
     }
 
-    /// <summary>Abandons whatever the active tool is doing (used before undo, new, open).</summary>
-    public void CancelInteraction() => ActiveTool?.Cancel(this);
+    /// <summary>Abandons whatever the active tool is doing (used before undo, new, open). True if something was in progress.</summary>
+    public bool CancelInteraction() => ActiveTool?.Cancel(this) ?? false;
 
     /// <summary>Switches selection mode (converting the selection) and returns to the default tool.</summary>
     public void SetMode(SelectMode mode)
@@ -147,6 +147,8 @@ public sealed class EditorContext
     public Vector2 Mouse { get; set; }
     /// <summary>Element under the cursor, highlighted by the renderer. Tools set it.</summary>
     public ElementRef? Hover { get; set; }
+    /// <summary>Mouse wheel steps this frame, for a tool with <see cref="IViewportTool.CapturesWheel"/> (the camera doesn't see them).</summary>
+    public float ToolWheel { get; set; }
 
     // ---- Status and host requests ----
 

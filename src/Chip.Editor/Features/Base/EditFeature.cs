@@ -57,7 +57,7 @@ public sealed class EditFeature : IEditorFeature
 
     void Undo()
     {
-        _ctx.CancelInteraction();
+        if (_ctx.CancelInteraction()) return; // undoing an unfinished operation is cancelling it, not the step before
         var label = _ctx.Session.UndoLabel;
         if (_ctx.Session.Undo()) _ctx.Status($"Undid {label}");
     }

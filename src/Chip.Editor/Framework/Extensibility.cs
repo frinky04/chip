@@ -26,8 +26,20 @@ public interface IViewportTool
 
     void Activate(EditorContext ctx) { }
 
-    /// <summary>Called when another tool takes over or on Esc. Return true if an operation was in progress (and is now undone).</summary>
+    /// <summary>On Esc, and before undo/new/open. Return true if an operation was in progress (and is now undone).</summary>
     bool Cancel(EditorContext ctx);
+
+    /// <summary>
+    /// Another tool is taking over. Defaults to <see cref="Cancel"/>; tools with a pending result the user has already
+    /// set up (a bevel waiting for Enter) commit it instead.
+    /// </summary>
+    void Deactivate(EditorContext ctx) => Cancel(ctx);
+
+    /// <summary>
+    /// While true and the viewport is hovered, the mouse wheel goes to the tool (<see cref="EditorContext.ToolWheel"/>)
+    /// instead of the camera.
+    /// </summary>
+    bool CapturesWheel => false;
 
     /// <summary>One frame of input while the viewport is hovered or the tool is busy. Read the mouse from <see cref="EditorContext"/>.</summary>
     void Update(EditorContext ctx);

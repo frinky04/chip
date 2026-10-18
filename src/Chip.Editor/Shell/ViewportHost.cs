@@ -94,6 +94,14 @@ public sealed partial class EditorApp
     void UpdateViewport(float dt)
     {
         if (Ctx.Gizmo.PivotDragging) { UpdatePivotDrag(); return; }
+        // A tool that wants the wheel (bevel segments) gets it before the camera zooms.
+        var io = ImGui.GetIO();
+        Ctx.ToolWheel = 0;
+        if (Ctx.ViewportHovered && Ctx.ActiveTool is { CapturesWheel: true } && io.MouseWheel != 0)
+        {
+            Ctx.ToolWheel = io.MouseWheel;
+            io.MouseWheel = 0;
+        }
         bool busy = Ctx.Interacting;
         if (!Ctx.ViewportHovered && !busy && !_nav.Active) { Ctx.Hover = null; return; }
         bool free = Ctx.ViewportHovered && !busy && !_nav.Active;

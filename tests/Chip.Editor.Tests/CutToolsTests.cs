@@ -110,6 +110,78 @@ public class CutToolsTests
         Assert.Single(ctx.Sel.Items); // the snapshot restores the selection too
     }
 
+    static (EditorContext Ctx, BevelTool Bevel) PendingBevel()
+    {
+        var ctx = WithBox(out var box);
+        ctx.Session.Do("Earlier edit", [box.Id], () => box.Name = "crate"); // something for undo to (not) reach
+        ctx.SetMode(SelectMode.Edge);
+        ctx.Sel.Add(ElementRef.EdgeOf(box.Id, box.Edges().First()));
+        var bevel = Tool<BevelTool>(ctx);
+        bevel.Width = 0.25f;
+        bevel.Segments = 1;
+        ctx.SetTool(bevel);
+        return (ctx, bevel);
+    }
+
+    [Fact]
+    public void Opening_the_bevel_tool_shows_a_live_bevel_that_stays_adjustable()
+    {
+        var (ctx, bevel) = PendingBevel();
+        Assert.True(bevel.Pending);
+        Assert.True(ctx.Session.InGesture);
+        Assert.Equal(7, ctx.Doc.Meshes[0].Faces.Count); // chamfer previewed straight away
+
+        bevel.Segments = 3;
+        bevel.Refresh(ctx);
+        Assert.Equal(9, ctx.Doc.Meshes[0].Faces.Count); // re-run from the original, not stacked
+
+        bevel.Commit(ctx);
+        Assert.False(bevel.Pending);
+        Assert.Equal("Bevel", ctx.Session.UndoLabel);
+        ctx.Commands.Execute("edit.undo");
+        Assert.Equal(6, ctx.Doc.Meshes[0].Faces.Count);
+        Assert.Equal("Earlier edit", ctx.Session.UndoLabel);
+    }
+
+    [Fact]
+    public void Esc_and_undo_cancel_a_pending_bevel_without_touching_earlier_steps()
+    {
+        foreach (var command in new[] { "edit.cancel", "edit.undo" })
+        {
+            var (ctx, bevel) = PendingBevel();
+            Assert.True(ctx.Commands.Execute(command));
+            Assert.False(bevel.Pending);
+            Assert.Equal(6, ctx.Doc.Meshes[0].Faces.Count);
+            Assert.Single(ctx.Sel.Items); // selection restored with the snapshot
+            Assert.Equal("Earlier edit", ctx.Session.UndoLabel);
+            Assert.Equal("crate", ctx.Doc.Meshes[0].Name);
+        }
+    }
+
+    [Fact]
+    public void Switching_tools_applies_a_pending_bevel()
+    {
+        var (ctx, bevel) = PendingBevel();
+        ctx.SetTool("select");
+        Assert.False(bevel.Pending);
+        Assert.Equal(7, ctx.Doc.Meshes[0].Faces.Count);
+        Assert.Equal("Bevel", ctx.Session.UndoLabel);
+    }
+
+    [Fact]
+    public void Dragged_bevel_widths_snap_to_the_grid_unless_ctrl_or_snap_is_off()
+    {
+        var ctx = WithBox(out _);
+        ctx.Grid = 0.25f;
+        ctx.Snap = true;
+        Assert.Equal(0.25f, BevelTool.SnapWidth(ctx, 0.2f, free: false));
+        Assert.Equal(0.5f, BevelTool.SnapWidth(ctx, 0.4f, free: false));
+        Assert.Equal(0.2f, BevelTool.SnapWidth(ctx, 0.2f, free: true));
+        Assert.Equal(0f, BevelTool.SnapWidth(ctx, -1f, free: true));
+        ctx.Snap = false;
+        Assert.Equal(0.2f, BevelTool.SnapWidth(ctx, 0.2f, free: false));
+    }
+
     [Fact]
     public void Idle_cut_tools_have_nothing_to_cancel()
     {
