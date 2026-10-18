@@ -106,6 +106,7 @@ public static class GlbExporter
 
         var tri = new List<int>();
         var bakeSources = new List<CollisionSource>();
+        int tessBefore = 0, tessAfter = 0;
         foreach (var mesh in doc.Meshes)
         {
             if (mesh.Hidden && !opt.IncludeHidden) continue;
@@ -141,7 +142,7 @@ public static class GlbExporter
                 CollisionMode.Only => "-colonly",
                 CollisionMode.ConvexOnly => "-convcolonly",
                 CollisionMode.None => "",
-                _ => doc.ExportCollision && !baked ? "-col" : "",
+                _ => doc.ExportCollision && !baked && !opt.Tessellate ? "-col" : "",
             };
             int before = nodes.Count;
             var meshExtras = new JsonObject { ["chip_mesh"] = mesh.Name, ["chip_id"] = mesh.Id };
@@ -155,7 +156,17 @@ public static class GlbExporter
                     if (opt.Remap(m) is { } path) remap[m] = path;
                 if (remap.Count > 0) meshExtras["chip_remap"] = remap;
             }
-            AddNode(name, suffix, Primitives(mesh, cornerNormals, faces, withMaterial: !collisionOnly), meshExtras);
+            // Tessellation (per-vertex lighting) only changes what renders; colliders always come from the original faces.
+            if (opt.Tessellate && !collisionOnly && faces.Count > 0)
+            {
+                var t = Tessellator.Tessellate(mesh, faces, cornerNormals, new TessellateOptions(opt.TessellateSpacing));
+                tessBefore += faces.Sum(f => Math.Max(0, mesh.Faces[f].Verts.Length - 2));
+                tessAfter += t.TriangleCount;
+                AddNode(name, suffix, Primitives(t.Mesh, t.CornerNormals, Enumerable.Range(0, t.Mesh.Faces.Count).ToList(), withMaterial: true), meshExtras);
+                if (collides && !baked)
+                    AddNode(name + "_col", "-colonly", Primitives(mesh, cornerNormals, faces, withMaterial: false), new JsonObject { ["chip_baked"] = true });
+            }
+            else AddNode(name, suffix, Primitives(mesh, cornerNormals, faces, withMaterial: !collisionOnly), meshExtras);
             AddNode(name + "_clip", "-colonly", Primitives(mesh, cornerNormals, clipFaces, withMaterial: false),
                 new JsonObject { ["chip_tool"] = "clip", ["chip_id"] = mesh.Id });
             AddNode(name + "_trigger", "-colonly", Primitives(mesh, cornerNormals, triggerFaces, withMaterial: false),
@@ -307,7 +318,11 @@ public static class GlbExporter
             for (long i = bin.Length; i < binLen; i++) w.Write((byte)0);
         }
         w.Flush();
-        return new ExportResult(outStream.ToArray(), sideFiles, meshCount, entityCount) { Collision = collisionStats };
+        return new ExportResult(outStream.ToArray(), sideFiles, meshCount, entityCount)
+        {
+            Collision = collisionStats,
+            Tessellated = opt.Tessellate ? (tessBefore, tessAfter) : null,
+        };
     }
 
     /// <summary>The entity's node name: its name, else <c>class_id</c>.</summary>

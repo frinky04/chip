@@ -77,6 +77,13 @@ public class GltfValidatorTests(ITestOutputHelper output)
         entitiesOnly.Add(new Entity { ClassName = "info_target" });
         Write("entities.glb", entitiesOnly);
         Write("empty.glb", new Document());
+        var tessellated = doc.Clone(); // baked collision (the default) plus tessellated render meshes
+        tessellated.Export.Tessellate = true;
+        tessellated.Export.TessellateSpacing = 0.5f;
+        Write("tessellated.glb", tessellated);
+        var hulls = doc.Clone();
+        hulls.Export.CollisionHulls = true;
+        Write("hulls.glb", hulls);
 
         var validator = Environment.GetEnvironmentVariable("CHIP_GLTF_VALIDATOR");
         if (string.IsNullOrEmpty(validator) || !Directory.Exists(Path.Combine(validator, "node_modules", "gltf-validator")))
