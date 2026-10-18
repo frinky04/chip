@@ -59,10 +59,18 @@ public sealed class FastTextureTool : IViewportTool
 
     public static void RegisterReferences(CommandRegistry commands)
     {
-        commands.AddReference("Fast texture", "1-5, Ctrl+1-3", "unwrap, follow quads spacing");
-        commands.AddReference("Fast texture", "Drag, handles", "move, scale UVs");
-        commands.AddReference("Fast texture", "Q E, Alt+R T", "rotate, flip UVs");
-        commands.AddReference("Fast texture", "[ ] F R B C T G", "grid, frame, reset, repeat, coords, material, world scale");
+        commands.AddReference("Fast texture", "drag", "move UVs (drag a handle to scale)");
+        commands.AddReference("Fast texture", "Q / E", "rotate UVs");
+        commands.AddReference("Fast texture", "Alt+R / Alt+T", "flip UVs horizontally / vertically");
+        commands.AddReference("Fast texture", "1 – 5", "unwrap: existing, conforming, square, follow quads, planar");
+        commands.AddReference("Fast texture", "Ctrl+1 – 3", "follow-quads spacing");
+        commands.AddReference("Fast texture", "[ / ]", "grid finer / coarser");
+        commands.AddReference("Fast texture", "F", "frame the selection");
+        commands.AddReference("Fast texture", "R", "reset the view");
+        commands.AddReference("Fast texture", "B", "repeat the texture behind");
+        commands.AddReference("Fast texture", "C", "show coordinates");
+        commands.AddReference("Fast texture", "T", "show the original material");
+        commands.AddReference("Fast texture", "G", "world-scale grid");
     }
 
     public void Activate(EditorContext ctx)

@@ -57,7 +57,7 @@ public sealed class TexturingFeature : IEditorFeature
         ];
         foreach (var (id, label, key, x, y) in shifts)
             c.Add($"texture.{id}", label, () => Shift(ctx, x, y), hotkey: key, canExecute: Has);
-        c.AddReference("Texture", "Num1-4, Num6-9", "shift texture one grid step");
+        c.AddReference("Texture", "Num1 – 9", "shift texture one grid step (not Num5)");
 
         (string Id, string Label, string Key, float X, float Y)[] scales =
         [

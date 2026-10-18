@@ -53,10 +53,14 @@ public sealed class HotspotEditor
 
     public static void RegisterReferences(CommandRegistry c)
     {
-        c.AddReference("Hotspot editor", "Drag, handles", "draw, move, resize patches");
-        c.AddReference("Hotspot editor", "Alt+A D E T", "rotation, mirror X, mirror Y, tiling");
-        c.AddReference("Hotspot editor", "[ ] Alt+V Alt+B", "grid, hide texture, hide patches");
-        c.AddReference("Hotspot editor", "Del, F", "delete patch, frame texture");
+        c.AddReference("Hotspot editor", "drag", "draw a patch (drag a patch or handle to move or resize)");
+        c.AddReference("Hotspot editor", "Alt+A", "allow rotation");
+        c.AddReference("Hotspot editor", "Alt+D / Alt+E", "allow mirror X / mirror Y");
+        c.AddReference("Hotspot editor", "Alt+T", "tiling patch");
+        c.AddReference("Hotspot editor", "[ / ]", "grid finer / coarser");
+        c.AddReference("Hotspot editor", "Alt+V / Alt+B", "hide texture / hide patches");
+        c.AddReference("Hotspot editor", "Del", "delete the patch");
+        c.AddReference("Hotspot editor", "F", "frame the texture");
     }
 
     public void ToggleOpen(EditorContext ctx)
