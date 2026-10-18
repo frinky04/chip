@@ -43,7 +43,7 @@ Goal: after this, a feature lives in **its own files** and registers itself. No 
 
 Each stream gets a branch `feat/<letter>-<name>` in its own worktree off post-Phase-0 `main`. "Owns" means only that stream creates or edits those paths. **Spec refs** point at `SPEC.md` sections.
 
-### Wave 1 (start together)
+### Wave 1 (start together): **merged** (A B C D E G I K)
 
 **A · Mesh operations** (§6) · owns `Core/Geometry/Ops/{Connect,MergeFaces,Bridge,Inset,Collapse,Mirror,Detach,PushPull,EdgeExtrude}.cs`, `Editor/Features/MeshOpsFeature.cs`
 - Connect `V`, Merge faces `Backspace`, Bridge `Shift+C`, Inset/Outset `I/O` (interactive amount), Collapse, Weld overlapping `Shift+Ctrl+Alt+M`, Merge meshes `M`, Detach `N` / Extract `Alt+N`, Mirror `Shift+Z`.
