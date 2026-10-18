@@ -10,8 +10,9 @@ public static partial class MeshOps
     /// <summary>
     /// Knife cut as seen from <paramref name="eye"/>: the polyline <paramref name="path"/> is projected onto each face
     /// along rays from the eye, and every face it crosses from border to border is split along it (a projected point
-    /// inside a face becomes a vertex of the cut). Parts of the line that end inside a face are ignored, since a face
-    /// can't hold a dangling edge. Crossed edges get one shared vertex, inserted into every face using that edge, so a
+    /// inside a face becomes a vertex of the cut). Where the line starts or ends inside a face, that end carries on in
+    /// its direction to the face's border (Scythe / Source 2 behaviour; a face can't hold a dangling edge). The extension
+    /// stays within that face. Crossed edges get one shared vertex, inserted into every face using that edge, so a
     /// closed mesh stays closed. Split faces keep index, material and mapping; extra pieces are appended.
     /// </summary>
     /// <param name="faces">Faces to cut; null means all faces.</param>
@@ -59,19 +60,41 @@ public static partial class MeshOps
             var origin = m.Positions[verts[0]];
             if (frontFacingOnly && Vector3.Dot(normal, m.FaceCenter(f) - eye) >= 0) continue;
 
-            // Crossings of the projected path with this face's border, ordered along the path.
+            // Face plane frame for inside tests and projection of interior path points.
+            var bu = Vector3.Normalize(Vector3.Cross(normal, MathF.Abs(normal.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX));
+            var bv = Vector3.Cross(normal, bu);
+            Vector2 To2(Vector3 p) => new(Vector3.Dot(p - origin, bu), Vector3.Dot(p - origin, bv));
+            var poly = verts.Select(v => To2(m.Positions[v])).ToList();
+            Vector3? Project(Vector3 p)
+            {
+                float den = Vector3.Dot(p - eye, normal);
+                if (MathF.Abs(den) < 1e-9f) return null;
+                float t = Vector3.Dot(origin - eye, normal) / den;
+                return t > 0 ? eye + (p - eye) * t : null;
+            }
+            bool Inside(Vector3 p) => Project(p) is { } q && PointInPolygon(To2(q), poly) && DistanceToBorder(To2(q), poly) > 1e-4f;
+
+            // A line that stops inside this face carries on in its direction to the face's border (Scythe / Source 2):
+            // only within this face, and only at an end that is actually inside it.
+            bool extendStart = Inside(path[0]), extendEnd = Inside(path[^1]);
+
+            // Crossings of the projected path with this face's border, ordered along the path. G is the path parameter:
+            // segment index + fraction, below 0 or beyond the last segment for the extensions.
             var crossings = new List<(double G, int Corner, bool AtVertex, float T, Vector3 P)>();
             for (int i = 0; i < planes.Length; i++)
             {
                 if (planes[i] is not { } pl) continue;
                 var dist = verts.Select(v => Vector3.Dot(m.Positions[v] - pl.A, pl.N)).ToArray();
+                bool back = extendStart && i == 0, forward = extendEnd && i == planes.Length - 1;
                 bool Within(Vector3 x, out double s)
                 {
                     var r = x - eye;
                     float alpha = Vector3.Dot(Vector3.Cross(r, pl.Rb), pl.N) / pl.Det;
                     float beta = Vector3.Dot(Vector3.Cross(pl.Ra, r), pl.N) / pl.Det;
                     s = alpha + beta > 1e-9f ? beta / (alpha + beta) : 0;
-                    return alpha >= -1e-5f && beta >= -1e-5f && alpha + beta > 1e-9f;
+                    if (alpha + beta <= 1e-9f) return false;
+                    if (alpha >= -1e-5f && beta >= -1e-5f) return true;
+                    return (back && beta < 0 && alpha > 0) || (forward && alpha < 0 && beta > 0); // past A / past B
                 }
                 for (int j = 0; j < k; j++)
                 {
@@ -88,23 +111,23 @@ public static partial class MeshOps
                     if (Within(x, out var sx)) crossings.Add((i + sx, j, false, t, x));
                 }
             }
+            // Each extension stops at the first border it meets.
+            const double Eps = 1e-6;
+            double lastG = planes.Length;
+            if (crossings.Any(x => x.G < -Eps))
+            {
+                double nearest = crossings.Where(x => x.G < -Eps).Max(x => x.G);
+                crossings.RemoveAll(x => x.G < nearest - Eps);
+            }
+            if (crossings.Any(x => x.G > lastG + Eps))
+            {
+                double nearest = crossings.Where(x => x.G > lastG + Eps).Min(x => x.G);
+                crossings.RemoveAll(x => x.G > nearest + Eps);
+            }
             if (crossings.Count < 2) continue;
             crossings.Sort((a, b) => a.G.CompareTo(b.G));
             for (int c = crossings.Count - 1; c > 0; c--)
                 if (Vector3.DistanceSquared(crossings[c].P, crossings[c - 1].P) < 1e-10f) crossings.RemoveAt(c);
-
-            // Face plane frame for inside tests and projection of interior path points.
-            var bu = Vector3.Normalize(Vector3.Cross(normal, MathF.Abs(normal.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX));
-            var bv = Vector3.Cross(normal, bu);
-            Vector2 To2(Vector3 p) => new(Vector3.Dot(p - origin, bu), Vector3.Dot(p - origin, bv));
-            var poly = verts.Select(v => To2(m.Positions[v])).ToList();
-            Vector3? Project(Vector3 p)
-            {
-                float den = Vector3.Dot(p - eye, normal);
-                if (MathF.Abs(den) < 1e-9f) return null;
-                float t = Vector3.Dot(origin - eye, normal) / den;
-                return t > 0 ? eye + (p - eye) * t : null;
-            }
 
             var chords = new List<(int Entry, List<Vector3> Inner, int Exit)>();
             for (int c = 0; c + 1 < crossings.Count; c++)
@@ -112,9 +135,11 @@ public static partial class MeshOps
                 var (g0, g1) = (crossings[c].G, crossings[c + 1].G);
                 var inner = new List<Vector3>();
                 bool ok = true;
-                for (int p = (int)Math.Floor(g0) + 1; p < g1 - 1e-6 && ok; p++)
+                for (int p = Math.Max((int)Math.Floor(g0) + 1, 0); p < g1 - Eps && p < path.Count && ok; p++)
                 {
-                    if (p <= g0 + 1e-6) continue;
+                    if (p <= g0 + Eps) continue;
+                    // An extended end point sits on the straight run to the border: no vertex there.
+                    if ((p == 0 && g0 < -Eps) || (p == path.Count - 1 && g1 > lastG + Eps)) continue;
                     if (Project(path[p]) is { } q) inner.Add(q); else ok = false;
                 }
                 if (!ok) continue;

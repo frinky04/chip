@@ -47,13 +47,50 @@ public class KnifeTests
     }
 
     [Fact]
-    public void A_line_that_ends_inside_the_face_cuts_nothing()
+    public void A_line_that_ends_inside_the_face_carries_on_to_the_far_border()
     {
         var m = Quad();
         var r = MeshOps.Knife(m, [new Vector3(-1, 0, 1), new Vector3(1, 0, 1)], Above);
-        Assert.Single(m.Faces);
-        Assert.Empty(r.CutEdges);
-        Assert.Equal(4, m.Positions.Count);
+        Assert.Equal(2, m.Faces.Count);
+        Assert.Single(r.CutEdges);
+        Assert.Equal(6, m.Positions.Count); // no vertex where the line stopped
+        Assert.Contains(m.Positions, p => Vector3.Distance(p, new Vector3(2, 0, 1)) < 1e-4f);
+    }
+
+    [Fact]
+    public void A_line_wholly_inside_a_face_extends_both_ways()
+    {
+        var m = Quad();
+        MeshOps.Knife(m, [new Vector3(0.5f, 0, 1), new Vector3(1.5f, 0, 1)], Above);
+        Assert.Equal(2, m.Faces.Count);
+        Assert.Contains(m.Positions, p => Vector3.Distance(p, new Vector3(0, 0, 1)) < 1e-4f);
+        Assert.Contains(m.Positions, p => Vector3.Distance(p, new Vector3(2, 0, 1)) < 1e-4f);
+        Assert.Equal(4f, Topology.FaceArea(m, 0) + Topology.FaceArea(m, 1), 4);
+    }
+
+    [Fact]
+    public void An_extension_that_reaches_a_corner_splits_through_it()
+    {
+        var m = Quad();
+        MeshOps.Knife(m, [new Vector3(0.5f, 0, 0.5f), new Vector3(1, 0, 1)], Above);
+        Assert.Equal(2, m.Faces.Count);
+        Assert.Equal(4, m.Positions.Count); // diagonal corner to corner: no new vertices
+        Assert.All(m.Faces, f => Assert.Equal(3, f.Verts.Length));
+    }
+
+    [Fact]
+    public void The_extension_stays_inside_the_face_the_line_ends_in()
+    {
+        // Two coplanar quads sharing the x = 2 edge. The line enters the first and stops inside it.
+        var m = Quad();
+        m.Positions.AddRange([new(4, 0, 2), new(4, 0, 0)]);
+        m.Faces.Add(new Face([3, 2, 4, 5], "dev_a", m.Faces[0].Map));
+        Assert.True(m.FaceNormal(1).Y > 0.99f);
+
+        MeshOps.Knife(m, [new Vector3(-1, 0, 1), new Vector3(1, 0, 1)], Above);
+        Assert.Equal(3, m.Faces.Count); // first quad split, second only gains the shared-edge vertex
+        Assert.Equal(5, m.Faces[1].Verts.Length);
+        Assert.DoesNotContain(m.Positions, p => Vector3.Distance(p, new Vector3(4, 0, 1)) < 1e-4f);
     }
 
     [Fact]

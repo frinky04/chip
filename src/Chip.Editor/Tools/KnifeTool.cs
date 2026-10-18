@@ -11,7 +11,8 @@ namespace Chip.Editor.Tools;
 
 /// <summary>
 /// Knife: click points (snapped to vertices, edges and the grid) to draw a line across faces, then Enter splits every
-/// face the line crosses from border to border, as seen from the camera. Cuts the selected faces if there are any,
+/// face the line crosses, as seen from the camera; an end that stops inside a face carries on in its direction to that
+/// face's border. Cuts the selected faces if there are any,
 /// otherwise the meshes under the line.
 /// </summary>
 public sealed class KnifeTool : IViewportTool
@@ -76,7 +77,7 @@ public sealed class KnifeTool : IViewportTool
         int pieces = targets.Sum(t => MeshOps.Knife(t.Mesh.Clone(), path, eye, t.Faces, t.FrontOnly).NewFaces.Count);
         if (pieces == 0)
         {
-            ctx.Status("The line doesn't cross any face from edge to edge. Start and end it outside the faces, or on their edges.", error: true);
+            ctx.Status("The line doesn't cross any face. Draw it over the faces you want to cut.", error: true);
             return 0;
         }
         ctx.Session.Do("Knife", () =>
