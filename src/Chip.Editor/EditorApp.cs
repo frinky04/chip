@@ -44,6 +44,7 @@ public sealed partial class EditorApp : IDisposable
         Ctx = new EditorContext(session, lib)
         {
             TextureId = name => _renderer.TextureId(name),
+            UploadTexture = (w, h, rgba) => _renderer.UploadTexture(w, h, rgba),
             ConfirmDiscard = ConfirmDiscard,
             Quit = () => _window.Close(),
         };
@@ -79,6 +80,7 @@ public sealed partial class EditorApp : IDisposable
         DrawInspector(new Vector2(pos.X + size.X - inspectorW, pos.Y), new Vector2(inspectorW, size.Y - statusH));
         DrawStatusBar(new Vector2(pos.X, pos.Y + size.Y - statusH), new Vector2(size.X, statusH));
         DrawViewport(new Vector2(pos.X + toolW, pos.Y), new Vector2(size.X - toolW - inspectorW, size.Y - statusH), dt);
+        foreach (var panel in Ctx.Panels) panel(Ctx);
         HandleHotkeys();
         DrawConfirmModal();
         DrawShortcutsSheet();

@@ -22,6 +22,7 @@ public sealed class EditorContext
     readonly List<IViewportTool> _tools = new();
     readonly List<IInspectorSection> _sections = new();
     readonly List<MouseBinding> _mouseBindings = new();
+    readonly List<Action<EditorContext>> _panels = new();
 
     public EditorContext(Session session, MaterialLibrary materials, Func<double>? clock = null)
     {
@@ -46,6 +47,10 @@ public sealed class EditorContext
     public IReadOnlyList<IViewportTool> Tools => _tools;
     public IReadOnlyList<IInspectorSection> Sections => _sections;
     public IReadOnlyList<MouseBinding> MouseBindings => _mouseBindings;
+    /// <summary>Floating windows (e.g. the material browser) the host draws every frame after the fixed panels.</summary>
+    public IReadOnlyList<Action<EditorContext>> Panels => _panels;
+
+    public void AddPanel(Action<EditorContext> draw) => _panels.Add(draw);
 
     /// <summary>Registers a tool and its "Tools" menu command. The first tool registered with id "select" is the default.</summary>
     public void AddTool(IViewportTool tool)
@@ -160,6 +165,9 @@ public sealed class EditorContext
 
     /// <summary>ImGui texture handle for a material's preview. The host wires this to the renderer.</summary>
     public Func<string, nint> TextureId { get; set; } = _ => 0;
+
+    /// <summary>Uploads top-down RGBA8 pixels (width, height, data) as an ImGui texture handle, for thumbnails. 0 when headless.</summary>
+    public Func<int, int, byte[], nint> UploadTexture { get; set; } = (_, _, _) => 0;
 
     // ---- Shared helpers ----
 

@@ -51,7 +51,7 @@ public sealed class BlockTool : IViewportTool
         if (Step(ctx.View, ctx.Doc, ctx.Mouse, ctx.ViewportHovered, ctx.Grid, ctx.Snap, ctx.Backfaces) is not { } box) return;
         ctx.Session.Do("Create Block", () =>
         {
-            var mesh = ctx.Doc.Add(MeshOps.CreateBox(box.Min, box.Max, ctx.ActiveMaterial, TextureMapping.Default));
+            var mesh = ctx.Doc.Add(MeshOps.CreateBox(box.Min, box.Max, ctx.ActiveMaterial, ctx.Materials.MappingFor(ctx.ActiveMaterial)));
             ctx.Sel.ConvertTo(SelectMode.Object, ctx.Doc);
             ctx.Sel.Clear();
             ctx.Sel.Add(ElementRef.Object(mesh.Id));

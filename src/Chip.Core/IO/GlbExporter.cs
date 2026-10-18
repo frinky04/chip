@@ -12,6 +12,9 @@ namespace Chip.Core.IO;
 /// per-corner normals (flat, or smoothed across soft edges), explicit UVs where present else the face projection,
 /// and material images embedded as PNG. Collision follows Godot's import suffixes: <c>-col</c> (render + trimesh
 /// collider, from <see cref="Document.ExportCollision"/> or <see cref="CollisionMode.Default"/>) and <c>-colonly</c>.
+/// Tool materials (<see cref="ToolMaterial"/>): nodraw and skip faces never render; clip faces, and nodraw faces of a
+/// colliding mesh, go to a <c>name_clip-colonly</c> node; trigger faces go to <c>name_trigger-colonly</c> with
+/// <c>extras.chip_tool = "trigger"</c>. Collision-only sections carry no material.
 /// </summary>
 public static class GlbExporter
 {
@@ -58,9 +61,9 @@ public static class GlbExporter
             if (materialIndex.TryGetValue(name, out var idx)) return idx;
             var info = materials.Get(name);
             var pbr = new JsonObject { ["metallicFactor"] = 0f, ["roughnessFactor"] = 1f };
-            if (info.Path != null && File.Exists(info.Path))
+            if (MaterialLibrary.ExportImage(info) is { } image)
             {
-                images.Add(new JsonObject { ["bufferView"] = View(File.ReadAllBytes(info.Path), null), ["mimeType"] = "image/png", ["name"] = info.Name });
+                images.Add(new JsonObject { ["bufferView"] = View(image.Data, null), ["mimeType"] = image.MimeType, ["name"] = info.Name });
                 textures.Add(new JsonObject { ["source"] = images.Count - 1, ["sampler"] = 0 });
                 pbr["baseColorTexture"] = new JsonObject { ["index"] = textures.Count - 1 };
             }
@@ -73,8 +76,51 @@ public static class GlbExporter
         foreach (var mesh in doc.Meshes)
         {
             var cornerNormals = Topology.CornerNormals(mesh);
+            bool collides = mesh.Collision == CollisionMode.Only || (mesh.Collision == CollisionMode.Default && doc.ExportCollision);
+            var faces = new List<int>();
+            var clipFaces = new List<int>();
+            var triggerFaces = new List<int>();
+            for (int f = 0; f < mesh.Faces.Count; f++)
+            {
+                var tool = MaterialLibrary.ToolKind(mesh.Faces[f].Material);
+                var target = tool switch
+                {
+                    ToolMaterial.None => faces,
+                    ToolMaterial.Trigger => triggerFaces,
+                    ToolMaterial.Skip => null,
+                    _ when mesh.Collision == CollisionMode.Only => faces, // the whole mesh is collision already
+                    ToolMaterial.Clip => clipFaces,
+                    _ => collides ? clipFaces : null, // nodraw
+                };
+                target?.Add(f);
+            }
+
+            string name = $"{mesh.Name}_{mesh.Id}";
+            string suffix = mesh.Collision switch
+            {
+                CollisionMode.Only => "-colonly",
+                CollisionMode.None => "",
+                _ => doc.ExportCollision ? "-col" : "",
+            };
+            AddNode(name, suffix, Primitives(mesh, cornerNormals, faces, withMaterial: true));
+            AddNode(name + "_clip", "-colonly", Primitives(mesh, cornerNormals, clipFaces, withMaterial: false));
+            AddNode(name + "_trigger", "-colonly", Primitives(mesh, cornerNormals, triggerFaces, withMaterial: false),
+                new JsonObject { ["chip_tool"] = "trigger" });
+        }
+
+        void AddNode(string name, string suffix, JsonArray primitives, JsonObject? extras = null)
+        {
+            if (primitives.Count == 0) return;
+            meshes.Add(new JsonObject { ["name"] = name, ["primitives"] = primitives });
+            var node = new JsonObject { ["name"] = name + suffix, ["mesh"] = meshes.Count - 1 };
+            if (extras != null) node["extras"] = extras;
+            nodes.Add(node);
+        }
+
+        JsonArray Primitives(PolyMesh mesh, Vector3[][] cornerNormals, List<int> faces, bool withMaterial)
+        {
             var primitives = new JsonArray();
-            foreach (var group in Enumerable.Range(0, mesh.Faces.Count).GroupBy(f => mesh.Faces[f].Material))
+            foreach (var group in faces.GroupBy(f => mesh.Faces[f].Material))
             {
                 var info = materials.Get(group.Key);
                 var pos = new List<Vector3>();
@@ -99,7 +145,7 @@ public static class GlbExporter
                 if (idx.Count == 0) continue;
                 var min = pos.Aggregate(new Vector3(float.MaxValue), Vector3.Min);
                 var max = pos.Aggregate(new Vector3(float.MinValue), Vector3.Max);
-                primitives.Add(new JsonObject
+                var primitive = new JsonObject
                 {
                     ["attributes"] = new JsonObject
                     {
@@ -108,19 +154,11 @@ public static class GlbExporter
                         ["TEXCOORD_0"] = Accessor(uv, 5126, "VEC2", 34962),
                     },
                     ["indices"] = Accessor(idx, 5125, "SCALAR", 34963),
-                    ["material"] = Material(group.Key),
-                });
+                };
+                if (withMaterial) primitive["material"] = Material(group.Key);
+                primitives.Add(primitive);
             }
-            if (primitives.Count == 0) continue;
-            string name = $"{mesh.Name}_{mesh.Id}";
-            meshes.Add(new JsonObject { ["name"] = name, ["primitives"] = primitives });
-            string suffix = mesh.Collision switch
-            {
-                CollisionMode.Only => "-colonly",
-                CollisionMode.None => "",
-                _ => doc.ExportCollision ? "-col" : "",
-            };
-            nodes.Add(new JsonObject { ["name"] = name + suffix, ["mesh"] = meshes.Count - 1 });
+            return primitives;
         }
 
         var root = new JsonObject

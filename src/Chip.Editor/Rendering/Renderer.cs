@@ -23,7 +23,8 @@ public sealed unsafe class Renderer : IDisposable
     readonly MaterialLibrary _lib;
     readonly uint _meshProg, _colorProg, _lineProg, _gridProg;
     readonly uint _sceneVao, _sceneVbo, _wireVao, _wireVbo, _overlayVao, _overlayVbo, _gridVao, _gridVbo;
-    readonly Dictionary<string, uint> _textures = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, (string? Path, uint Tex)> _textures = new(StringComparer.OrdinalIgnoreCase);
+    readonly List<uint> _uploads = new();
     readonly uint _missingTex;
 
     uint _msFbo, _msColor, _msDepth, _resolveFbo, _resolveTex;
@@ -50,11 +51,34 @@ public sealed unsafe class Renderer : IDisposable
         Upload(_gridVbo, [-g, 0, -g, g, 0, -g, g, 0, g, -g, 0, -g, g, 0, g, -g, 0, g], BufferUsageARB.StaticDraw);
 
         _missingTex = Checker();
-        foreach (var m in lib.All)
-            if (m.Path != null) _textures[m.Name] = LoadTexture(m.Path);
     }
 
-    public nint TextureId(string material) => (nint)_textures.GetValueOrDefault(material, _missingTex);
+    public nint TextureId(string material) => (nint)EnsureTexture(material);
+
+    /// <summary>
+    /// The material's GL texture, loaded on first use (large libraries never load unused textures) and reloaded when a
+    /// rescan points the name at another file. Unreadable or unknown materials get the missing checker.
+    /// </summary>
+    public uint EnsureTexture(string material)
+    {
+        var path = _lib.Get(material).Path;
+        if (_textures.TryGetValue(material, out var t) && t.Path == path) return t.Tex;
+        if (t.Tex != 0 && t.Tex != _missingTex) _gl.DeleteTexture(t.Tex);
+        uint tex = _missingTex;
+        if (path != null)
+            try { tex = LoadTexture(path); }
+            catch (Exception) { } // corrupt or unsupported image: keep the checker so the scene still draws
+        _textures[material] = (path, tex);
+        return tex;
+    }
+
+    /// <summary>Uploads top-down RGBA8 pixels as a mipmapped texture owned by the renderer (thumbnails).</summary>
+    public nint UploadTexture(int width, int height, byte[] rgba)
+    {
+        uint tex = CreateTexture(width, height, rgba);
+        _uploads.Add(tex);
+        return (nint)tex;
+    }
 
     /// <summary>Renders one frame and returns the resolved color texture (GL origin, flip V when displaying).</summary>
     /// <param name="backfaces">Draw back faces (darkened) so backface selection shows what it can pick.</param>
@@ -88,7 +112,7 @@ public sealed unsafe class Renderer : IDisposable
         _gl.BindVertexArray(_sceneVao);
         foreach (var (mat, first, count) in _batches)
         {
-            _gl.BindTexture(TextureTarget.Texture2D, _textures.GetValueOrDefault(mat, _missingTex));
+            _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
             _gl.DrawArrays(PrimitiveType.Triangles, first, (uint)count);
         }
 
@@ -419,7 +443,7 @@ public sealed unsafe class Renderer : IDisposable
 
     public void Dispose()
     {
-        foreach (var t in _textures.Values) _gl.DeleteTexture(t);
+        foreach (var t in _textures.Values.Select(v => v.Tex).Concat(_uploads).Distinct().Where(t => t != _missingTex)) _gl.DeleteTexture(t);
         _gl.DeleteTexture(_missingTex);
         _gl.DeleteTexture(_resolveTex);
         _gl.DeleteFramebuffer(_msFbo);
