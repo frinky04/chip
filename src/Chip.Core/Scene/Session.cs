@@ -1,3 +1,5 @@
+using Chip.Core.Geometry;
+
 namespace Chip.Core.Scene;
 
 /// <summary>
@@ -98,5 +100,43 @@ public sealed class Session
         Dirty = true;
         Version++;
         return true;
+    }
+
+    // ---- Per-mesh change tracking ----
+
+    readonly Dictionary<int, (ulong Hash, int Revision, PolyMesh Mesh)> _revisions = new();
+    int _revisionsVersion = -1, _nextRevision;
+    Document? _revisionsDoc;
+
+    /// <summary>
+    /// A number that changes whenever <paramref name="mesh"/>'s content does (anything <see cref="MeshHash"/> covers),
+    /// including across undo, redo and cancel, which swap in other mesh objects with the same ids. Per-mesh caches
+    /// (GPU buffers, picking structures) key on it. Returns -1 for meshes not in <see cref="Doc"/>.
+    /// The first call after <see cref="Version"/> changes rehashes every mesh, in parallel.
+    /// </summary>
+    public int MeshRevision(PolyMesh mesh)
+    {
+        SyncRevisions();
+        return _revisions.TryGetValue(mesh.Id, out var r) && ReferenceEquals(r.Mesh, mesh) ? r.Revision : -1;
+    }
+
+    void SyncRevisions()
+    {
+        if (_revisionsVersion == Version && ReferenceEquals(_revisionsDoc, Doc)) return;
+        var meshes = Doc.Meshes;
+        var hashes = new ulong[meshes.Count];
+        Parallel.For(0, meshes.Count, i => hashes[i] = MeshHash.Of(meshes[i]));
+        var live = new HashSet<int>();
+        for (int i = 0; i < meshes.Count; i++)
+        {
+            int id = meshes[i].Id;
+            live.Add(id);
+            _revisions[id] = _revisions.TryGetValue(id, out var r) && r.Hash == hashes[i]
+                ? r with { Mesh = meshes[i] }
+                : (hashes[i], ++_nextRevision, meshes[i]);
+        }
+        foreach (var id in _revisions.Keys.Where(id => !live.Contains(id)).ToList()) _revisions.Remove(id);
+        _revisionsVersion = Version;
+        _revisionsDoc = Doc;
     }
 }

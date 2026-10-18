@@ -96,3 +96,15 @@ sealed class UndoRedoBench : IBench
     }
     public void Run() { _s.Undo(); _s.Redo(); }
 }
+
+sealed class RevisionSyncBench : IBench
+{
+    readonly Session _s = new();
+    public string Name => "level/revision-sync";
+    public void Setup() => _s.Reset(Stress.Doc.Clone(), null);
+    public void Run()
+    {
+        _s.Touch(); // what every drag frame does
+        _s.MeshRevision(_s.Doc.Meshes[0]);
+    }
+}
