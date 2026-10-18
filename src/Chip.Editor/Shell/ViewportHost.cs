@@ -129,6 +129,7 @@ public sealed partial class EditorApp
     /// </summary>
     Vector2? ShotMouse()
     {
+        if (_captureFbo != 0 && _shotDragMouse is { } drag) return drag;
         if (_captureFbo == 0 || Environment.GetEnvironmentVariable("CHIP_SHOT_MOUSE") is not { } v) return null;
         var parts = v.Split(',');
         return parts.Length == 2 && float.TryParse(parts[0], System.Globalization.CultureInfo.InvariantCulture, out float x)

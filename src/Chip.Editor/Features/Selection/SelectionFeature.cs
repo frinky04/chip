@@ -44,6 +44,10 @@ public sealed class SelectionFeature : IEditorFeature
             DisplayLabel = () => sets.Last is { } s ? $"Restore {s.Name}" : "Restore selection set",
         });
 
+        c.AddReference("Select", "drag", "paint select: everything you sweep over (replaces)");
+        c.AddReference("Select", "Shift + drag", "paint into the selection");
+        c.AddReference("Select", "Ctrl + drag", "paint out of the selection");
+        c.AddReference("Select", "Ctrl+Alt + drag", "box select (with Shift: add)");
         c.AddReference("Select", "Double-click", "connected faces / edge loop / connected vertices");
         c.AddReference("Select", "CapsLock + double-click", "faces on the plane (or Mouse4 / Mouse5)");
         c.AddReference("Select", "Ctrl+Shift + click", "shortest path from the active element");

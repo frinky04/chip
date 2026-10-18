@@ -84,10 +84,12 @@ public sealed partial class EditorApp : IDisposable
 
     public void Frame(float dt)
     {
-        if (_bench == null) SyncModifiers();
+        if (_bench == null && _captureFbo == 0) SyncModifiers(); // captures never read the real keyboard
         UpdateUiScale(); // between frames: may rebuild the font atlas
         Ctx.SyncTexelDensity();
         _imgui.Update(dt);
+        // Capture drags: the backend re-reads the real mouse every frame, so hold the injected button after it has.
+        if (_shotButtonHeld) ImGui.GetIO().MouseDown[0] = true;
         var bg = Theme.Bg;
         _gl.ClearColor(bg.X, bg.Y, bg.Z, 1);
         _gl.Clear(ClearBufferMask.ColorBufferBit);

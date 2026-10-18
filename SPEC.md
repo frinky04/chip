@@ -71,7 +71,8 @@ Tags: **[v1]** = first shippable slice. **[v2]** = next. **[later]** = backlog. 
 | Vertex / Edge / Face / Object modes | `1` `2` `3` `4` | v1 |
 | Triangle modes (verts, edges, faces) and toggle topology | `Shift+Ctrl+1/2/3`, `6` | later (n-gon only in v1) |
 | Click select. Shift add, Ctrl toggle | LMB | v1 |
-| Marquee (box) select on drag from empty space | LMB drag | v1 |
+| Paint select (Scythe): drag selects everything the cursor sweeps over; Shift+drag paints into the selection, Ctrl+drag paints out of it | LMB drag | v2, shipped |
+| Box (marquee) select, Unreal-style; Shift adds | `Ctrl+Alt+drag` | v1 (moved off plain drag) |
 | Select all / invert | `Ctrl+A` / `Ctrl+I` | v1 |
 | Clear selection | `Esc` (when no tool is active) | v1 |
 | Convert selection on mode switch (edges→faces etc.) | switch mode | v1 |

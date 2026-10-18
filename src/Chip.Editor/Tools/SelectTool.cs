@@ -10,7 +10,8 @@ using ImGuiNET;
 namespace Chip.Editor.Tools;
 
 /// <summary>
-/// The default tool: click / Shift-add / Ctrl-toggle / box select in the current mode, plus the transform gizmo
+/// The default tool: click / Shift-add / Ctrl-toggle, Scythe-style paint select on drag (everything the cursor sweeps
+/// over; Shift adds, Ctrl removes), Ctrl+Alt+drag box select (Unreal's marquee; Shift adds), plus the transform gizmo
 /// (mode from <see cref="EditorContext.Gizmo"/>). Shift-dragging the move gizmo in face mode extrudes.
 /// Double-click floods (connected faces, edge loop, connected vertices; with CapsLock/Mouse4/Mouse5 held, faces on the plane),
 /// and Ctrl+Shift+click adds the shortest path from the active element.
@@ -20,8 +21,11 @@ namespace Chip.Editor.Tools;
 public sealed class SelectTool : IViewportTool
 {
     TransformGesture? _gesture;
-    bool _marqueeArmed, _marquee, _swallowRelease;
-    Vector2 _pressPos;
+    bool _marqueeArmed, _marquee, _painting, _swallowRelease;
+    enum PaintOp { Replace, Add, Remove }
+    PaintOp _paintOp;
+    Vector2 _pressPos, _lastPaintPos;
+    ElementRef? _pressHover;
     ElementRef? _lastClick;
     double _lastClickTime;
     SelectMode _mode;
@@ -38,7 +42,7 @@ public sealed class SelectTool : IViewportTool
 
     public (string Key, string Action)[] Hints => _gesture != null
         ? [("Esc", "cancel")]
-        : [("LMB", "select"), ("Drag", "box select"), ("Dbl-click", _mode switch
+        : [("LMB", "select"), ("Drag", "paint select"), ("Ctrl+Alt+drag", "box"), ("Dbl-click", _mode switch
         {
             SelectMode.Edge => "loop", SelectMode.Object => "select", _ => "connected",
         }), ("Ctrl+Shift+LMB", "path"), ("Alt+LMB", "orbit"), ("F1", "shortcuts")];
@@ -54,7 +58,7 @@ public sealed class SelectTool : IViewportTool
         }
         if (_marqueeArmed)
         {
-            _marqueeArmed = _marquee = false;
+            _marqueeArmed = _marquee = _painting = false;
             return true;
         }
         return false;
@@ -127,15 +131,23 @@ public sealed class SelectTool : IViewportTool
         if (ctx.ViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
         {
             _marqueeArmed = true;
-            _marquee = false;
+            _marquee = _painting = false;
             _pressPos = mouse;
+            _pressHover = ctx.Hover;
         }
         if (!_marqueeArmed) return;
-        if (Vector2.Distance(mouse, _pressPos) > Theme.Px(4)) _marquee = true;
+        // Past a few pixels the press becomes a drag: Ctrl+Alt boxes, anything else paints.
+        if (!_marquee && !_painting && Vector2.Distance(mouse, _pressPos) > Theme.Px(4))
+        {
+            if (io.KeyCtrl && io.KeyAlt) _marquee = true;
+            else BeginPaint(ctx, io);
+        }
+        if (_painting) Paint(ctx, mouse);
         if (ImGui.IsMouseDown(ImGuiMouseButton.Left)) return;
 
         var sel = ctx.Sel;
-        if (_marquee) Marquee(ctx, io);
+        if (_painting) { /* already applied while dragging */ }
+        else if (_marquee) Marquee(ctx, io);
         else if (io.KeyCtrl && io.KeyShift && ctx.Hover is { } target)
         {
             bool hadStart = sel.Active != null;
@@ -153,9 +165,49 @@ public sealed class SelectTool : IViewportTool
                 else sel.Add(h);
             }
         }
-        _lastClick = _marquee ? null : ctx.Hover;
+        _lastClick = _marquee || _painting ? null : ctx.Hover;
         _lastClickTime = ctx.Now;
-        _marqueeArmed = _marquee = false;
+        _marqueeArmed = _marquee = _painting = false;
+    }
+
+    /// <summary>Paint select starts: no modifier replaces the selection, Shift adds to it, Ctrl removes from it.</summary>
+    void BeginPaint(EditorContext ctx, ImGuiIOPtr io)
+    {
+        _painting = true;
+        _paintOp = io.KeyCtrl && !io.KeyShift ? PaintOp.Remove : io.KeyShift ? PaintOp.Add : PaintOp.Replace;
+        if (_paintOp == PaintOp.Replace) ctx.Sel.Clear();
+        _lastPaintPos = _pressPos;
+        if (_pressHover is { } first) PaintElement(ctx.Sel, first);
+    }
+
+    /// <summary>
+    /// Applies everything under the cursor's path since last frame, sampled every few pixels so a quick sweep doesn't
+    /// skip the faces it crossed.
+    /// </summary>
+    void Paint(EditorContext ctx, Vector2 mouse)
+    {
+        float step = Theme.Px(6);
+        float dist = Vector2.Distance(_lastPaintPos, mouse);
+        int samples = Math.Clamp((int)MathF.Ceiling(dist / step), 1, 64);
+        for (int i = 1; i <= samples; i++)
+        {
+            var p = Vector2.Lerp(_lastPaintPos, mouse, i / (float)samples);
+            if (ctx.Picks.Pick(ctx.View, p, ctx.Sel.Mode, Theme.Scale, ctx.Backfaces) is { } e) PaintElement(ctx.Sel, e);
+        }
+        _lastPaintPos = mouse;
+    }
+
+    void PaintElement(Selection sel, ElementRef e)
+    {
+        switch (_paintOp)
+        {
+            case PaintOp.Remove:
+                if (sel.Items.Remove(e) && sel.Active == e) sel.Active = null;
+                break;
+            default:
+                if (sel.Items.Add(e) && sel.Active == null) sel.Active = e; // the first painted element leads a fresh selection
+                break;
+        }
     }
 
     void Marquee(EditorContext ctx, ImGuiIOPtr io)
@@ -164,10 +216,9 @@ public sealed class SelectTool : IViewportTool
         var picked = ctx.Picks.Marquee(ctx.View, _pressPos, ctx.Mouse, sel.Mode, ctx.Backfaces);
         if (VisibleOnly) picked = Visibility.FilterVisible(ctx.Doc, ctx.View, picked, sel.Mode, ctx.Backfaces, ctx.Picks);
         var active = sel.Active;
-        if (!io.KeyShift && !io.KeyCtrl) sel.Clear();
-        foreach (var e in picked)
-            if (!io.KeyCtrl) sel.Items.Add(e);
-            else if (!sel.Items.Remove(e)) sel.Items.Add(e); // Ctrl toggles
+        // Ctrl+Alt+drag replaces the selection; with Shift it adds.
+        if (!io.KeyShift) sel.Clear();
+        foreach (var e in picked) sel.Items.Add(e);
         sel.Active = active is { } a && sel.Items.Contains(a) ? a : null;
     }
 

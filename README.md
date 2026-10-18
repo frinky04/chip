@@ -20,7 +20,7 @@ Layout: the left strip holds tools (select, block, move/rotate/scale). The viewp
 |---|---|
 | Camera | RMB + WASD/QE fly (Shift fast, wheel speed) · Alt+LMB orbit · MMB pan · wheel dolly · F focus |
 | Create | Shift+B block: drag base, release, move for height, click/Enter |
-| Select | 1 vert · 2 edge · 3 face · 4 object · click / Shift add / Ctrl toggle / drag marquee · Ctrl+A · Ctrl+I · Esc |
+| Select | 1 vert · 2 edge · 3 face · 4 object · click / Shift add / Ctrl toggle · drag paints a selection (Shift adds, Ctrl removes) · Ctrl+Alt+drag box select · Ctrl+A · Ctrl+I · Esc |
 | Transform | W move · E rotate · R scale · Shift+drag (faces) extrude · Alt+arrows nudge · `[` `]` grid · inspector Position/Size (Enter) |
 | Edit | Del · Shift+D duplicate · Shift+N flip · H hide · Alt+H unhide · Shift+Ctrl+Alt+V verts to grid · Ctrl+Z / Ctrl+Y |
 | View | Alt+B select backfaces (clicks can hit faces pointing away; rendering doesn't change) · `[` `]` grid 3 cm to 16 m |

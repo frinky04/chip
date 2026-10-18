@@ -103,7 +103,8 @@ public sealed class Navigator
             }
         }
 
-        if (hovered && io.KeyAlt && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        // Alt+LMB orbits; Ctrl+Alt+LMB is the select tool's box select (Unreal's marquee), so it's left alone.
+        if (hovered && io.KeyAlt && !io.KeyCtrl && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
         {
             _orbiting = true;
             _orbitPivot = ctx.SelectionPivot() ?? ctx.RaycastFace()?.Point ?? FocusPivot(cam) ?? cam.Position + cam.Forward * 8;

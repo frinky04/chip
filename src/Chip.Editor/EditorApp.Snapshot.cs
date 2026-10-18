@@ -1,3 +1,4 @@
+using System.Numerics;
 using Chip.Core.IO;
 using Chip.Core.Scene;
 using Chip.Editor.Framework;
@@ -20,6 +21,49 @@ public sealed partial class EditorApp
     uint _captureFbo;
     string? _snapshotPaletteQuery;
     Action? _snapshotAfterPrefsOpen;
+    Vector2? _shotDragMouse;
+    bool _shotButtonHeld;
+
+    static (Vector2 From, Vector2 To, Framework.Hotkey? Mods)? ParseShotDrag(string? v)
+    {
+        if (string.IsNullOrWhiteSpace(v)) return null;
+        var p = v.Split(',', StringSplitOptions.TrimEntries);
+        if (p.Length < 4) return null;
+        float F(int i) => float.Parse(p[i], System.Globalization.CultureInfo.InvariantCulture);
+        // Modifiers parse as a hotkey on a dummy key ("Ctrl+Alt" -> "Ctrl+Alt+F12").
+        var mods = p.Length > 4 && p[4].Length > 0 ? Framework.Hotkey.Parse(p[4] + "+F12") : (Framework.Hotkey?)null;
+        return (new Vector2(F(0), F(1)), new Vector2(F(2), F(3)), mods);
+    }
+
+    void RunShotDrag((Vector2 From, Vector2 To, Framework.Hotkey? Mods) d)
+    {
+        var io = ImGui.GetIO();
+        void Mods(bool down)
+        {
+            if (d.Mods is not { } m) return;
+            if (m.Ctrl) io.AddKeyEvent(ImGuiKey.ModCtrl, down);
+            if (m.Shift) io.AddKeyEvent(ImGuiKey.ModShift, down);
+            if (m.Alt) io.AddKeyEvent(ImGuiKey.ModAlt, down);
+        }
+        _shotDragMouse = d.From;
+        Mods(true);
+        Frame(1 / 60f);
+        io.AddMouseButtonEvent(0, true);
+        Frame(1 / 60f);
+        _shotButtonHeld = true;
+        const int steps = 16;
+        for (int s = 1; s <= steps; s++)
+        {
+            _shotDragMouse = Vector2.Lerp(d.From, d.To, s / (float)steps);
+            Frame(1 / 60f);
+        }
+        _shotButtonHeld = false;
+        io.AddMouseButtonEvent(0, false);
+        Frame(1 / 60f);
+        Mods(false);
+        Frame(1 / 60f);
+    }
+
     /// <summary>"rescale" state: rebuild fonts and style at this scale before the first frame (the DPI-change path).</summary>
     float? _snapshotRescaleTo;
 
@@ -140,9 +184,13 @@ public sealed partial class EditorApp
         // keyboard path (hotkey matching, popups) is proven headlessly. Never touches OS input.
         var keys = (Environment.GetEnvironmentVariable("CHIP_SHOT_KEYS") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(Framework.Hotkey.Parse).ToList();
+        // CHIP_SHOT_DRAG="x0,y0,x1,y1[,Ctrl+Alt]" (viewport fractions) presses the left button at the start, sweeps to the
+        // end over 16 frames holding the modifiers, and releases: proves drag gestures (paint select, box select).
+        var drag = ParseShotDrag(Environment.GetEnvironmentVariable("CHIP_SHOT_DRAG"));
         for (int i = 0; i < 6; i++) // ImGui settles layout over a couple of frames
         {
             var io = ImGui.GetIO();
+            if (i == 3 && drag is { } d) RunShotDrag(d);
             foreach (var k in keys)
             {
                 if (i is not (1 or 2)) continue;
