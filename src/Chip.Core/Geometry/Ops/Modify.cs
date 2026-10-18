@@ -30,7 +30,7 @@ public static partial class MeshOps
                 return nv;
             }).ToArray();
             added.Add(m.Faces.Count);
-            m.Faces.Add(new Face(verts, src.Material, src.Map) { UVs = (System.Numerics.Vector2[]?)src.UVs?.Clone() });
+            m.Faces.Add(new Face(verts, src.Material, src.Map) { UVs = (System.Numerics.Vector2[]?)src.UVs?.Clone(), Dominant = src.Dominant });
         }
         return added;
     }

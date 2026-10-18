@@ -83,9 +83,18 @@ public static class ObjImporter
         }
         if (skipped > 0) warnings.Add(skipped == 1 ? "Skipped 1 face with a bad vertex index" : $"Skipped {skipped} faces with bad vertex indices");
 
+        // Chip's own exports name objects "<name>_<id>" so they stay unique; strip the id back off, but only for those files
+        // (other tools' "wall_3" is a real name).
+        bool fromChip = text.StartsWith("# Chip export", StringComparison.Ordinal);
         var result = new ImportResult(new(), new(), warnings);
         foreach (var (name, builder) in objects)
-            if (builder.PolygonCount > 0) result.Meshes.Add(builder.Build(name, materials));
+            if (builder.PolygonCount > 0) result.Meshes.Add(builder.Build(fromChip ? StripChipId(name) : name, materials));
         return result;
+    }
+
+    static string StripChipId(string name)
+    {
+        int cut = name.LastIndexOf('_');
+        return cut > 0 && cut < name.Length - 1 && name.AsSpan(cut + 1).IndexOfAnyExceptInRange('0', '9') < 0 ? name[..cut] : name;
     }
 }

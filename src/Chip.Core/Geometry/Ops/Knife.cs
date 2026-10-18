@@ -172,7 +172,7 @@ public static partial class MeshOps
             var indices = new List<int>();
             for (int i = 0; i < loops.Count; i++)
             {
-                var piece = new Face(loops[i].ToArray(), original.Material, original.Map);
+                var piece = new Face(loops[i].ToArray(), original.Material, original.Map) { Dominant = original.Dominant };
                 if (i == 0) { m.Faces[f] = piece; indices.Add(f); }
                 else { indices.Add(m.Faces.Count); result.NewFaces.Add(m.Faces.Count); m.Faces.Add(piece); }
             }

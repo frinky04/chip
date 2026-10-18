@@ -42,7 +42,7 @@ public class ObjTests
         var back = ObjImporter.Parse(files.Obj, lib, "dev_a", scale: 0.5f);
         Assert.Equal(2, back.Meshes.Count);
         var m = back.Meshes[0];
-        Assert.Equal($"block_{box.Id}", m.Name);
+        Assert.Equal("block", m.Name); // Chip's "_<id>" uniqueness suffix comes back off
         Assert.Equal(6, m.Faces.Count);
         Assert.Equal(box.Bounds(), m.Bounds());
         Assert.Equal(box.Faces.Select(f => f.Material).Order(), m.Faces.Select(f => f.Material).Order());
@@ -83,7 +83,7 @@ public class ObjTests
             vn 0 1 0
             usemtl DEV_B
             f -4//1 -1//1 -2//1 -3//1
-            o second
+            o wall_3
             v 0 1 0
             v 1 1 0
             v 0 1 1
@@ -97,6 +97,7 @@ public class ObjTests
         var r = ObjImporter.Parse(text, Lib(), "dev_a");
         Assert.Equal(2, r.Meshes.Count);
         Assert.Equal("first thing", r.Meshes[0].Name);
+        Assert.Equal("wall_3", r.Meshes[1].Name); // other tools' names are left alone
         var quad = Assert.Single(r.Meshes[0].Faces);
         Assert.Equal("dev_b", quad.Material);   // resolved to the library's casing
         Assert.Null(quad.UVs);

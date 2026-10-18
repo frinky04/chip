@@ -129,6 +129,27 @@ public class NormalsTests
     }
 
     [Fact]
+    public void Dominant_survives_ops_that_split_or_copy_a_face()
+    {
+        var m = Box();
+        int top = FaceFacing(m, Vector3.UnitY);
+        MeshOps.SetDominantFaces(m, [top]);
+        var center = m.FaceCenter(top);
+
+        // Clip through the top: both halves keep the flag, the new cap faces don't get it.
+        var (front, back) = MeshOps.Split(m, center, Vector3.UnitX);
+        foreach (var half in new[] { front!, back! })
+        {
+            Assert.Single(half.Faces, f => f.Dominant);
+            Assert.True(half.FaceNormal(half.Faces.FindIndex(f => f.Dominant)).Y > 0.99f);
+        }
+
+        Assert.True(MeshOps.CopyFaces(m, [top]).Faces.Single().Dominant);
+        var dup = MeshOps.DuplicateFaces(m, [top]);
+        Assert.True(m.Faces[dup.Single()].Dominant);
+    }
+
+    [Fact]
     public void Dominant_faces_either_side_of_a_chamfer_shade_it_like_a_round()
     {
         var m = Box();

@@ -133,6 +133,8 @@ public static class GlbExporter
             };
             int before = nodes.Count;
             var meshExtras = new JsonObject { ["chip_mesh"] = mesh.Name, ["chip_id"] = mesh.Id };
+            // The suffix can't tell None from Default when the document doesn't collide; the extra can.
+            if (mesh.Collision != CollisionMode.Default) meshExtras["chip_collision"] = mesh.Collision.ToString();
             if (!collisionOnly)
             {
                 // The same remaps per node, keyed by material name: a fallback for importers that drop material extras.

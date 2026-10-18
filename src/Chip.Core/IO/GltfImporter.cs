@@ -81,6 +81,7 @@ public static class GltfImporter
                 {
                     string name = extras?["chip_mesh"]?.GetValue<string>() is { Length: > 0 } cm ? cm
                         : baseName.Length > 0 ? baseName : mesh["name"]?.GetValue<string>() ?? "imported";
+                    if (extras?["chip_collision"]?.GetValue<string>() is { } cc && Enum.TryParse<CollisionMode>(cc, out var exact)) collision = exact;
                     group = (group.Builder, name, collision ?? CollisionMode.Default);
                 }
                 else if (group.Name.Length == 0) group = (group.Builder, baseName.Length > 0 ? baseName : "imported", group.Collision);

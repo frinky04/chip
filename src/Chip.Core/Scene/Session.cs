@@ -93,6 +93,7 @@ public sealed class Session
     {
         if (_pending == null) return;
         CheckScope();
+        PruneGroupMembers(); // before the delta, so the cleanup undoes with the step that caused it
         _undo.Add(FullSnapshotUndo ? _pending : _pending with { Doc = null, Delta = UndoDelta.Between(_pending.Doc!, Doc) });
         if (_undo.Count > MaxUndo) _undo.RemoveAt(0);
         _redo.Clear();
@@ -101,6 +102,16 @@ public sealed class Session
         Sel.Prune(Doc);
         Dirty = true;
         Version++;
+    }
+
+    /// <summary>Drops group members whose object no longer exists (merged meshes, meshes emptied by deleting every face).</summary>
+    void PruneGroupMembers()
+    {
+        if (Doc.Groups.Count == 0) return;
+        var live = new HashSet<int>(Doc.Meshes.Count + Doc.Entities.Count);
+        foreach (var m in Doc.Meshes) live.Add(m.Id);
+        foreach (var e in Doc.Entities) live.Add(e.Id);
+        foreach (var g in Doc.Groups) g.Members.RemoveAll(id => !live.Contains(id));
     }
 
     public void Cancel()

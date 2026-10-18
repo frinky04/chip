@@ -79,8 +79,8 @@ public static partial class MeshOps
                 fv.Add(x); fuv.Add(uvX);
                 bv.Add(x); buv.Add(uvX);
             }
-            if (fv.Count >= 3) front.Add(new Face(fv.ToArray(), face.Material, face.Map) { UVs = uvs != null ? fuv.ToArray() : null });
-            if (bv.Count >= 3) back.Add(new Face(bv.ToArray(), face.Material, face.Map) { UVs = uvs != null ? buv.ToArray() : null });
+            if (fv.Count >= 3) front.Add(new Face(fv.ToArray(), face.Material, face.Map) { UVs = uvs != null ? fuv.ToArray() : null, Dominant = face.Dominant });
+            if (bv.Count >= 3) back.Add(new Face(bv.ToArray(), face.Material, face.Map) { UVs = uvs != null ? buv.ToArray() : null, Dominant = face.Dominant });
         }
 
         // Soft edges that were cut continue on both halves of the edge.

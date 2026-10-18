@@ -100,6 +100,17 @@ public class ImportTests
     }
 
     [Fact]
+    public void None_and_Default_stay_distinct_when_the_document_does_not_collide()
+    {
+        // Neither mode gets a suffix here, so only the chip_collision extra can tell them apart.
+        var doc = new Document { ExportCollision = false };
+        doc.Add(Box(Vector3.Zero, Vector3.One)).Collision = CollisionMode.None;
+        doc.Add(Box(Vector3.One * 2, Vector3.One * 3));
+        var r = RoundTrip(doc, Lib());
+        Assert.Equal([CollisionMode.None, CollisionMode.Default], r.Meshes.Select(m => m.Collision));
+    }
+
+    [Fact]
     public void Clip_and_trigger_faces_rejoin_their_mesh_with_tool_materials()
     {
         var lib = Lib();
