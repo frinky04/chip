@@ -14,7 +14,7 @@ namespace Chip.Editor.Rendering;
 public readonly record struct GridPlane(Vector3 Origin, Vector3 Normal, Vector3 Focus);
 
 /// <summary>Per-pane drawing settings.</summary>
-public readonly record struct RenderSettings(ViewMode Mode, float Grid, bool Backfaces, bool BoundaryEdges = true, GridPlane? Construction = null);
+public readonly record struct RenderSettings(ViewMode Mode, float Grid, bool BoundaryEdges = true, GridPlane? Construction = null);
 
 /// <summary>
 /// Draws the document into a pane's offscreen MSAA target. Read-only over the document.
@@ -165,8 +165,8 @@ public sealed unsafe class Renderer : IDisposable
         _gl.DepthFunc(DepthFunction.Lequal);
         _gl.DepthMask(true);
         _gl.Disable(EnableCap.Blend);
-        if (s.Backfaces) _gl.Disable(EnableCap.CullFace);
-        else _gl.Enable(EnableCap.CullFace);
+        // Always cull: backface mode only changes what picking can hit, never what's drawn.
+        _gl.Enable(EnableCap.CullFace);
         _gl.CullFace(TriangleFace.Back);
         _gl.FrontFace(FrontFaceDirection.Ccw);
 

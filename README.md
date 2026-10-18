@@ -23,7 +23,7 @@ Layout: the left strip holds tools (select, block, move/rotate/scale). The viewp
 | Select | 1 vert · 2 edge · 3 face · 4 object · click / Shift add / Ctrl toggle / drag marquee · Ctrl+A · Ctrl+I · Esc |
 | Transform | W move · E rotate · R scale · Shift+drag (faces) extrude · Alt+arrows nudge · `[` `]` grid · inspector Position/Size (Enter) |
 | Edit | Del · Shift+D duplicate · Shift+N flip · H hide · Alt+H unhide · Shift+Ctrl+Alt+V verts to grid · Ctrl+Z / Ctrl+Y |
-| View | Alt+B select backfaces (picks faces pointing away, drawn darkened) · `[` `]` grid 3 cm to 16 m |
+| View | Alt+B select backfaces (clicks can hit faces pointing away; rendering doesn't change) · `[` `]` grid 3 cm to 16 m |
 | Texture | Shift+T apply · Shift+RMB lift · Shift+Ctrl+G grid · Shift+Ctrl+F face · Ctrl+Alt+Num5 fit · inspector shift/scale/rotate/flip |
 | File | Ctrl+N/O/S, Ctrl+Shift+S · Ctrl+E export GLB (Ctrl+Shift+E export as) |
 

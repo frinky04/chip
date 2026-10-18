@@ -52,7 +52,6 @@ static class Shaders
             if (uMode == 3) c = checker() * (0.62 + 0.38 * d);
             else if (uMode == 1) c = texture(uTex, vUv).rgb;
             else c = texture(uTex, vUv).rgb * (0.48 + 0.52 * d);
-            if (!gl_FrontFacing) c = mix(c * 0.35, vec3(0.20, 0.24, 0.32), 0.35); // back faces read as "inside"
             frag = vec4(c, 1.0);
         }
         """;
