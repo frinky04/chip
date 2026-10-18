@@ -87,7 +87,7 @@ public sealed class MaterialBrowser
         };
         ctx.ActiveMaterial = material;
         if (inSelection) { ApplyToSelection(ctx, material); return; }
-        ctx.Session.Do("Apply Material", () =>
+        ctx.Session.Do("Apply Material", [hit.Mesh.Id], () =>
         {
             if (sel.Mode == SelectMode.Object) foreach (var face in hit.Mesh.Faces) ctx.Materials.Assign(face, material);
             else ctx.Materials.Assign(hit.Mesh.Faces[hit.Face], material);

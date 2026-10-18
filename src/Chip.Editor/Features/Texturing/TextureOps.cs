@@ -59,7 +59,7 @@ public static class TextureOps
             ctx.Status($"Select faces or objects to {label.ToLowerInvariant()}");
             return false;
         }
-        ctx.Session.Do(label, () => edit(faces));
+        ctx.Session.Do(label, faces.Select(f => f.Mesh.Id), () => edit(faces));
         return true;
     }
 

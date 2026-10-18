@@ -101,7 +101,7 @@ public sealed class NormalsFeature : IEditorFeature
     /// <summary>Runs one edit as an undo step; when <paramref name="edit"/> returns a message nothing changed and the step is dropped.</summary>
     void Edit(string label, Func<string?> edit)
     {
-        _ctx.Session.Begin(label);
+        _ctx.Session.Begin(label, Sel.MeshIds());
         string? nothing;
         try { nothing = edit(); }
         catch { _ctx.Session.Cancel(); throw; }
