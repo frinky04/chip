@@ -1,5 +1,6 @@
 using System.Numerics;
 using Chip.Core.Hotspots;
+using Chip.Editor.Features.Texturing;
 using Chip.Editor.Framework;
 using Chip.Editor.UI;
 using ImGuiNET;
@@ -10,6 +11,7 @@ namespace Chip.Editor.Features.Hotspots;
 /// <summary>Inspector block under Texture: which hotspot applies, the apply buttons, and Scythe's apply options.</summary>
 public sealed class HotspotSection : IInspectorSection
 {
+    readonly Rendering.FrameCache<List<string>> _materials = new();
     static readonly string[] MappingLabels = ["Automatic", "Square", "Conforming", "Follow active quads"];
 
     public string Id => "hotspot";
@@ -18,11 +20,22 @@ public sealed class HotspotSection : IInspectorSection
     public bool Visible(EditorContext ctx) =>
         ctx.Sel.FaceSets(ctx.Doc).Count > 0 && HotspotState.For(ctx).AllAssets().Count > 0;
 
+    (HotspotAsset Asset, string Material)? ResolveForInspector(EditorContext ctx, HotspotState state)
+    {
+        if (state.AssetFor(ctx.ActiveMaterial) is { } active) return (active, ctx.ActiveMaterial);
+        if (!_materials.IsCurrent(ctx.Session))
+            _materials.Store(ctx.Session, TextureOps.Faces(ctx).Select(f => f.Face.Material).Distinct(StringComparer.Ordinal).ToList());
+        // Assets and the editor's working copy remain live; only the selected material names are cached.
+        foreach (var material in _materials.Value)
+            if (state.AssetFor(material) is { } asset) return (asset, material);
+        return null;
+    }
+
     public void Draw(EditorContext ctx)
     {
         var state = HotspotState.For(ctx);
         var s = state.Settings;
-        var target = state.Resolve();
+        var target = ResolveForInspector(ctx, state);
         Heading("Hotspot", target?.Asset.Name);
 
         RowLabel("Uses", "Hotspots use the active material when it has a hotspot asset, else the selected face's");

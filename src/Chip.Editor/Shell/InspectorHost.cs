@@ -17,11 +17,13 @@ public sealed partial class EditorApp
         bool first = true;
         foreach (var section in Ctx.Sections)
         {
-            if (!section.Visible(Ctx)) continue;
+            long started = _bench != null ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+            if (!section.Visible(Ctx)) { _bench?.RecordSection(section.Id, started); continue; }
             if (!first) Widgets.SectionDivider();
             first = false;
             ImGui.PushID(section.Id);
             section.Draw(Ctx);
+            _bench?.RecordSection(section.Id, started);
             ImGui.PopID();
         }
         ImGui.PopItemWidth();

@@ -6,6 +6,18 @@ using ImGuiNET;
 
 namespace Chip.Editor.Features.Scene;
 
+/// <summary>World geometry shared across frames and panes until the session changes.</summary>
+public sealed record EntityDrawGeometry(Vector3[] Corners, Vector3 Center, Vector3 Tip)
+{
+    public static EntityDrawGeometry Build(Entity e)
+    {
+        var cls = EntityClasses.Get(e.ClassName);
+        var center = EntityOps.Center(e);
+        float len = MathF.Max(0.5f, (cls.BoxMax - cls.BoxMin).Length() * 0.6f);
+        return new(EntityOps.BoxCorners(e), center, center + EntityOps.Forward(e) * len);
+    }
+}
+
 public enum EntityLook { Normal, Hovered, Selected, Ghost }
 
 /// <summary>
@@ -15,6 +27,20 @@ public enum EntityLook { Normal, Hovered, Selected, Ghost }
 /// </summary>
 public static class EntityDraw
 {
+    // Icons.Text creates a string on each call. Entity glyphs repeat hundreds of times per frame.
+    static readonly Dictionary<Icon, string> Glyphs = new[] { Icon.User, Icon.Bulb, Icon.Lamp, Icon.Target, Icon.Box, Icon.Flag, Icon.MapPin }
+        .ToDictionary(icon => icon, Icons.Text);
+
+    static void DrawGlyph(ImDrawListPtr dl, Icon icon, Vector2 center, uint color)
+    {
+        string text = Glyphs[icon];
+        ImGui.PushFont(Fonts.Icons);
+        var size = ImGui.CalcTextSize(text);
+        ImGui.PopFont();
+        var pos = center - size * 0.5f;
+        dl.AddText(Fonts.Icons, Fonts.IconSize, new Vector2(MathF.Round(pos.X), MathF.Round(pos.Y)), color, text);
+    }
+
     const uint Shadow = 0xE6100F0E;
 
     public static (Icon Icon, uint Color) Style(string className) => className switch
@@ -33,7 +59,7 @@ public static class EntityDraw
     static uint Fade(uint col, float alpha) => (col & 0x00FFFFFF) | ((uint)(((col >> 24) & 0xFF) * alpha) << 24);
 
     /// <summary>Draws one entity. <paramref name="occluded"/> dims it (a surface is in front of its centre).</summary>
-    public static void Draw(ImDrawListPtr dl, Vector2 origin, ViewInfo v, Entity e, EntityLook look, bool occluded = false, bool locked = false)
+    public static void Draw(ImDrawListPtr dl, Vector2 origin, ViewInfo v, Entity e, EntityLook look, bool occluded = false, bool locked = false, EntityDrawGeometry? geometry = null)
     {
         var (icon, classCol) = Style(e.ClassName);
         uint col = look switch
@@ -47,15 +73,14 @@ public static class EntityDraw
         float w = Theme.Px(look == EntityLook.Selected ? 2f : 1.5f);
 
         // Class box.
-        var c = EntityOps.BoxCorners(e);
+        geometry ??= EntityDrawGeometry.Build(e);
+        var c = geometry.Corners;
         ReadOnlySpan<int> edges = [0, 1, 2, 3, 4, 5, 6, 7, 0, 2, 1, 3, 4, 6, 5, 7, 0, 4, 1, 5, 2, 6, 3, 7];
         for (int i = 0; i < edges.Length; i += 2) Line(dl, origin, v, c[edges[i]], c[edges[i + 1]], col, w);
 
         // Forward arrow from the box centre, at least half a metre so it reads on small markers.
-        var cls = EntityClasses.Get(e.ClassName);
-        var center = EntityOps.Center(e);
-        float len = MathF.Max(0.5f, (cls.BoxMax - cls.BoxMin).Length() * 0.6f);
-        var tip = center + EntityOps.Forward(e) * len;
+        var center = geometry.Center;
+        var tip = geometry.Tip;
         Line(dl, origin, v, center, tip, col, w);
         if (v.Project(center, out var sc) && v.Project(tip, out var st) && Vector2.Distance(sc, st) > Theme.Px(6))
         {
@@ -72,7 +97,7 @@ public static class EntityDraw
         float r = Theme.Px(Picker.EntityGlyphRadius);
         dl.AddCircleFilled(g, r, Fade(Shadow, alpha));
         dl.AddCircle(g, r, col, 0, Theme.Px(look == EntityLook.Normal ? 1.5f : 2f));
-        Icons.Draw(dl, icon, g, look == EntityLook.Normal ? Fade(classCol, alpha) : col);
+        DrawGlyph(dl, icon, g, look == EntityLook.Normal ? Fade(classCol, alpha) : col);
         if (look is EntityLook.Hovered or EntityLook.Selected) Label(dl, g + new Vector2(0, r + Theme.Px(3)), SceneOps.DisplayName(e), col);
     }
 

@@ -13,6 +13,7 @@ namespace Chip.Editor.Features.Normals;
 /// </summary>
 public sealed class SmoothingSection(NormalsFeature feature) : IInspectorSection
 {
+    readonly Rendering.FrameCache<(int Soft, int Total)> _counts = new();
     static readonly float[] Presets = [30, 45, 60];
 
     public NormalsFeature Feature => feature;
@@ -22,12 +23,34 @@ public sealed class SmoothingSection(NormalsFeature feature) : IInspectorSection
 
     public void Draw(EditorContext ctx)
     {
-        int soft = 0, total = 0;
-        foreach (var (mesh, edges) in feature.ScopeEdges())
+        if (!_counts.IsCurrent(ctx.Session))
         {
-            total += edges.Count;
-            soft += edges.Count(mesh.SoftEdges.Contains);
+            int softCount = 0, totalCount = 0;
+            if (ctx.Sel.Mode == SelectMode.Object)
+            {
+                var meshes = ctx.Doc.Meshes.Where(m => ctx.Sel.Items.Contains(ElementRef.Object(m.Id))).ToArray();
+                var counts = new (int Soft, int Total)[meshes.Length];
+                Parallel.For(0, meshes.Length, i =>
+                {
+                    int softEdges = 0, allEdges = 0;
+                    foreach (var edge in meshes[i].Edges())
+                    {
+                        allEdges++;
+                        if (meshes[i].SoftEdges.Contains(edge)) softEdges++;
+                    }
+                    counts[i] = (softEdges, allEdges);
+                });
+                foreach (var count in counts) { softCount += count.Soft; totalCount += count.Total; }
+            }
+            else
+                foreach (var (mesh, edges) in feature.ScopeEdges())
+                {
+                    totalCount += edges.Count;
+                    softCount += edges.Count(mesh.SoftEdges.Contains);
+                }
+            _counts.Store(ctx.Session, (softCount, totalCount));
         }
+        var (soft, total) = _counts.Value;
         Heading("Smoothing", total == 0 ? null : soft == 0 ? "all hard" : soft == total ? "all soft" : $"{soft} of {total} soft");
 
         var style = ImGui.GetStyle();

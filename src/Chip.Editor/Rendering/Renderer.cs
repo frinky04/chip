@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Chip.Core.Geometry;
 using Chip.Core.Picking;
 using Chip.Core.Scene;
@@ -18,7 +19,7 @@ public readonly record struct RenderSettings(ViewMode Mode, float Grid, bool Bac
 
 /// <summary>
 /// Draws the document into a pane's offscreen MSAA target. Read-only over the document.
-/// Each mesh has its own GPU buffers, rebuilt only when its content hash changes (checked when <see cref="Session.Version"/>
+/// Each mesh has its own GPU buffers, rebuilt only when its session mesh revision changes (checked when <see cref="Session.Version"/>
 /// moves); overlays (selection, hover) are built once per frame and shared by every pane.
 /// </summary>
 public sealed unsafe class Renderer : IDisposable
@@ -39,7 +40,8 @@ public sealed unsafe class Renderer : IDisposable
 
     sealed class MeshGpu
     {
-        public ulong Hash;
+        public int Revision;
+        public float[] Vertices = [], Wires = [];
         public uint Vao, Vbo, WireVao, WireVbo;
         public readonly List<(string Material, int First, int Count)> Batches = new();
         /// <summary>Wire buffer layout: [hard interior edges][soft interior edges][boundary edges].</summary>
@@ -58,8 +60,12 @@ public sealed unsafe class Renderer : IDisposable
 
     int _builtVersion = -1;
     Document? _builtDoc;
+    Session? _builtSession;
     Overlay _overlay = new();
     bool _edgeMode;
+    readonly FrameCache<Overlay> _overlayCache = new();
+    ElementRef? _overlayHover;
+    bool _overlayNormals;
 
     /// <summary>Meshes re-uploaded by the last scene sync (diagnostics and tests of the dirty tracking).</summary>
     public int LastRebuildCount { get; private set; }
@@ -122,11 +128,16 @@ public sealed unsafe class Renderer : IDisposable
     /// </summary>
     public void BeginFrame(Session session, ElementRef? hover, bool showNormals = false)
     {
-        if (session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc)) SyncScene(session.Doc, session.Version);
+        LastRebuildCount = 0;
+        if (!ReferenceEquals(session, _builtSession) || session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc)) SyncScene(session);
         _edgeMode = session.Sel.Mode == SelectMode.Edge;
-        _overlay = BuildOverlay(session, hover, showNormals);
+        if (_overlayCache.IsCurrent(session) && hover == _overlayHover && showNormals == _overlayNormals) return;
+        _overlay = BuildOverlay(session, hover, showNormals, _overlay);
+        _overlayCache.Store(session, _overlay);
+        _overlayHover = hover;
+        _overlayNormals = showNormals;
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _overlayVbo);
-        _gl.BufferData<float>(BufferTargetARB.ArrayBuffer, _overlay.Data.ToArray(), BufferUsageARB.StreamDraw);
+        _gl.BufferData<float>(BufferTargetARB.ArrayBuffer, CollectionsMarshal.AsSpan(_overlay.Data), BufferUsageARB.StreamDraw);
     }
 
     /// <summary>Renders one pane and returns its resolved colour texture (GL origin, flip V when displaying).</summary>
@@ -178,15 +189,20 @@ public sealed unsafe class Renderer : IDisposable
             _gl.Uniform1(Loc(_meshProg, "uMode"), (int)s.Mode);
             _gl.Uniform1(Loc(_meshProg, "uDensity"), TextureMapping.TexelsPerMeter);
             _gl.ActiveTexture(TextureUnit.Texture0);
+            string? boundMaterial = null;
             foreach (var mesh in doc.Meshes)
             {
                 if (mesh.Hidden || !_meshes.TryGetValue(mesh.Id, out var gpu) || gpu.Batches.Count == 0) continue;
                 _gl.BindVertexArray(gpu.Vao);
                 foreach (var (mat, first, count) in gpu.Batches)
                 {
-                    var info = _lib.Get(mat);
-                    _gl.Uniform2(Loc(_meshProg, "uTexSize"), new Vector2(info.Width, info.Height));
-                    _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
+                    if (!string.Equals(boundMaterial, mat, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var info = _lib.Get(mat);
+                        _gl.Uniform2(Loc(_meshProg, "uTexSize"), new Vector2(info.Width, info.Height));
+                        _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
+                        boundMaterial = mat;
+                    }
                     _gl.DrawArrays(PrimitiveType.Triangles, first, (uint)count);
                 }
             }
@@ -210,6 +226,7 @@ public sealed unsafe class Renderer : IDisposable
         // Scene edges: interior edges solid, soft edges faint (dotted in edge mode), open (boundary) edges dashed.
         SetColorUniforms(_lineProg, view, Pull(0.0015f));
         _gl.Uniform2(Loc(_lineProg, "uViewport"), size);
+        _lineState = null;
         bool wire = s.Mode == ViewMode.Wireframe;
         foreach (var mesh in doc.Meshes)
         {
@@ -303,20 +320,27 @@ public sealed unsafe class Renderer : IDisposable
         _gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
     }
 
+    (float Width, float Alpha, Vector4 Tint, float Dash)? _lineState;
+
     void DrawLines(uint vao, int first, int count, float width, float alpha, Vector4 tint, float dash = 0)
     {
         if (count == 0) return;
-        _gl.UseProgram(_lineProg);
-        _gl.Uniform1(Loc(_lineProg, "uWidth"), width * Theme.Scale);
-        _gl.Uniform1(Loc(_lineProg, "uAlpha"), alpha);
-        _gl.Uniform4(Loc(_lineProg, "uTint"), tint);
-        _gl.Uniform1(Loc(_lineProg, "uDash"), dash);
+        var state = (width, alpha, tint, dash);
+        if (_lineState != state)
+        {
+            _gl.Uniform1(Loc(_lineProg, "uWidth"), width * Theme.Scale);
+            _gl.Uniform1(Loc(_lineProg, "uAlpha"), alpha);
+            _gl.Uniform4(Loc(_lineProg, "uTint"), tint);
+            _gl.Uniform1(Loc(_lineProg, "uDash"), dash);
+            _lineState = state;
+        }
         _gl.BindVertexArray(vao);
         _gl.DrawArrays(PrimitiveType.Lines, first, (uint)count);
     }
 
     void SetColorUniforms(uint prog, ViewInfo view, float pull)
     {
+        _lineState = null;
         _gl.UseProgram(prog);
         SetMatrix(prog, "uViewProj", view.ViewProj);
         _gl.Uniform3(Loc(prog, "uEye"), view.Eye);
@@ -327,17 +351,21 @@ public sealed unsafe class Renderer : IDisposable
 
     // ---- Scene buffers (per mesh, dirty-tracked) ----
 
-    void SyncScene(Document doc, int version)
+    void SyncScene(Session session)
     {
+        var doc = session.Doc;
+        int version = session.Version;
+        bool sameSession = ReferenceEquals(_builtSession, session);
+        _builtSession = session;
         _builtDoc = doc;
         _builtVersion = version;
-        int rebuilt = 0;
+        var dirty = new List<(PolyMesh Mesh, MeshGpu Gpu)>();
         var live = new HashSet<int>();
         foreach (var mesh in doc.Meshes)
         {
             live.Add(mesh.Id);
-            ulong hash = MeshHash.Of(mesh);
-            if (_meshes.TryGetValue(mesh.Id, out var gpu) && gpu.Hash == hash) continue;
+            int revision = session.MeshRevision(mesh);
+            if (_meshes.TryGetValue(mesh.Id, out var gpu) && sameSession && gpu.Revision == revision) continue;
             if (gpu == null)
             {
                 gpu = new MeshGpu();
@@ -345,9 +373,8 @@ public sealed unsafe class Renderer : IDisposable
                 (gpu.WireVao, gpu.WireVbo) = VertexArray(7, [3, 4]);
                 _meshes[mesh.Id] = gpu;
             }
-            gpu.Hash = hash;
-            BuildMesh(mesh, gpu);
-            rebuilt++;
+            gpu.Revision = revision;
+            dirty.Add((mesh, gpu));
         }
         foreach (var id in _meshes.Keys.Where(id => !live.Contains(id)).ToList())
         {
@@ -358,7 +385,16 @@ public sealed unsafe class Renderer : IDisposable
             _gl.DeleteVertexArray(gpu.WireVao);
             _meshes.Remove(id);
         }
-        LastRebuildCount = rebuilt;
+        // CPU geometry generation is independent per mesh. Only uploads touch the GL context.
+        if (dirty.Count > 1) Parallel.For(0, dirty.Count, i => BuildMesh(dirty[i].Mesh, dirty[i].Gpu));
+        else if (dirty.Count == 1) BuildMesh(dirty[0].Mesh, dirty[0].Gpu);
+        foreach (var (_, gpu) in dirty)
+        {
+            Upload(gpu.Vbo, gpu.Vertices, BufferUsageARB.DynamicDraw);
+            Upload(gpu.WireVbo, gpu.Wires, BufferUsageARB.DynamicDraw);
+            gpu.Vertices = []; gpu.Wires = [];
+        }
+        LastRebuildCount = dirty.Count;
     }
 
     void BuildMesh(PolyMesh mesh, MeshGpu gpu)
@@ -378,7 +414,8 @@ public sealed unsafe class Renderer : IDisposable
                 var p = mesh.Positions[face.Verts[i]];
                 var n = normals[f][i];
                 var uv = face.UV(i, p, info.Width, info.Height);
-                list.AddRange([p.X, p.Y, p.Z, n.X, n.Y, n.Z, uv.X, uv.Y]);
+                list.Add(p.X); list.Add(p.Y); list.Add(p.Z);
+                list.Add(n.X); list.Add(n.Y); list.Add(n.Z); list.Add(uv.X); list.Add(uv.Y);
             }
         }
         gpu.Batches.Clear();
@@ -388,7 +425,7 @@ public sealed unsafe class Renderer : IDisposable
             gpu.Batches.Add((mat, all.Count / 8, data.Count / 8));
             all.AddRange(data);
         }
-        Upload(gpu.Vbo, all.ToArray(), BufferUsageARB.DynamicDraw);
+        gpu.Vertices = all.ToArray();
 
         var boundary = mesh.BoundaryEdges();
         var wire = new List<float>();
@@ -401,24 +438,25 @@ public sealed unsafe class Renderer : IDisposable
         gpu.SoftVerts = wire.Count / 7 - gpu.EdgeVerts;
         foreach (var e in boundary) { Vertex(wire, mesh.Positions[e.A], White); Vertex(wire, mesh.Positions[e.B], White); }
         gpu.BoundaryVerts = wire.Count / 7 - gpu.EdgeVerts - gpu.SoftVerts;
-        Upload(gpu.WireVbo, wire.ToArray(), BufferUsageARB.DynamicDraw);
+        gpu.Wires = wire.ToArray();
     }
 
     sealed class Overlay
     {
         public readonly List<float> Data = new();
         public int TriCount;
+        public readonly List<int> Triangles = new();
         public readonly List<(int First, int Count, float Width)> Lines = new();
         public readonly List<(int First, int Count, float Px)> Points = new();
         public int VertexCount => Data.Count / 7;
     }
 
-    static Overlay BuildOverlay(Session session, ElementRef? hover, bool showNormals)
+    static Overlay BuildOverlay(Session session, ElementRef? hover, bool showNormals, Overlay o)
     {
-        var o = new Overlay();
+        o.Data.Clear(); o.Lines.Clear(); o.Points.Clear();
         var doc = session.Doc;
         var sel = session.Sel;
-        var tri = new List<int>();
+        var tri = o.Triangles;
 
         void Tint(PolyMesh m, int f, Vector4 c)
         {
@@ -535,7 +573,11 @@ public sealed unsafe class Renderer : IDisposable
     static List<int> FacesTouching(PolyMesh m, HashSet<int> verts) =>
         Enumerable.Range(0, m.Faces.Count).Where(f => m.Faces[f].Verts.Any(verts.Contains)).ToList();
 
-    static void Vertex(List<float> d, Vector3 p, Vector4 c) => d.AddRange([p.X, p.Y, p.Z, c.X, c.Y, c.Z, c.W]);
+    static void Vertex(List<float> d, Vector3 p, Vector4 c)
+    {
+        d.Add(p.X); d.Add(p.Y); d.Add(p.Z);
+        d.Add(c.X); d.Add(c.Y); d.Add(c.Z); d.Add(c.W);
+    }
 
     uint LoadTexture(string path)
     {

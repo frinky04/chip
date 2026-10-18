@@ -8,6 +8,8 @@ namespace Chip.Editor;
 /// <summary>Status bar: reports only. Selection, then a message or the active tool's hints, then scene counts.</summary>
 public sealed partial class EditorApp
 {
+    readonly Rendering.FrameCache<string> _sceneCounts = new(selection: false);
+
     void DrawStatusBar(Vector2 pos, Vector2 size)
     {
         ImGui.SetNextWindowPos(pos);
@@ -24,8 +26,9 @@ public sealed partial class EditorApp
         ImGui.SameLine(0, Theme.Px(6));
         ImGui.TextColored(Theme.TextDim, sel.IsEmpty ? "nothing selected" : $"{sel.Count} selected");
 
-        int faces = Ctx.Doc.Meshes.Sum(m => m.Faces.Count);
-        string counts = $"{Ctx.Doc.Meshes.Count} meshes   {faces} faces";
+        if (!_sceneCounts.IsCurrent(Ctx.Session))
+            _sceneCounts.Store(Ctx.Session, $"{Ctx.Doc.Meshes.Count} meshes   {Ctx.Doc.Meshes.Sum(m => m.Faces.Count)} faces");
+        string counts = _sceneCounts.Value;
         float rightX = size.X - ImGui.GetStyle().WindowPadding.X - ImGui.CalcTextSize(counts).X;
 
         ImGui.SameLine(Theme.Px(210));

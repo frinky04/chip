@@ -29,6 +29,10 @@ public sealed class Outliner
     string _renameText = "";
     List<OutlinerNode> _dragged = new();
     bool _wasOpen;
+    readonly Rendering.FrameCache<List<OutlinerNode>> _tree = new(selection: false);
+    string? _treeSearch;
+    List<OutlinerNode>? _rows;
+    string _summary = "";
 
     public bool Open { get; set; }
 
@@ -58,8 +62,14 @@ public sealed class Outliner
         ImGui.SetNextItemWidth(-1);
         ImGui.InputTextWithHint("##search", "Search names and classes", ref _search, 128);
         bool searching = _search.Trim().Length > 0;
-        var roots = OutlinerTree.Build(doc, _search);
-        var rows = OutlinerTree.Flatten(roots, _collapsed, expandAll: searching);
+        if (!_tree.IsCurrent(ctx.Session) || _treeSearch != _search)
+        {
+            _tree.Store(ctx.Session, OutlinerTree.Build(doc, _search));
+            _treeSearch = _search;
+            _rows = null;
+            _summary = OutlinerTree.Summary(doc);
+        }
+        var rows = _rows ??= OutlinerTree.Flatten(_tree.Value, _collapsed, expandAll: searching);
 
         float footerH = ImGui.GetFrameHeightWithSpacing();
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Bg);
@@ -72,7 +82,18 @@ public sealed class Outliner
                 ImGui.TextColored(Theme.TextDim, searching ? "Nothing matches the search" : "The level is empty. Blocks and entities you add appear here");
                 ImGui.Unindent(Theme.Px(8));
             }
-            for (int i = 0; i < rows.Count; i++) DrawRow(ctx, rows, i);
+            unsafe
+            {
+                var clipper = new ImGuiListClipperPtr(ImGuiNative.ImGuiListClipper_ImGuiListClipper());
+                clipper.Begin(rows.Count, ImGui.GetFrameHeightWithSpacing());
+                // Keep a rename field submitted while editing, even when the user scrolls it out of view.
+                if (_renaming is { } rename && rows.FindIndex(r => r.Id == rename) is int ri && ri >= 0)
+                    clipper.IncludeItemByIndex(ri);
+                while (clipper.Step())
+                    for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) DrawRow(ctx, rows, i);
+                clipper.End();
+                clipper.Destroy();
+            }
             DropZone(ctx);
             if (ImGui.IsWindowFocused() && _renaming == null && _anchor is { } a && ImGui.IsKeyPressed(ImGuiKey.F2)
                 && rows.Find(r => r.Id == a) is { } row)
@@ -87,7 +108,7 @@ public sealed class Outliner
             int matches = rows.Count(r => OutlinerTree.Matches(r, _search.Trim()));
             ImGui.TextColored(Theme.TextDim, matches == 1 ? "1 match" : $"{matches} matches");
         }
-        else ImGui.TextColored(Theme.TextDim, OutlinerTree.Summary(doc));
+        else ImGui.TextColored(Theme.TextDim, _summary);
     }
 
     void DrawRow(EditorContext ctx, List<OutlinerNode> rows, int index)
@@ -127,7 +148,10 @@ public sealed class Outliner
             bool collapsed = _collapsed.Contains(node.Id) && _search.Trim().Length == 0;
             ImGui.SetCursorScreenPos(new Vector2(x - Theme.Px(2), start.Y));
             if (ImGui.InvisibleButton("##chevron", new Vector2(Theme.Px(16), h)))
+            {
                 if (!_collapsed.Add(node.Id)) _collapsed.Remove(node.Id);
+                _rows = null;
+            }
             Icons.Draw(dl, collapsed ? Icon.ChevronRight : Icon.ChevronDown, new Vector2(x + Theme.Px(6), cy), dim);
         }
         x += Theme.Px(16);

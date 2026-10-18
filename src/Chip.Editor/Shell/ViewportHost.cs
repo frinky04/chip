@@ -42,6 +42,7 @@ public sealed partial class EditorApp
         bool windowHovered = ImGui.IsWindowHovered() && !ImGui.IsPopupOpen("", ImGuiPopupFlags.AnyPopupId);
         if (ShotMouse() is { } fake) { mousePos = origin + fake * area; windowHovered = true; }
         else if (_captureFbo != 0) windowHovered = false; // captures never depend on where the real cursor happens to be
+        if (_bench != null) { mousePos = origin + (_bench.Mouse ?? new Vector2(-1)) * area; windowHovered = _bench.Mouse != null; }
         var hoveredPane = windowHovered ? layout.PaneAt(mousePos) : null;
         bool mouseHeld = ImGui.IsMouseDown(ImGuiMouseButton.Left) || ImGui.IsMouseDown(ImGuiMouseButton.Right) || ImGui.IsMouseDown(ImGuiMouseButton.Middle);
         bool locked = Ctx.Interacting || _nav.Active || Ctx.Gizmo.PivotDragging || mouseHeld;
@@ -56,12 +57,15 @@ public sealed partial class EditorApp
         Ctx.View = active.View;
 
         SyncGizmo();
-        UpdateViewport(dt);
+        if (_bench != null) _bench.UpdateViewport(Ctx);
+        else UpdateViewport(dt);
+        _bench?.Mark("input");
         Ctx.View = active.View;
         TrackPivotAfterDrag();
         _construction = ConstructionPlane();
 
         _renderer.BeginFrame(Ctx.Session, Ctx.Hover, ViewSettings.Of(Ctx).ShowNormals);
+        _bench?.Mark("sync");
         foreach (var pane in layout.Visible)
         {
             var settings = new RenderSettings(pane.Mode, Ctx.Grid, Ctx.Backfaces, ViewSettings.Of(Ctx).BoundaryEdges, _construction);
@@ -70,6 +74,7 @@ public sealed partial class EditorApp
             ImGui.Image((nint)tex, pane.Size, new Vector2(0, 1), new Vector2(1, 0));
         }
 
+        _bench?.Mark("render");
         var dl = ImGui.GetWindowDrawList();
         foreach (var pane in layout.Visible) DrawPaneChrome(dl, layout, pane);
 
@@ -79,6 +84,7 @@ public sealed partial class EditorApp
         dl.PopClipRect();
         ImGui.End();
         ImGui.PopStyleVar(2);
+        _bench?.Mark("hud");
     }
 
     /// <summary>
@@ -294,10 +300,17 @@ public sealed partial class EditorApp
     static void DrawAxisIndicator(ImDrawListPtr dl, Camera cam, Vector2 center)
     {
         float len = Theme.Px(24);
-        string[] names = ["X", "Y", "Z"];
-        var axes = new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ }
-            .Select((axis, i) => (i, dir: new Vector2(Vector3.Dot(axis, cam.Right), -Vector3.Dot(axis, cam.Up)), depth: Vector3.Dot(axis, cam.Forward)))
-            .OrderByDescending(a => a.depth);
+        Span<(int Index, Vector2 Direction, float Depth)> axes = stackalloc (int, Vector2, float)[3];
+        for (int i = 0; i < axes.Length; i++)
+        {
+            var axis = i == 0 ? Vector3.UnitX : i == 1 ? Vector3.UnitY : Vector3.UnitZ;
+            axes[i] = (i, new Vector2(Vector3.Dot(axis, cam.Right), -Vector3.Dot(axis, cam.Up)), Vector3.Dot(axis, cam.Forward));
+        }
+        axes.Sort(static (a, b) =>
+        {
+            int depth = b.Depth.CompareTo(a.Depth);
+            return depth != 0 ? depth : a.Index.CompareTo(b.Index); // preserve axis order at depth ties
+        });
         dl.AddCircleFilled(center, len + Theme.Px(12), ImGui.ColorConvertFloat4ToU32(Theme.Bg with { W = 0.45f }));
         foreach (var (i, dir, depth) in axes)
         {
@@ -306,8 +319,9 @@ public sealed partial class EditorApp
             if (depth > 0.2f) col = (col & 0x00FFFFFF) | 0x80000000; // pointing away from the viewer
             var tip = center + dir * len;
             dl.AddLine(center, tip, col, Theme.Px(2));
-            var ts = ImGui.CalcTextSize(names[i]);
-            dl.AddText(center + dir * (len + Theme.Px(8)) - ts * 0.5f, col, names[i]);
+            string name = i == 0 ? "X" : i == 1 ? "Y" : "Z";
+            var ts = ImGui.CalcTextSize(name);
+            dl.AddText(center + dir * (len + Theme.Px(8)) - ts * 0.5f, col, name);
         }
     }
 

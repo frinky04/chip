@@ -2,18 +2,27 @@
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
 
+bool bench = args.Length > 0 && args[0] == "--bench";
 bool shot = args.Length >= 3 && args[0] == "--shot";
 var options = WindowOptions.Default with
 {
-    Size = shot ? new Vector2D<int>((int)(1600 * (Chip.Editor.UI.Dpi.Override ?? 1)), (int)(940 * (Chip.Editor.UI.Dpi.Override ?? 1))) : new Vector2D<int>(1600, 940),
+    Size = bench ? new Vector2D<int>(1600, 900) : shot ? new Vector2D<int>((int)(1600 * (Chip.Editor.UI.Dpi.Override ?? 1)), (int)(940 * (Chip.Editor.UI.Dpi.Override ?? 1))) : new Vector2D<int>(1600, 940),
     Title = "Chip",
-    VSync = true,
+    VSync = !bench,
     API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.ForwardCompatible, new APIVersion(3, 3)),
-    IsVisible = !shot,
-    WindowState = shot ? WindowState.Normal : WindowState.Maximized,
+    IsVisible = !shot && !bench,
+    WindowState = shot || bench ? WindowState.Normal : WindowState.Maximized,
 };
 
 using var window = Window.Create(options);
+if (bench)
+{
+    window.Initialize();
+    using var benchApp = new EditorApp(window, persistent: false);
+    int code = benchApp.RunBenchmark(args.ElementAtOrDefault(1) ?? "stress", args.ElementAtOrDefault(2));
+    window.Close();
+    return code;
+}
 if (shot)
 {
     window.Initialize();
