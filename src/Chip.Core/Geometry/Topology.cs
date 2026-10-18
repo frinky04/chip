@@ -33,9 +33,11 @@ public static class Topology
         m.Faces[face].Edges().SelectMany(e => edgeFaces[e]).Where(f => f != face).Distinct();
 
     /// <summary>
-    /// Smooth-shading normal for every face corner. Faces joined across <see cref="PolyMesh.SoftEdges"/> form smoothing
-    /// groups; a corner averages the (area-weighted) normals of faces in its group that share the vertex. With no soft edges
-    /// this is exactly the flat face normal.
+    /// Smooth-shading normal for every face corner. Around each vertex, faces joined across <see cref="PolyMesh.SoftEdges"/>
+    /// that meet at that vertex form a fan; a corner averages the (area-weighted) normals of its fan. Hard edges split fans
+    /// per vertex, so a single hard seam through an otherwise soft surface still creases. If a fan contains
+    /// <see cref="Face.Dominant"/> faces, they keep their flat normal and the other faces take the dominant faces' average
+    /// (Scythe dominant normals). With no soft edges this is exactly the flat face normal.
     /// </summary>
     public static Vector3[][] CornerNormals(PolyMesh m)
     {
@@ -47,35 +49,69 @@ public static class Topology
             weighted[f] = faceNormals[f] * MathF.Max(FaceArea(m, f), 1e-6f);
         }
         var result = new Vector3[m.Faces.Count][];
-        if (m.SoftEdges.Count == 0)
-        {
-            for (int f = 0; f < m.Faces.Count; f++) result[f] = Enumerable.Repeat(faceNormals[f], m.Faces[f].Verts.Length).ToArray();
-            return result;
-        }
-
-        // Union faces across soft edges into smoothing groups.
-        var parent = Enumerable.Range(0, m.Faces.Count).ToArray();
-        int Find(int x) { while (parent[x] != x) x = parent[x] = parent[parent[x]]; return x; }
-        foreach (var (e, faces) in EdgeFaces(m))
-            if (m.SoftEdges.Contains(e))
-                for (int i = 1; i < faces.Count; i++) parent[Find(faces[i])] = Find(faces[0]);
+        for (int f = 0; f < m.Faces.Count; f++) result[f] = Enumerable.Repeat(faceNormals[f], m.Faces[f].Verts.Length).ToArray();
+        if (m.SoftEdges.Count == 0) return result;
 
         var vertexFaces = VertexFaces(m);
-        for (int f = 0; f < m.Faces.Count; f++)
+        var parent = new List<int>();
+        var firstOnEdge = new Dictionary<int, int>();
+        for (int v = 0; v < vertexFaces.Length; v++)
         {
-            var verts = m.Faces[f].Verts;
-            var normals = new Vector3[verts.Length];
-            int group = Find(f);
-            for (int i = 0; i < verts.Length; i++)
+            var fan = vertexFaces[v];
+            if (fan.Count < 2) continue;
+
+            // Local union-find over the faces at v, joined where two of them share a soft edge (v, w).
+            parent.Clear();
+            for (int i = 0; i < fan.Count; i++) parent.Add(i);
+            int Find(int x) { while (parent[x] != x) x = parent[x] = parent[parent[x]]; return x; }
+            firstOnEdge.Clear();
+            for (int i = 0; i < fan.Count; i++)
             {
-                var sum = Vector3.Zero;
-                foreach (var g in vertexFaces[verts[i]])
-                    if (Find(g) == group) sum += weighted[g];
-                normals[i] = sum.LengthSquared() > 1e-12f ? Vector3.Normalize(sum) : faceNormals[f];
+                var verts = m.Faces[fan[i]].Verts;
+                for (int c = 0; c < verts.Length; c++)
+                {
+                    if (verts[c] != v) continue;
+                    foreach (int w in (ReadOnlySpan<int>)[verts[(c + verts.Length - 1) % verts.Length], verts[(c + 1) % verts.Length]])
+                    {
+                        if (w == v || !m.SoftEdges.Contains(new Edge(v, w))) continue;
+                        if (firstOnEdge.TryGetValue(w, out int j)) parent[Find(i)] = Find(j);
+                        else firstOnEdge[w] = i;
+                    }
+                }
             }
-            result[f] = normals;
+            if (firstOnEdge.Count == 0) continue;
+
+            for (int i = 0; i < fan.Count; i++)
+            {
+                int f = fan[i];
+                if (m.Faces[f].Dominant) continue; // dominant faces stay flat
+                int root = Find(i);
+                Vector3 all = Vector3.Zero, dominant = Vector3.Zero;
+                for (int j = 0; j < fan.Count; j++)
+                {
+                    if (Find(j) != root) continue;
+                    all += weighted[fan[j]];
+                    if (m.Faces[fan[j]].Dominant) dominant += weighted[fan[j]];
+                }
+                var sum = dominant.LengthSquared() > 1e-12f ? dominant : all;
+                var n = sum.LengthSquared() > 1e-12f ? Vector3.Normalize(sum) : faceNormals[f];
+                var verts = m.Faces[f].Verts;
+                for (int c = 0; c < verts.Length; c++)
+                    if (verts[c] == v) result[f][c] = n;
+            }
         }
         return result;
+    }
+
+    /// <summary>
+    /// Angle in degrees between the normals of the two faces on <paramref name="e"/> (0 = coplanar), or null when the edge
+    /// isn't shared by exactly two faces (open or non-manifold edges have no dihedral angle).
+    /// </summary>
+    public static float? EdgeAngle(PolyMesh m, Edge e, Dictionary<Edge, List<int>> edgeFaces)
+    {
+        if (!edgeFaces.TryGetValue(e, out var faces) || faces.Count != 2) return null;
+        float dot = Math.Clamp(Vector3.Dot(m.FaceNormal(faces[0]), m.FaceNormal(faces[1])), -1f, 1f);
+        return MathF.Acos(dot) * 180f / MathF.PI;
     }
 
     public static float FaceArea(PolyMesh m, int face)

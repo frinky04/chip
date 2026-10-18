@@ -17,6 +17,12 @@ public sealed class Face
     /// </summary>
     public Vector2[]? UVs;
 
+    /// <summary>
+    /// Scythe "dominant normals": where this face meets neighbours across soft edges, the neighbours take this face's
+    /// normal at the shared corners (and this face stays flat). Honoured by <see cref="Topology.CornerNormals"/>.
+    /// </summary>
+    public bool Dominant;
+
     public Face(int[] verts, string material, TextureMapping map)
     {
         Verts = verts;
@@ -24,7 +30,7 @@ public sealed class Face
         Map = map;
     }
 
-    public Face Clone() => new((int[])Verts.Clone(), Material, Map) { UVs = (Vector2[]?)UVs?.Clone() };
+    public Face Clone() => new((int[])Verts.Clone(), Material, Map) { UVs = (Vector2[]?)UVs?.Clone(), Dominant = Dominant };
 
     /// <summary>UV of corner <paramref name="i"/>: explicit if present, otherwise projected.</summary>
     public Vector2 UV(int i, Vector3 position, int texWidth, int texHeight) =>
