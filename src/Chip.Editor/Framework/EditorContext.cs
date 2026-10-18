@@ -31,6 +31,11 @@ public sealed class EditorContext
         Materials = materials;
         ActiveMaterial = materials.All.Count > 0 ? materials.All[0].Name : MaterialLibrary.Missing.Name;
         _clock = clock ?? ImGui.GetTime;
+        session.ScopeViolation = msg =>
+        {
+            Console.Error.WriteLine(msg);
+            Status("Undo for that edit may be incomplete (a mesh outside its declared scope changed). Save, then report it.", error: true);
+        };
     }
 
     // ---- Document ----

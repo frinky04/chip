@@ -1,3 +1,4 @@
+using Chip.Core.Texturing;
 using System.Numerics;
 using Chip.Core.Diagnostics;
 using Chip.Core.Geometry;
@@ -237,5 +238,24 @@ public class UndoDeltaTests
         Assert.Equal(-1, s.MeshRevision(old));
         s.Undo(); Assert.True(s.MeshRevision(s.Doc.Find(a)!) >= 0);
         Assert.Equal(stable, s.MeshRevision(s.Doc.Find(b)!));
+    }
+}
+
+public class UndoScopeReportingTests
+{
+    [Fact]
+    public void ViolationGoesToTheHandlerWhenOneIsSet()
+    {
+        var doc = new Document();
+        var a = doc.Add(MeshOps.CreateBox(Vector3.Zero, Vector3.One, "m", TextureMapping.Default));
+        var b = doc.Add(MeshOps.CreateBox(new Vector3(2, 0, 0), new Vector3(3, 1, 1), "m", TextureMapping.Default));
+        string? reported = null;
+        var s = new Session { ValidateUndoScopes = true, ScopeViolation = m => reported = m };
+        s.Reset(doc, null);
+
+        s.Do("Sneaky", [a.Id], () => s.Doc.Find(b.Id)!.Positions[0] += Vector3.UnitY);
+
+        Assert.Contains("Sneaky", reported);
+        Assert.Equal("Sneaky", s.UndoLabel); // the step still commits; the editor keeps running
     }
 }

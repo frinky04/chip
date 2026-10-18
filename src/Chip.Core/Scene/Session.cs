@@ -30,6 +30,12 @@ public sealed class Session
         false;
 #endif
 
+    /// <summary>
+    /// Receives scope violations instead of an exception. Tests leave it unset so a mis-scoped caller fails loudly;
+    /// the editor reports it, because throwing mid-frame would take unsaved work down with it.
+    /// </summary>
+    public Action<string>? ScopeViolation { get; set; }
+
     public Document Doc { get; private set; } = new();
     public Selection Sel { get; private set; } = new();
     public string? Path { get; private set; }
@@ -156,7 +162,12 @@ public sealed class Session
         foreach (var check in _scopeChecks)
             if (ScopeHash(check.Mesh) != check.Hash ||
                 (live.TryGetValue(check.Mesh.Id, out var mesh) && !ReferenceEquals(mesh, check.Mesh) && ScopeHash(mesh) != check.Hash))
-                throw new InvalidOperationException($"Undo scope violation: mesh {check.Mesh.Id} changed outside the declared scope.");
+            {
+                string message = $"Undo scope violation in '{_pending?.Label}': mesh {check.Mesh.Id} changed outside the declared scope.";
+                if (ScopeViolation == null) throw new InvalidOperationException(message);
+                ScopeViolation(message);
+                return;
+            }
     }
 
     static ulong ScopeHash(PolyMesh mesh)
