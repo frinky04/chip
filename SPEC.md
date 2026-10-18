@@ -39,12 +39,12 @@ Tags: **[v1]** = first shippable slice. **[v2]** = next. **[later]** = backlog. 
 | Perspective 3D viewport rendered to an offscreen target, shown in a dock window | v1 | MSAA. |
 | Fly camera: hold RMB + WASD/QE, Shift for fast | v1 | Unreal muscle memory. Hammer's Z-toggle fly is [later]. |
 | Orbit: Alt+LMB. Pan: MMB. Dolly: wheel | v1 | |
-| Focus selection / focus at cursor (`F`) | v1 | Scythe: "Focus View at Cursor". |
+| Focus selection / focus at cursor (`F`) | v1 | Scythe: "Focus View at Cursor". Shipped (G): keeps the current distance (2–12 m), ortho keeps zoom; orbit falls back to the last focus point. |
 | Reference grid (major/minor lines, axis tint) | v1 | Fades with distance. |
-| Shaded and wireframe overlays: boundary edges dashed | v1 (overlay) / v2 (dashed) | Scythe shows open (boundary) edges as dashed lines. |
-| Lit / unlit / wireframe-only / UV-checker view modes | v2 | |
-| Orthographic 2D views with clip/box tools **[S2]** | v2 | |
-| Camera bookmarks (`Ctrl+1..9` store) **[S2]** | later | Conflicts with Scythe follow-quads hotkeys inside the UV tool only. |
+| Shaded and wireframe overlays: boundary edges dashed | v1 (overlay) / v2 (dashed) | Scythe shows open (boundary) edges as dashed lines. Shipped (G): dashed cyan, View > Dashed open edges. |
+| Lit / unlit / wireframe-only / UV-checker view modes | v2 | Shipped (G): per pane, header dropdown, `Alt+Z` cycles. UV checker: 64-texel cells, tile borders, red/blue tint when texel density is above/below 512 px/m. |
+| Orthographic 2D views with clip/box tools **[S2]** | v2 | Shipped (G): Top / Front / Side via the header dropdown or `Alt+1..4`; 1 / 2 / 4-pane layouts (View menu); RMB/MMB pan, wheel zooms at the cursor, grid in the view plane. The hovered pane is active, so every tool works in any pane. |
+| Camera bookmarks (`Ctrl+Shift+1..9` store, `Ctrl+1..9` recall) **[S2]** | v2 | Shipped (G): stored per level in `%APPDATA%/Chip/camera-bookmarks.json`, including the projection. Conflicts with Scythe follow-quads hotkeys inside the UV tool only. |
 
 ## 3. Grid, snapping, pivot
 
@@ -52,12 +52,13 @@ Tags: **[v1]** = first shippable slice. **[v2]** = next. **[later]** = backlog. 
 |---|---|---|
 | Power-of-two grid (1/64 m … 16 m), `[` / `]` to step | v1 | Hammer convention. |
 | Grid snap for creation and translation (toggle) | v1 | |
-| Rotation snap 15° (toggle with the grid snap) | v1 | |
+| Rotation snap 15° (toggle with the grid snap) | v1 | Shipped (G): separate step (View > Rotation snap 5/15/45/90°). Hold Ctrl mid-drag to bypass snapping (except Ctrl+Shift push/pull). |
 | Vertices to Grid (`Shift+Ctrl+Alt+V`) | v1 | |
-| Temp Move Pivot: drag the gizmo with MMB. Resets on new selection | v2 | Scythe. |
-| Drag Alignment: CapsLock + drag the gizmo snaps the selection to hovered mesh elements | v2 | Scythe. Vertex snap. |
+| Temp Move Pivot: drag the gizmo with MMB. Resets on new selection | v2 | Scythe. Shipped (G): `EditorContext.PivotOverride`; snaps to the grid, or to elements with CapsLock; follows the selection when it moves. |
+| Drag Alignment: CapsLock + drag the gizmo snaps the selection to hovered mesh elements | v2 | Scythe. Shipped (G): the pivot snaps to the nearest vertex, edge midpoint or face centre under the cursor, within the handle's axis/plane. |
 | Nudge selection (`Alt+Arrows`) by one grid step in the view plane | v1 | Scythe. |
-| Grid plane follows the hovered face while a creation tool is active | v1 | Block tool, Shift = place on wall. |
+| Grid plane follows the hovered face while a creation tool is active | v1 | Block tool, Shift = place on wall. Shipped (G): a local grid on the face's axis plane (tools opt in via `ViewSettings.ConstructionTools`). |
+| Gizmo axes: world / local (selection's main face) / view | v2 | Shipped (G): header dropdown and Tools menu. |
 
 ## 4. Selection
 
