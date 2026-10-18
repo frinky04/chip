@@ -19,17 +19,8 @@ public sealed class ExportSection : IInspectorSection
         Heading("Export", doc.ExportPath != null ? Path.GetFileName(doc.ExportPath) : null);
         if (ImGui.Button("Export GLB", new Vector2(-1, 0))) ctx.Commands.Execute("file.export");
         Tip(doc.ExportPath != null ? $"Write {doc.ExportPath}  (Ctrl+E)" : "Choose where to write the .glb  (Ctrl+E)");
-        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, Theme.Px(2, 3));
-        bool open = ImGui.TreeNodeEx("Settings", ImGuiTreeNodeFlags.SpanAvailWidth);
-        ImGui.PopStyleVar();
-        if (!open) return;
-        float scale = doc.ExportScale;
-        RowLabel("Scale", "Multiplier on export. 1 for Godot (metres), 100 for centimetre engines");
-        if (ImGui.InputFloat("##scale", ref scale, 0, 0, "%.3g ×", ImGuiInputTextFlags.EnterReturnsTrue) && scale > 0)
-            ctx.Session.Do("Export Scale", () => ctx.Doc.ExportScale = scale);
-        bool col = doc.ExportCollision;
-        if (ImGui.Checkbox("Static collision", ref col)) ctx.Session.Do("Export Collision", () => ctx.Doc.ExportCollision = col);
-        Tip("Names nodes with -col so Godot builds a trimesh collider for each mesh");
-        ImGui.TreePop();
+        // One place for every export option (scale, collision bake, tessellation, textures, remaps): the settings window.
+        if (ImGui.Button("Export settings…", new Vector2(-1, 0))) ctx.Commands.Execute("pipeline.exportSettings");
+        Tip("Scale, collision baking, tessellation for vertex lighting, textures and material remaps  (File > Export settings…)");
     }
 }
