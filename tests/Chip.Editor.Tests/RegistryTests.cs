@@ -116,6 +116,23 @@ public class RegistryTests
     }
 
     [Fact]
+    public void Apply_and_align_use_material_density()
+    {
+        var doc = new Document();
+        doc.Add(MeshOps.CreateBox(Vector3.Zero, Vector3.One, "dev_a", TextureMapping.Default));
+        var ctx = Headless(doc);
+        ctx.Materials.Add(new MaterialInfo("brick", null, 512, 512) { TexelDensity = 256 }); // tiles every 2 m
+        ctx.Commands.Execute("select.modeObject");
+        ctx.Commands.Execute("select.all");
+        ctx.ActiveMaterial = "brick";
+        ctx.Commands.Execute("texture.apply");
+        Assert.All(ctx.Doc.Meshes[0].Faces, f => Assert.Equal(1f / 256, MathF.Abs(f.Map.ScaleU), 6));
+        foreach (var f in ctx.Doc.Meshes[0].Faces) f.Map.ScaleU = 0.5f; // a manual tweak...
+        ctx.Commands.Execute("texture.alignGrid");                     // ...which align resets to the density
+        Assert.All(ctx.Doc.Meshes[0].Faces, f => Assert.Equal(1f / 256, MathF.Abs(f.Map.ScaleU), 6));
+    }
+
+    [Fact]
     public void Mouse_bindings_cannot_collide()
     {
         var ctx = Headless();

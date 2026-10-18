@@ -16,7 +16,7 @@ public sealed class MaterialFeature : IEditorFeature
 
         c.Add("texture.apply", "Apply active material", () => ctx.ForFaces("Apply Material", (mesh, faces) =>
         {
-            foreach (var f in faces) mesh.Faces[f].Material = ctx.ActiveMaterial;
+            foreach (var f in faces) ctx.Materials.Assign(mesh.Faces[f], ctx.ActiveMaterial); // rescales to the new material's density
         }), "Texture", "Shift+T", HasFaceTargets, "1-material");
 
         for (int i = 0; i < 10; i++)
@@ -31,10 +31,9 @@ public sealed class MaterialFeature : IEditorFeature
         }
         c.AddReference("Texture", "Shift+Alt+1..0", "material slot");
 
-        c.Add("texture.alignGrid", "Align to grid", () => ctx.ForFaces("Align to Grid", (mesh, faces) =>
-        {
-            foreach (var f in faces) mesh.Faces[f].Map = TextureMapping.AlignToGrid(mesh.FaceNormal(f), mesh.Faces[f].Map);
-        }), "Texture", "Ctrl+Shift+G", HasFaceTargets, "2-align", 0);
+        // Scythe: Align to Grid world-aligns and resets scale to the material's texel density.
+        c.Add("texture.alignGrid", "Align to grid", () => ctx.ForFaces("Align to Grid", ctx.Materials.AlignToGrid),
+            "Texture", "Ctrl+Shift+G", HasFaceTargets, "2-align", 0);
         c.Add("texture.alignFace", "Align to face", () => ctx.ForFaces("Align to Face", (mesh, faces) =>
         {
             foreach (var f in faces) mesh.Faces[f].Map = TextureMapping.AlignToFace(mesh.FaceNormal(f), mesh.Faces[f].Map);
