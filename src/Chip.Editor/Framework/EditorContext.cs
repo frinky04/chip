@@ -121,7 +121,8 @@ public sealed class EditorContext
     public bool Snap { get; set; } = true;
     /// <summary>Scythe-style backface selection: picking and rendering include faces pointing away.</summary>
     public bool Backfaces { get; set; }
-    public Camera Camera { get; } = new();
+    /// <summary>The active viewport pane's camera. The view layout swaps it when another pane becomes active.</summary>
+    public Camera Camera { get; set; } = new();
     public Gizmo Gizmo { get; } = new();
 
     public void StepGrid(int dir)
@@ -190,7 +191,10 @@ public sealed class EditorContext
         return any ? (min, max) : null;
     }
 
-    public Vector3? SelectionPivot() => SelectionBounds() is { } b ? (b.Min + b.Max) * 0.5f : null;
+    /// <summary>Temporary pivot (Scythe: MMB-drag the gizmo). Cleared by the viewport when the selection changes.</summary>
+    public Vector3? PivotOverride { get; set; }
+
+    public Vector3? SelectionPivot() => SelectionBounds() is { } b ? PivotOverride ?? (b.Min + b.Max) * 0.5f : null;
 
     public Ray MouseRay() => View.ScreenRay(Mouse);
 
@@ -226,7 +230,7 @@ public sealed class EditorContext
     public void Focus()
     {
         if (SelectionBounds() is { } b) { Camera.Frame(b.Min, b.Max); return; }
-        if (ViewportHovered && RaycastFace() is { } hit) { Camera.Position = hit.Point - Camera.Forward * 4; return; }
+        if (ViewportHovered && RaycastFace() is { } hit) { Camera.FocusOn(hit.Point); return; }
         FrameAll();
     }
 }

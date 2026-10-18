@@ -12,6 +12,9 @@ public readonly record struct Ray(Vector3 Origin, Vector3 Dir)
 /// <summary>A camera as picking sees it: view-projection, viewport size in pixels (origin top-left), eye position.</summary>
 public readonly record struct ViewInfo(Matrix4x4 ViewProj, Vector2 Size, Vector3 Eye)
 {
+    /// <summary>Parallel projection (2D views): clip w doesn't depend on position, so every pixel's ray shares one direction.</summary>
+    public bool IsOrthographic => ViewProj.M14 == 0 && ViewProj.M24 == 0 && ViewProj.M34 == 0;
+
     public bool Project(Vector3 p, out Vector2 screen)
     {
         var c = Vector4.Transform(new Vector4(p, 1), ViewProj);
@@ -25,11 +28,13 @@ public readonly record struct ViewInfo(Matrix4x4 ViewProj, Vector2 Size, Vector3
     {
         Matrix4x4.Invert(ViewProj, out var inv);
         float x = px.X / Size.X * 2 - 1, y = 1 - px.Y / Size.Y * 2;
-        var near = Vector4.Transform(new Vector4(x, y, 0, 1), inv);
+        // Orthographic: start on the near plane (GL clip z = -1) so geometry in front of the view centre is hit.
+        var near = Vector4.Transform(new Vector4(x, y, IsOrthographic ? -1 : 0, 1), inv);
         var far = Vector4.Transform(new Vector4(x, y, 1, 1), inv);
         var a = new Vector3(near.X, near.Y, near.Z) / near.W;
         var b = new Vector3(far.X, far.Y, far.Z) / far.W;
-        return new Ray(Eye, Vector3.Normalize(b - a));
+        // Orthographic rays start at the pixel on the near plane; perspective rays all start at the eye.
+        return new Ray(IsOrthographic ? a : Eye, Vector3.Normalize(b - a));
     }
 }
 

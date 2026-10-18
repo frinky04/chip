@@ -2,37 +2,59 @@ using System.Numerics;
 using Chip.Core.Geometry;
 using Chip.Core.Picking;
 using Chip.Core.Scene;
+using Chip.Core.Texturing;
 using Chip.Editor.UI;
+using Chip.Editor.Viewport;
 using Silk.NET.OpenGL;
 using StbImageSharp;
 
 namespace Chip.Editor.Rendering;
 
+/// <summary>A plane to draw a construction grid on (the hovered face while a creation tool is active).</summary>
+public readonly record struct GridPlane(Vector3 Origin, Vector3 Normal, Vector3 Focus);
+
+/// <summary>Per-pane drawing settings.</summary>
+public readonly record struct RenderSettings(ViewMode Mode, float Grid, bool Backfaces, bool BoundaryEdges = true, GridPlane? Construction = null);
+
 /// <summary>
-/// Draws the document into an offscreen MSAA target and returns the resolved texture for ImGui.
-/// Read-only over the document: scene buffers rebuild when <see cref="Session.Version"/> changes; overlays rebuild per frame.
+/// Draws the document into a pane's offscreen MSAA target. Read-only over the document.
+/// Each mesh has its own GPU buffers, rebuilt only when its content hash changes (checked when <see cref="Session.Version"/>
+/// moves); overlays (selection, hover) are built once per frame and shared by every pane.
 /// </summary>
 public sealed unsafe class Renderer : IDisposable
 {
-    const int Samples = 4;
     static readonly Vector4 WireColor = new(0.06f, 0.06f, 0.07f, 0.55f);
+    static readonly Vector4 WireframeColor = new(0.78f, 0.80f, 0.84f, 0.85f);
+    /// <summary>Open (boundary) edges: dashed cyan, distinct from selection orange and hover yellow.</summary>
+    static readonly Vector4 BoundaryColor = new(0.30f, 0.85f, 1.0f, 0.95f);
     static readonly Vector4 Accent = Theme.Accent, HoverCol = Theme.Hover;
     static readonly Vector4 Backing = new(0.05f, 0.05f, 0.06f, 0.9f);
+    static readonly Vector4 White = Vector4.One;
+
+    sealed class MeshGpu
+    {
+        public ulong Hash;
+        public uint Vao, Vbo, WireVao, WireVbo;
+        public readonly List<(string Material, int First, int Count)> Batches = new();
+        public int EdgeVerts, BoundaryVerts;
+    }
 
     readonly GL _gl;
     readonly MaterialLibrary _lib;
     readonly uint _meshProg, _colorProg, _lineProg, _gridProg;
-    readonly uint _sceneVao, _sceneVbo, _wireVao, _wireVbo, _overlayVao, _overlayVbo, _gridVao, _gridVbo;
-    readonly Dictionary<string, (string? Path, uint Tex)> _textures = new(StringComparer.OrdinalIgnoreCase);
+    readonly uint _overlayVao, _overlayVbo, _gridVao, _gridVbo;
+    readonly Dictionary<string, (string? Path, uint Tex)> _textures = new(StringComparer.OrdinalIgnoreCase); // loaded on first use
     readonly List<uint> _uploads = new();
     readonly uint _missingTex;
+    readonly Dictionary<int, MeshGpu> _meshes = new();
+    readonly Dictionary<uint, Dictionary<string, int>> _uniforms = new();
 
-    uint _msFbo, _msColor, _msDepth, _resolveFbo, _resolveTex;
-    Vector2 _fboSize;
     int _builtVersion = -1;
     Document? _builtDoc;
-    readonly List<(string Material, int First, int Count)> _batches = new();
-    int _wireCount;
+    Overlay _overlay = new();
+
+    /// <summary>Meshes re-uploaded by the last scene sync (diagnostics and tests of the dirty tracking).</summary>
+    public int LastRebuildCount { get; private set; }
 
     public Renderer(GL gl, MaterialLibrary lib)
     {
@@ -43,12 +65,9 @@ public sealed unsafe class Renderer : IDisposable
         _lineProg = Program(Shaders.ColorVs, Shaders.LineGs, Shaders.LineFs);
         _gridProg = Program(Shaders.GridVs, null, Shaders.GridFs);
 
-        (_sceneVao, _sceneVbo) = VertexArray(8, [3, 3, 2]);
-        (_wireVao, _wireVbo) = VertexArray(7, [3, 4]);
         (_overlayVao, _overlayVbo) = VertexArray(7, [3, 4]);
         (_gridVao, _gridVbo) = VertexArray(3, [3]);
-        const float g = 1000; // metres
-        Upload(_gridVbo, [-g, 0, -g, g, 0, -g, g, 0, g, -g, 0, -g, g, 0, g, -g, 0, g], BufferUsageARB.StaticDraw);
+        Upload(_gridVbo, [-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0], BufferUsageARB.StaticDraw);
 
         _missingTex = Checker();
     }
@@ -80,40 +99,85 @@ public sealed unsafe class Renderer : IDisposable
         return (nint)tex;
     }
 
-    /// <summary>Renders one frame and returns the resolved color texture (GL origin, flip V when displaying).</summary>
-    /// <param name="backfaces">Draw back faces (darkened) so backface selection shows what it can pick.</param>
-    public uint Render(Vector2 size, ViewInfo view, Session session, ElementRef? hover, float grid, bool backfaces)
-    {
-        if (size.X < 1 || size.Y < 1) return _resolveTex;
-        EnsureTargets(size);
-        if (session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc)) RebuildScene(session.Doc, session.Version);
-        var overlay = BuildOverlay(session, hover);
+    readonly List<RenderTarget> _targets = new();
 
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _msFbo);
+    /// <summary>The offscreen target for pane <paramref name="index"/>, created on first use and owned by the renderer.</summary>
+    public RenderTarget Target(int index)
+    {
+        while (_targets.Count <= index) _targets.Add(new RenderTarget(_gl));
+        return _targets[index];
+    }
+
+    /// <summary>Once per frame, before any pane renders: syncs mesh buffers with the document and builds the shared overlay.</summary>
+    public void BeginFrame(Session session, ElementRef? hover)
+    {
+        if (session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc)) SyncScene(session.Doc, session.Version);
+        _overlay = BuildOverlay(session, hover);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _overlayVbo);
+        _gl.BufferData<float>(BufferTargetARB.ArrayBuffer, _overlay.Data.ToArray(), BufferUsageARB.StreamDraw);
+    }
+
+    /// <summary>Renders one pane and returns its resolved colour texture (GL origin, flip V when displaying).</summary>
+    public uint Render(RenderTarget target, ViewInfo view, Camera camera, Document doc, RenderSettings s)
+    {
+        var size = view.Size;
+        if (size.X < 1 || size.Y < 1) return target.Texture;
+        target.Ensure(size);
+        bool ortho = view.IsOrthographic;
+        // Overlay geometry is pulled toward the eye to win depth ties; ortho depth is linear, so pull a fixed few cm.
+        float Pull(float perspective) => ortho ? perspective * 10f / Camera.OrthoDepth : perspective;
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, target.MsFbo);
         _gl.Viewport(0, 0, (uint)size.X, (uint)size.Y);
         var bg = Theme.ViewportBg;
         _gl.ClearColor(bg.X, bg.Y, bg.Z, 1);
         _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         _gl.Disable(EnableCap.ScissorTest);
+        _gl.Enable(EnableCap.Blend);
+        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        var vp = view.ViewProj;
+
+        // 2D views: the grid is the background, in the view plane, behind everything.
+        if (ortho)
+        {
+            _gl.Disable(EnableCap.DepthTest);
+            _gl.DepthMask(false);
+            var (u, v, cu, cv) = OrthoGridAxes(camera.Projection);
+            float upp = camera.OrthoHeight / size.Y;
+            float minor = s.Grid;
+            while (minor / upp < 6 && minor < 4096) minor *= 4;
+            DrawGrid(view, camera.Position, u, v, cu, cv, minor, camera.OrthoHeight * 4 + 50, fade: 1, Vector3.Zero, 0, strength: 1.5f);
+        }
+
         _gl.Enable(EnableCap.DepthTest);
         _gl.DepthFunc(DepthFunction.Lequal);
         _gl.DepthMask(true);
-        if (backfaces) _gl.Disable(EnableCap.CullFace);
+        _gl.Disable(EnableCap.Blend);
+        if (s.Backfaces) _gl.Disable(EnableCap.CullFace);
         else _gl.Enable(EnableCap.CullFace);
         _gl.CullFace(TriangleFace.Back);
         _gl.FrontFace(FrontFaceDirection.Ccw);
-        _gl.Disable(EnableCap.Blend);
 
-        var vp = view.ViewProj;
-        _gl.UseProgram(_meshProg);
-        SetMatrix(_meshProg, "uViewProj", vp);
-        _gl.Uniform1(Loc(_meshProg, "uTex"), 0);
-        _gl.ActiveTexture(TextureUnit.Texture0);
-        _gl.BindVertexArray(_sceneVao);
-        foreach (var (mat, first, count) in _batches)
+        if (s.Mode != ViewMode.Wireframe)
         {
-            _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
-            _gl.DrawArrays(PrimitiveType.Triangles, first, (uint)count);
+            _gl.UseProgram(_meshProg);
+            SetMatrix(_meshProg, "uViewProj", vp);
+            _gl.Uniform1(Loc(_meshProg, "uTex"), 0);
+            _gl.Uniform1(Loc(_meshProg, "uMode"), (int)s.Mode);
+            _gl.Uniform1(Loc(_meshProg, "uDensity"), TextureMapping.TexelsPerMeter);
+            _gl.ActiveTexture(TextureUnit.Texture0);
+            foreach (var mesh in doc.Meshes)
+            {
+                if (mesh.Hidden || !_meshes.TryGetValue(mesh.Id, out var gpu) || gpu.Batches.Count == 0) continue;
+                _gl.BindVertexArray(gpu.Vao);
+                foreach (var (mat, first, count) in gpu.Batches)
+                {
+                    var info = _lib.Get(mat);
+                    _gl.Uniform2(Loc(_meshProg, "uTexSize"), new Vector2(info.Width, info.Height));
+                    _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
+                    _gl.DrawArrays(PrimitiveType.Triangles, first, (uint)count);
+                }
+            }
         }
 
         _gl.Disable(EnableCap.CullFace);
@@ -121,60 +185,117 @@ public sealed unsafe class Renderer : IDisposable
         _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
         _gl.DepthMask(false);
 
-        _gl.UseProgram(_gridProg);
-        SetMatrix(_gridProg, "uViewProj", vp);
-        _gl.Uniform1(Loc(_gridProg, "uGrid"), grid);
-        _gl.Uniform3(Loc(_gridProg, "uEye"), view.Eye);
-        _gl.BindVertexArray(_gridVao);
-        _gl.Enable(EnableCap.PolygonOffsetFill);
-        _gl.PolygonOffset(2, 2); // coplanar floors win over the grid
-        _gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
-        _gl.Disable(EnableCap.PolygonOffsetFill);
+        if (!ortho)
+        {
+            var eye = view.Eye;
+            _gl.Enable(EnableCap.PolygonOffsetFill);
+            _gl.PolygonOffset(2, 2); // coplanar floors win over the grid
+            DrawGrid(view, new Vector3(eye.X, 0, eye.Z), Vector3.UnitX, Vector3.UnitZ, Theme.Rgb(0xE5484D), Theme.Rgb(0x3E8EED), s.Grid, 1000, fade: 0, Vector3.Zero, 0, strength: 1);
+            _gl.Disable(EnableCap.PolygonOffsetFill);
+        }
+        if (s.Construction is { } cp) DrawConstructionGrid(view, cp, s.Grid);
 
-        SetColorUniforms(_lineProg, view, 0.0015f);
+        // Scene edges: interior edges solid, open (boundary) edges dashed.
+        SetColorUniforms(_lineProg, view, Pull(0.0015f));
         _gl.Uniform2(Loc(_lineProg, "uViewport"), size);
-        DrawLines(_wireVao, 0, _wireCount, 1.0f, 1);
+        bool wire = s.Mode == ViewMode.Wireframe;
+        foreach (var mesh in doc.Meshes)
+        {
+            if (mesh.Hidden || !_meshes.TryGetValue(mesh.Id, out var gpu)) continue;
+            DrawLines(gpu.WireVao, 0, gpu.EdgeVerts, wire ? 1.25f : 1.0f, 1, wire ? WireframeColor : WireColor);
+            if (s.BoundaryEdges) DrawLines(gpu.WireVao, gpu.EdgeVerts, gpu.BoundaryVerts, 1.75f, 1, BoundaryColor, dash: 7 * Theme.Scale);
+            else DrawLines(gpu.WireVao, gpu.EdgeVerts, gpu.BoundaryVerts, wire ? 1.25f : 1.0f, 1, wire ? WireframeColor : WireColor);
+        }
 
         // Overlay: tinted faces, then lines/points twice: depth-tested, then a faint x-ray pass.
-        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _overlayVbo);
-        _gl.BufferData<float>(BufferTargetARB.ArrayBuffer, overlay.Data.ToArray(), BufferUsageARB.StreamDraw);
-        SetColorUniforms(_colorProg, view, 0.002f);
+        var o = _overlay;
+        SetColorUniforms(_colorProg, view, Pull(0.002f));
         _gl.BindVertexArray(_overlayVao);
-        _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)overlay.TriCount);
+        _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)o.TriCount);
 
         for (int pass = 0; pass < 2; pass++)
         {
             if (pass == 1) _gl.Disable(EnableCap.DepthTest);
             float alpha = pass == 0 ? 1f : 0.22f;
-            SetColorUniforms(_lineProg, view, 0.002f);
+            SetColorUniforms(_lineProg, view, Pull(0.002f));
             _gl.Uniform2(Loc(_lineProg, "uViewport"), size);
-            foreach (var (first, count, width) in overlay.Lines) DrawLines(_overlayVao, first, count, width, alpha);
-            SetColorUniforms(_colorProg, view, 0.002f);
+            foreach (var (first, count, width) in o.Lines) DrawLines(_overlayVao, first, count, width, alpha, White);
+            SetColorUniforms(_colorProg, view, Pull(0.002f));
             _gl.Uniform1(Loc(_colorProg, "uAlpha"), alpha);
             _gl.Enable(EnableCap.ProgramPointSize);
-            foreach (var (first, count, px) in overlay.Points)
+            _gl.BindVertexArray(_overlayVao);
+            foreach (var (first, count, px) in o.Points)
             {
                 _gl.Uniform1(Loc(_colorProg, "uPointSize"), px * Theme.Scale);
                 _gl.DrawArrays(PrimitiveType.Points, first, (uint)count);
             }
         }
 
-        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _msFbo);
-        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _resolveFbo);
-        _gl.BlitFramebuffer(0, 0, (int)size.X, (int)size.Y, 0, 0, (int)size.X, (int)size.Y, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        target.Resolve();
         _gl.Disable(EnableCap.DepthTest);
         _gl.DepthMask(true);
         _gl.BindVertexArray(0);
-        return _resolveTex;
+        return target.Texture;
     }
 
-    void DrawLines(uint vao, int first, int count, float width, float alpha)
+    /// <summary>Grid axes for a 2D view and the colours of the world axes they show (X red, Y green, Z blue).</summary>
+    static (Vector3 U, Vector3 V, Vector4 ColU, Vector4 ColV) OrthoGridAxes(Projection p)
+    {
+        Vector4 x = Theme.Rgb(0xE5484D), y = Theme.Rgb(0x5BB35B), z = Theme.Rgb(0x3E8EED);
+        return p switch
+        {
+            Projection.Top => (Vector3.UnitX, Vector3.UnitZ, x, z),
+            Projection.Front => (Vector3.UnitX, Vector3.UnitY, x, y),
+            _ => (Vector3.UnitZ, Vector3.UnitY, z, y),
+        };
+    }
+
+    /// <summary>A local grid on the hovered face's axis-aligned plane, drawn over the surface and fading out around the cursor.</summary>
+    void DrawConstructionGrid(ViewInfo view, GridPlane cp, float grid)
+    {
+        var n = TextureMapping.DominantAxis(cp.Normal);
+        var u = MathF.Abs(n.Y) > 0.5f ? Vector3.UnitX : Vector3.UnitY;
+        var v = Vector3.Normalize(Vector3.Cross(n, u));
+        float radius = Math.Clamp(grid * 12, 1.25f, 12f);
+        var center = cp.Focus - n * Vector3.Dot(cp.Focus - cp.Origin, n);
+        _gl.Enable(EnableCap.PolygonOffsetFill);
+        _gl.PolygonOffset(-1, -2); // sits on top of the face it follows
+        DrawGrid(view, center, u, v, Vector4.Zero, Vector4.Zero, grid, radius, fade: 2, center, radius, strength: 3.5f, origin: cp.Origin);
+        _gl.Disable(EnableCap.PolygonOffsetFill);
+    }
+
+    /// <param name="fade">0 = by distance from the eye, 1 = none (2D views), 2 = radial around <paramref name="fadeCenter"/>.</param>
+    void DrawGrid(ViewInfo view, Vector3 center, Vector3 u, Vector3 v, Vector4 colU, Vector4 colV, float grid, float extent,
+        int fade, Vector3 fadeCenter, float fadeRadius, float strength, Vector3? origin = null)
+    {
+        var p = _gridProg;
+        _gl.UseProgram(p);
+        SetMatrix(p, "uViewProj", view.ViewProj);
+        _gl.Uniform3(Loc(p, "uCenter"), center);
+        _gl.Uniform3(Loc(p, "uOrigin"), origin ?? Vector3.Zero);
+        _gl.Uniform3(Loc(p, "uU"), u);
+        _gl.Uniform3(Loc(p, "uV"), v);
+        _gl.Uniform1(Loc(p, "uExtent"), extent);
+        _gl.Uniform1(Loc(p, "uGrid"), grid);
+        _gl.Uniform4(Loc(p, "uColU"), colU);
+        _gl.Uniform4(Loc(p, "uColV"), colV);
+        _gl.Uniform3(Loc(p, "uEye"), view.Eye);
+        _gl.Uniform1(Loc(p, "uFade"), fade);
+        _gl.Uniform3(Loc(p, "uFadeCenter"), fadeCenter);
+        _gl.Uniform1(Loc(p, "uFadeRadius"), fadeRadius);
+        _gl.Uniform1(Loc(p, "uStrength"), strength);
+        _gl.BindVertexArray(_gridVao);
+        _gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
+    }
+
+    void DrawLines(uint vao, int first, int count, float width, float alpha, Vector4 tint, float dash = 0)
     {
         if (count == 0) return;
         _gl.UseProgram(_lineProg);
         _gl.Uniform1(Loc(_lineProg, "uWidth"), width * Theme.Scale);
         _gl.Uniform1(Loc(_lineProg, "uAlpha"), alpha);
+        _gl.Uniform4(Loc(_lineProg, "uTint"), tint);
+        _gl.Uniform1(Loc(_lineProg, "uDash"), dash);
         _gl.BindVertexArray(vao);
         _gl.DrawArrays(PrimitiveType.Lines, first, (uint)count);
     }
@@ -189,45 +310,79 @@ public sealed unsafe class Renderer : IDisposable
         _gl.Uniform1(Loc(prog, "uAlpha"), 1f);
     }
 
-    void RebuildScene(Document doc, int version)
+    // ---- Scene buffers (per mesh, dirty-tracked) ----
+
+    void SyncScene(Document doc, int version)
     {
         _builtDoc = doc;
         _builtVersion = version;
-        var byMaterial = new Dictionary<string, List<float>>(StringComparer.OrdinalIgnoreCase);
-        var wire = new List<float>();
-        var tri = new List<int>();
+        int rebuilt = 0;
+        var live = new HashSet<int>();
         foreach (var mesh in doc.Meshes)
         {
-            if (mesh.Hidden) continue;
-            var normals = Topology.CornerNormals(mesh);
-            for (int f = 0; f < mesh.Faces.Count; f++)
+            live.Add(mesh.Id);
+            ulong hash = MeshHash.Of(mesh);
+            if (_meshes.TryGetValue(mesh.Id, out var gpu) && gpu.Hash == hash) continue;
+            if (gpu == null)
             {
-                var face = mesh.Faces[f];
-                var info = _lib.Get(face.Material);
-                if (!byMaterial.TryGetValue(face.Material, out var list)) byMaterial[face.Material] = list = new List<float>();
-                tri.Clear();
-                Triangulator.Triangulate(mesh, f, tri);
-                foreach (var i in tri)
-                {
-                    var p = mesh.Positions[face.Verts[i]];
-                    var n = normals[f][i];
-                    var uv = face.UV(i, p, info.Width, info.Height);
-                    list.AddRange([p.X, p.Y, p.Z, n.X, n.Y, n.Z, uv.X, uv.Y]);
-                }
+                gpu = new MeshGpu();
+                (gpu.Vao, gpu.Vbo) = VertexArray(8, [3, 3, 2]);
+                (gpu.WireVao, gpu.WireVbo) = VertexArray(7, [3, 4]);
+                _meshes[mesh.Id] = gpu;
             }
-            foreach (var e in mesh.Edges()) { Vertex(wire, mesh.Positions[e.A], WireColor); Vertex(wire, mesh.Positions[e.B], WireColor); }
+            gpu.Hash = hash;
+            BuildMesh(mesh, gpu);
+            rebuilt++;
         }
+        foreach (var id in _meshes.Keys.Where(id => !live.Contains(id)).ToList())
+        {
+            var gpu = _meshes[id];
+            _gl.DeleteBuffer(gpu.Vbo);
+            _gl.DeleteBuffer(gpu.WireVbo);
+            _gl.DeleteVertexArray(gpu.Vao);
+            _gl.DeleteVertexArray(gpu.WireVao);
+            _meshes.Remove(id);
+        }
+        LastRebuildCount = rebuilt;
+    }
 
-        _batches.Clear();
+    void BuildMesh(PolyMesh mesh, MeshGpu gpu)
+    {
+        var byMaterial = new Dictionary<string, List<float>>(StringComparer.OrdinalIgnoreCase);
+        var tri = new List<int>();
+        var normals = Topology.CornerNormals(mesh);
+        for (int f = 0; f < mesh.Faces.Count; f++)
+        {
+            var face = mesh.Faces[f];
+            var info = _lib.Get(face.Material);
+            if (!byMaterial.TryGetValue(face.Material, out var list)) byMaterial[face.Material] = list = new List<float>();
+            tri.Clear();
+            Triangulator.Triangulate(mesh, f, tri);
+            foreach (var i in tri)
+            {
+                var p = mesh.Positions[face.Verts[i]];
+                var n = normals[f][i];
+                var uv = face.UV(i, p, info.Width, info.Height);
+                list.AddRange([p.X, p.Y, p.Z, n.X, n.Y, n.Z, uv.X, uv.Y]);
+            }
+        }
+        gpu.Batches.Clear();
         var all = new List<float>();
         foreach (var (mat, data) in byMaterial)
         {
-            _batches.Add((mat, all.Count / 8, data.Count / 8));
+            gpu.Batches.Add((mat, all.Count / 8, data.Count / 8));
             all.AddRange(data);
         }
-        Upload(_sceneVbo, all.ToArray(), BufferUsageARB.DynamicDraw);
-        Upload(_wireVbo, wire.ToArray(), BufferUsageARB.DynamicDraw);
-        _wireCount = wire.Count / 7;
+        Upload(gpu.Vbo, all.ToArray(), BufferUsageARB.DynamicDraw);
+
+        var boundary = mesh.BoundaryEdges();
+        var wire = new List<float>();
+        foreach (var e in mesh.Edges())
+            if (!boundary.Contains(e)) { Vertex(wire, mesh.Positions[e.A], White); Vertex(wire, mesh.Positions[e.B], White); }
+        gpu.EdgeVerts = wire.Count / 7;
+        foreach (var e in boundary) { Vertex(wire, mesh.Positions[e.A], White); Vertex(wire, mesh.Positions[e.B], White); }
+        gpu.BoundaryVerts = wire.Count / 7 - gpu.EdgeVerts;
+        Upload(gpu.WireVbo, wire.ToArray(), BufferUsageARB.DynamicDraw);
     }
 
     sealed class Overlay
@@ -326,36 +481,6 @@ public sealed unsafe class Renderer : IDisposable
 
     static void Vertex(List<float> d, Vector3 p, Vector4 c) => d.AddRange([p.X, p.Y, p.Z, c.X, c.Y, c.Z, c.W]);
 
-    void EnsureTargets(Vector2 size)
-    {
-        if (size == _fboSize) return;
-        _fboSize = size;
-        uint w = (uint)size.X, h = (uint)size.Y;
-        if (_msFbo == 0)
-        {
-            _msFbo = _gl.GenFramebuffer();
-            _msColor = _gl.GenRenderbuffer();
-            _msDepth = _gl.GenRenderbuffer();
-            _resolveFbo = _gl.GenFramebuffer();
-            _resolveTex = _gl.GenTexture();
-        }
-        _gl.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _msColor);
-        _gl.RenderbufferStorageMultisample(RenderbufferTarget.Renderbuffer, Samples, InternalFormat.Rgba8, w, h);
-        _gl.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _msDepth);
-        _gl.RenderbufferStorageMultisample(RenderbufferTarget.Renderbuffer, Samples, InternalFormat.Depth24Stencil8, w, h);
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _msFbo);
-        _gl.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, RenderbufferTarget.Renderbuffer, _msColor);
-        _gl.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, RenderbufferTarget.Renderbuffer, _msDepth);
-
-        _gl.BindTexture(TextureTarget.Texture2D, _resolveTex);
-        _gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba8, w, h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, null);
-        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _resolveFbo);
-        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _resolveTex, 0);
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-    }
-
     uint LoadTexture(string path)
     {
         using var stream = File.OpenRead(path);
@@ -415,7 +540,13 @@ public sealed unsafe class Renderer : IDisposable
         _gl.BufferData<float>(BufferTargetARB.ArrayBuffer, data, usage);
     }
 
-    int Loc(uint prog, string name) => _gl.GetUniformLocation(prog, name);
+    /// <summary>Uniform locations are looked up once per program (four panes × many draws per frame).</summary>
+    int Loc(uint prog, string name)
+    {
+        if (!_uniforms.TryGetValue(prog, out var map)) _uniforms[prog] = map = new Dictionary<string, int>();
+        if (!map.TryGetValue(name, out int loc)) map[name] = loc = _gl.GetUniformLocation(prog, name);
+        return loc;
+    }
 
     void SetMatrix(uint prog, string name, Matrix4x4 m) => _gl.UniformMatrix4(Loc(prog, name), 1, false, (float*)&m);
 
@@ -445,13 +576,17 @@ public sealed unsafe class Renderer : IDisposable
     {
         foreach (var t in _textures.Values.Select(v => v.Tex).Concat(_uploads).Distinct().Where(t => t != _missingTex)) _gl.DeleteTexture(t);
         _gl.DeleteTexture(_missingTex);
-        _gl.DeleteTexture(_resolveTex);
-        _gl.DeleteFramebuffer(_msFbo);
-        _gl.DeleteFramebuffer(_resolveFbo);
-        _gl.DeleteRenderbuffer(_msColor);
-        _gl.DeleteRenderbuffer(_msDepth);
+        foreach (var gpu in _meshes.Values)
+        {
+            _gl.DeleteBuffer(gpu.Vbo);
+            _gl.DeleteBuffer(gpu.WireVbo);
+            _gl.DeleteVertexArray(gpu.Vao);
+            _gl.DeleteVertexArray(gpu.WireVao);
+        }
+        _meshes.Clear();
+        foreach (var t in _targets) t.Dispose();
         foreach (var p in new[] { _meshProg, _colorProg, _lineProg, _gridProg }) _gl.DeleteProgram(p);
-        foreach (var b in new[] { _sceneVbo, _wireVbo, _overlayVbo, _gridVbo }) _gl.DeleteBuffer(b);
-        foreach (var a in new[] { _sceneVao, _wireVao, _overlayVao, _gridVao }) _gl.DeleteVertexArray(a);
+        foreach (var b in new[] { _overlayVbo, _gridVbo }) _gl.DeleteBuffer(b);
+        foreach (var a in new[] { _overlayVao, _gridVao }) _gl.DeleteVertexArray(a);
     }
 }

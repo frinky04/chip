@@ -5,12 +5,14 @@ using ImGuiNET;
 namespace Chip.Editor.Viewport;
 
 /// <summary>
-/// Camera navigation, independent of the active tool: RMB + WASD/QE fly (Shift faster, wheel sets speed),
-/// MMB pan, Alt+LMB orbit, wheel dolly toward the cursor. Mouse bindings with modifiers are resolved before this runs.
+/// Camera navigation, independent of the active tool. Perspective: RMB + WASD/QE fly (Shift faster, wheel sets speed),
+/// MMB pan, Alt+LMB orbit, wheel dolly toward the cursor. Orthographic: RMB or MMB pan, wheel zooms at the cursor.
+/// Mouse bindings with modifiers are resolved before this runs.
 /// </summary>
 public sealed class Navigator
 {
     bool _flying, _panning, _orbiting;
+    ImGuiMouseButton _panButton;
     Vector3 _orbitPivot;
     float _panDepth;
 
@@ -35,6 +37,34 @@ public sealed class Navigator
     {
         var io = ImGui.GetIO();
         var cam = ctx.Camera;
+        return cam.IsOrtho ? UpdateOrtho(ctx, cam, io) : UpdatePerspective(ctx, cam, io, dt);
+    }
+
+    bool UpdateOrtho(EditorContext ctx, Camera cam, ImGuiIOPtr io)
+    {
+        bool hovered = ctx.ViewportHovered;
+        if (hovered && !_panning)
+            foreach (var b in new[] { ImGuiMouseButton.Right, ImGuiMouseButton.Middle })
+                if (ImGui.IsMouseClicked(b)) { _panning = true; _panButton = b; break; }
+        if (_panning)
+        {
+            if (!ImGui.IsMouseDown(_panButton)) _panning = false;
+            else
+            {
+                cam.Pan(io.MouseDelta, cam.UnitsPerPixel(0, ctx.ViewportSize.Y));
+                return true;
+            }
+        }
+        if (hovered && io.MouseWheel != 0)
+        {
+            var ray = ctx.MouseRay();
+            cam.Zoom(MathF.Pow(0.85f, io.MouseWheel), ray.Origin);
+        }
+        return false;
+    }
+
+    bool UpdatePerspective(EditorContext ctx, Camera cam, ImGuiIOPtr io, float dt)
+    {
         bool hovered = ctx.ViewportHovered;
 
         if (hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Right)) { _flying = true; CaptureCursor(true); }
@@ -60,15 +90,15 @@ public sealed class Navigator
         if (hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Middle))
         {
             _panning = true;
+            _panButton = ImGuiMouseButton.Middle;
             _panDepth = ctx.RaycastFace()?.Distance ?? 8;
         }
         if (_panning)
         {
-            if (!ImGui.IsMouseDown(ImGuiMouseButton.Middle)) _panning = false;
+            if (!ImGui.IsMouseDown(_panButton)) _panning = false;
             else
             {
-                float upp = cam.UnitsPerPixel(_panDepth, ctx.ViewportSize.Y);
-                cam.Position += (-cam.Right * io.MouseDelta.X + cam.Up * io.MouseDelta.Y) * upp;
+                cam.Pan(io.MouseDelta, cam.UnitsPerPixel(_panDepth, ctx.ViewportSize.Y));
                 return true;
             }
         }
@@ -76,7 +106,7 @@ public sealed class Navigator
         if (hovered && io.KeyAlt && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
         {
             _orbiting = true;
-            _orbitPivot = ctx.SelectionPivot() ?? ctx.RaycastFace()?.Point ?? cam.Position + cam.Forward * 8;
+            _orbitPivot = ctx.SelectionPivot() ?? ctx.RaycastFace()?.Point ?? FocusPivot(cam) ?? cam.Position + cam.Forward * 8;
         }
         if (_orbiting)
         {
@@ -96,4 +126,8 @@ public sealed class Navigator
         }
         return false;
     }
+
+    /// <summary>The last focus point, if it is still in front of the camera and not absurdly far.</summary>
+    static Vector3? FocusPivot(Camera cam) =>
+        cam.FocusTarget is { } t && Vector3.Dot(t - cam.Position, cam.Forward) > 0.1f && Vector3.Distance(t, cam.Position) < 200 ? t : null;
 }
