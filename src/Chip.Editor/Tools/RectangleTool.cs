@@ -57,7 +57,7 @@ public sealed class RectangleTool : IViewportTool
         if (_plane.Hit(ray) is { } p) _b = p;
         if (ImGui.IsMouseDown(ImGuiMouseButton.Left)) return;
         _dragging = false;
-        if (Primitive.Rectangle(_a, _b, _facing, ctx.ActiveMaterial, TextureMapping.Default) is not { } mesh) return;
+        if (Primitive.Rectangle(_a, _b, _facing, ctx.ActiveMaterial, ctx.Materials.MappingFor(ctx.ActiveMaterial)) is not { } mesh) return;
         ctx.Session.Do("Create Rectangle", () =>
         {
             ctx.Doc.Add(mesh);

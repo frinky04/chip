@@ -129,8 +129,11 @@ Commands act on the current selection and mode. Each command is one undo step.
 | Built-in blockout materials 1–10 (procedural dev grids: orange, grey, dark, blue, green, red, yellow, purple, white, black) | `Shift+Alt+1..0` | v1 | Generated in code, so no asset dependency. |
 | Apply material to selected faces (or whole mesh in object mode) | `Shift+T` | v1 | |
 | Lift material from the hovered face | `Shift+RMB` | v1 | |
-| Material browser (thumbnails grid, search) | | v1 (palette) / v2 (browser) | |
-| Import material library from a folder of images (PNG/JPG/TGA). Texture size drives texel density | | v2 | Scythe reads the size from the Base Color texture. Name aliasing (Albedo, BaseColor…) maps to engine materials on export. |
+| Material browser (thumbnails grid, search) | `T` | v1 (palette) / v2 (browser) | **Shipped (I).** Floating window over the viewport: search, folder tree, thumbnail size, favourites and recent (in memory until settings land), hover details. Click = active, double-click = apply, drag onto a face = apply there. Lazy thumbnails (on-screen only, worker-thread decode) keep 500+ textures smooth. |
+| Import material library from a folder of images (PNG/JPG/TGA). Texture size drives texel density | | v2 | **Shipped (I).** Sizes come from file headers. Sources: bundled `assets/textures` and `assets/tools`, `CHIP_TEXTURE_DIRS` (`;`-separated), and Texture > Add texture folder (this session only; stream K persists). Texture > Rescan texture folders. Name aliasing: `_Albedo`/`_BaseColor`/`_Diffuse`… are stripped and other PBR maps (`_Normal`, `_Roughness`…) are skipped. Exports embed JPG as JPEG and convert TGA to PNG. |
+| Per-material texel density override | | v2 | **Shipped (I).** The inspector's "Tiles every" field. Saved to `chip-materials.json` in the texture's folder. New blocks use it, and so does Texture > Reset scale to material density. Apply, replace and drop keep each face's scale relative to its material's density. |
+| Tool materials `nodraw`, `clip`, `trigger`, `skip` **[S2]** | | v2 | **Shipped (I).** Bundled striped textures. Export: nodraw and skip never render. Clip faces, and nodraw faces of a colliding mesh, go to a `name_clip-colonly` node. Trigger faces go to `name_trigger-colonly` with `extras.chip_tool = "trigger"`. |
+| Replace material across the level | | v2 | **Shipped (I).** Texture > Replace material… is one undo step. |
 | Engine material remap on export (Chip material name → `res://` path) | | v2 | Godot import script or `.tres` side-car. |
 | Replace blockout materials (settings) | | later | |
 

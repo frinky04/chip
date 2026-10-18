@@ -103,7 +103,7 @@ public sealed class BlockTool : IViewportTool
 
     void Create(EditorContext ctx, PrimitiveFrame frame)
     {
-        var mesh = Primitive.Build(Shape, EffectiveOptions(frame), frame, ctx.ActiveMaterial, TextureMapping.Default);
+        var mesh = Primitive.Build(Shape, EffectiveOptions(frame), frame, ctx.ActiveMaterial, ctx.Materials.MappingFor(ctx.ActiveMaterial));
         ctx.Session.Do($"Create {Label(Shape)}", () =>
         {
             ctx.Doc.Add(mesh);

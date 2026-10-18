@@ -114,7 +114,7 @@ public sealed class PolygonTool : IViewportTool
     void Create(EditorContext ctx)
     {
         float h = MathF.Abs(_height) < 1e-4f ? _grid : _height;
-        var mesh = Primitive.Prism(_points, _plane.Normal * h, ctx.ActiveMaterial, TextureMapping.Default);
+        var mesh = Primitive.Prism(_points, _plane.Normal * h, ctx.ActiveMaterial, ctx.Materials.MappingFor(ctx.ActiveMaterial));
         Cancel(ctx);
         if (mesh == null) return;
         mesh.Name = "polygon";
