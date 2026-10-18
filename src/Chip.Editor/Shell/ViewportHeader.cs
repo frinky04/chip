@@ -14,7 +14,7 @@ namespace Chip.Editor;
 /// </summary>
 public sealed partial class EditorApp
 {
-    static float HeaderHeight => Theme.Px(38);
+    static float HeaderHeight => Theme.Px(44);
 
     static readonly SelectMode[] HeaderModes = [SelectMode.Vertex, SelectMode.Edge, SelectMode.Face, SelectMode.Object];
 
@@ -31,6 +31,8 @@ public sealed partial class EditorApp
     {
         float h = HeaderHeight;
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Bg); // chrome, like Krita's toolbar
+        // Taller controls than the inspector's: the header is the editor's main toolbar.
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(ImGui.GetStyle().FramePadding.X, Theme.Px(6)));
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Px(8), MathF.Floor((h - ImGui.GetFrameHeight()) * 0.5f)));
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Theme.Px(2, 0));
         ImGui.BeginChild("##vpheader", new Vector2(width, h), ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NoScrollbar);
@@ -90,7 +92,7 @@ public sealed partial class EditorApp
         if (Toggle("backfaces", Icon.Backfaces, "Backfaces", "Select faces that point away from you  (Alt+B)", Ctx.Backfaces)) Ctx.Commands.Execute("view.backfaces");
 
         ImGui.EndChild();
-        ImGui.PopStyleVar(2);
+        ImGui.PopStyleVar(3);
         ImGui.PopStyleColor();
 
         // Hairline under the header so the 3D view reads as a separate surface.

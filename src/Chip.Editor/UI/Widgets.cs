@@ -37,14 +37,15 @@ public static class Widgets
     /// </summary>
     public static int SegmentedControl(string id, (Icon Icon, string Label, string Tip)[] items, int active)
     {
-        float inset = Theme.Px(2);
+        // Roomy pills with a little air between them, so icon, label and neighbour don't crowd each other.
+        float inset = Theme.Px(3), between = Theme.Px(2);
         float h = ImGui.GetFrameHeight();
-        float total = items.Sum(i => LabeledWidth(i.Label)) + inset * 2;
+        float total = items.Sum(i => LabeledWidth(i.Label, Kind.Segment)) + between * (items.Length - 1) + inset * 2;
         var p = ImGui.GetCursorScreenPos();
-        ImGui.GetWindowDrawList().AddRectFilled(p, p + new Vector2(total, h), U32(Theme.Track), Theme.Px(4));
+        ImGui.GetWindowDrawList().AddRectFilled(p, p + new Vector2(total, h), U32(Theme.Track), Theme.Px(5));
 
         int clicked = -1;
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Vector2.Zero);
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(between, 0));
         ImGui.SetCursorScreenPos(p + new Vector2(inset, inset));
         for (int i = 0; i < items.Length; i++)
         {
@@ -90,14 +91,20 @@ public static class Widgets
     public static bool Toggle(string id, Icon icon, string label, string tip, bool on) =>
         LabeledButton(id, icon, label, tip, on, Kind.Toggle);
 
-    static float LabeledWidth(string label) =>
-        Theme.Px(8) * 2 + Fonts.IconSize + (label.Length > 0 ? Theme.Px(6) + ImGui.CalcTextSize(label).X : 0);
+    /// <summary>Segments are roomier than toggles: they're the header's main control.</summary>
+    static (float Pad, float Gap) Spacing(Kind kind) => kind == Kind.Segment ? (Theme.Px(12), Theme.Px(8)) : (Theme.Px(8), Theme.Px(6));
+
+    static float LabeledWidth(string label, Kind kind = Kind.Toggle)
+    {
+        var (pad, gap) = Spacing(kind);
+        return pad * 2 + Fonts.IconSize + (label.Length > 0 ? gap + ImGui.CalcTextSize(label).X : 0);
+    }
 
     static bool LabeledButton(string id, Icon icon, string label, string tip, bool active, Kind kind, float height = 0)
     {
         float h = height > 0 ? height : ImGui.GetFrameHeight();
-        float pad = Theme.Px(8), gap = Theme.Px(6);
-        var size = new Vector2(LabeledWidth(label), h);
+        var (pad, gap) = Spacing(kind);
+        var size = new Vector2(LabeledWidth(label, kind), h);
         var p = ImGui.GetCursorScreenPos();
         bool clicked = ImGui.InvisibleButton(id, size);
         bool hovered = ImGui.IsItemHovered();
