@@ -298,5 +298,4 @@ public static partial class MeshOps
         return SafeNormalize(n);
     }
 
-    static Vector3 SafeNormalize(Vector3 v) => v.LengthSquared() < 1e-20f ? Vector3.Zero : Vector3.Normalize(v);
 }

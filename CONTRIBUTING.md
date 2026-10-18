@@ -56,6 +56,7 @@ public sealed class MeshOpsFeature : IEditorFeature
 - **Tools** implement `IViewportTool`. Read the mouse from `ctx.Mouse` / `ctx.MouseRay()`, set `ctx.Hover`, draw overlays in `Draw`, return `Busy` while mid-operation, and undo partial work in `Cancel` (Esc). Options go in `HasOptions`/`DrawOptions`.
 - **Edits** happen inside `ctx.Session.Do(label, ...)` (one undo step), or a `TransformGesture` for interactive transforms (`Begin` → `Apply` repeatedly → `Commit`/`Cancel`). Never mutate the document outside a step.
 - **Mesh ops** go in a new `Geometry/Ops/<Name>.cs` partial of `MeshOps`. Keep face indices stable when you can. Route vertex renumbering through `RemoveUnusedVertices`/`Reindex` so `SoftEdges` and `UVs` stay valid. Reorder `Face.UVs` whenever you reorder `Face.Verts`. Return what the caller needs to fix the selection (maps or new indices).
+- **Helpers inside `MeshOps` partials share one class**: give private helpers op-specific names, or promote common ones (like `SafeNormalize`) to `Ops/MeshOps.cs`.
 - **Selection after topology edits**: use `Selection.Remap` or rebuild the selection explicitly; `Session.End` prunes anything invalid.
 
 ## Shared files: who may touch them

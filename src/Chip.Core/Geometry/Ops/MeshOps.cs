@@ -12,6 +12,9 @@ public static partial class MeshOps
 {
     public static float Snap(float x, float grid) => MathF.Round(x / grid) * grid;
 
+    /// <summary>Unit vector, or zero for degenerate input (shorter than ~1e-8 m). Shared by ops; don't redeclare it.</summary>
+    internal static Vector3 SafeNormalize(Vector3 v) => v.LengthSquared() < 1e-16f ? Vector3.Zero : Vector3.Normalize(v);
+
     public static Vector3 Snap(Vector3 p, float grid) => new(Snap(p.X, grid), Snap(p.Y, grid), Snap(p.Z, grid));
 
     /// <summary>
