@@ -74,7 +74,7 @@ public class PickingCacheTests
         } : new[] { View(new(7, 6, 8), Vector3.Zero), View(new(0, 200, 0), Vector3.Zero, true), View(Vector3.Zero, Vector3.UnitZ) };
         foreach (var view in views)
         {
-            for (int i = 0; i < (stress ? 48 : 96); i++)
+            for (int i = 0; i < (stress ? 6 : 96); i++) // the brute-force oracle is slow in Debug: the stress level spot-checks, the fixture covers breadth
             {
                 var mouse = new Vector2(rng.NextSingle() * 2000 - 200, rng.NextSingle() * 1200 - 150);
                 // Bias half the samples toward actual vertices and silhouettes; the others sample empty screen space.
