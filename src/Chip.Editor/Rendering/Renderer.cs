@@ -175,18 +175,19 @@ public sealed unsafe class Renderer : IDisposable
         foreach (var mesh in doc.Meshes)
         {
             if (mesh.Hidden) continue;
+            var normals = Topology.CornerNormals(mesh);
             for (int f = 0; f < mesh.Faces.Count; f++)
             {
                 var face = mesh.Faces[f];
                 var info = _lib.Get(face.Material);
                 if (!byMaterial.TryGetValue(face.Material, out var list)) byMaterial[face.Material] = list = new List<float>();
-                var n = mesh.FaceNormal(f);
                 tri.Clear();
                 Triangulator.Triangulate(mesh, f, tri);
                 foreach (var i in tri)
                 {
                     var p = mesh.Positions[face.Verts[i]];
-                    var uv = face.Map.Project(p, info.Width, info.Height);
+                    var n = normals[f][i];
+                    var uv = face.UV(i, p, info.Width, info.Height);
                     list.AddRange([p.X, p.Y, p.Z, n.X, n.Y, n.Z, uv.X, uv.Y]);
                 }
             }

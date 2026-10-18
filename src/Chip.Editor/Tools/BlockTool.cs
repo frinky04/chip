@@ -3,17 +3,24 @@ using Chip.Core.Geometry;
 using Chip.Core.Picking;
 using Chip.Core.Scene;
 using Chip.Core.Texturing;
+using Chip.Editor.Framework;
 using Chip.Editor.UI;
 using ImGuiNET;
 
-namespace Chip.Editor.Viewport;
+namespace Chip.Editor.Tools;
 
 /// <summary>
 /// Hammer-style block creation: drag the base on the hovered surface (or the ground), release,
 /// move to set the height, click or Enter to create. The construction plane is axis-aligned and snapped.
 /// </summary>
-public sealed class BlockTool
+public sealed class BlockTool : IViewportTool
 {
+    public string Id => "block";
+    public string Name => "Block";
+    public Icon Icon => Icon.Block;
+    public string? Hotkey => "Shift+B";
+    public int Order => 10;
+
     enum Stage { Idle, Base, Height }
 
     Stage _stage;
@@ -30,7 +37,28 @@ public sealed class BlockTool
         _ => [("Move", "set height"), ("Click/Enter", "create"), ("Esc", "cancel")],
     };
 
-    public void Cancel() { _stage = Stage.Idle; _cursor = null; }
+    public bool Cancel(EditorContext ctx)
+    {
+        bool wasBusy = Busy;
+        _stage = Stage.Idle;
+        _cursor = null;
+        return wasBusy;
+    }
+
+    public void Update(EditorContext ctx)
+    {
+        ctx.Hover = null;
+        if (Step(ctx.View, ctx.Doc, ctx.Mouse, ctx.ViewportHovered, ctx.Grid, ctx.Snap, ctx.Backfaces) is not { } box) return;
+        ctx.Session.Do("Create Block", () =>
+        {
+            var mesh = ctx.Doc.Add(MeshOps.CreateBox(box.Min, box.Max, ctx.ActiveMaterial, TextureMapping.Default));
+            ctx.Sel.ConvertTo(SelectMode.Object, ctx.Doc);
+            ctx.Sel.Clear();
+            ctx.Sel.Add(ElementRef.Object(mesh.Id));
+        });
+    }
+
+    public void Draw(EditorContext ctx, ImDrawListPtr dl, Vector2 origin) => Draw(dl, origin, ctx.View);
 
     /// <summary>Snapped construction cursor: a cross along the construction plane, one grid step per arm.</summary>
     void DrawCursor(ImDrawListPtr dl, Vector2 origin, ViewInfo v, Vector3 c)
@@ -51,7 +79,7 @@ public sealed class BlockTool
     }
 
     /// <summary>Feeds one frame of input. Returns box corners when the user confirms a block.</summary>
-    public (Vector3 Min, Vector3 Max)? Update(ViewInfo view, Document doc, Vector2 mouse, bool hovered, float grid, bool snap, bool backfaces)
+    (Vector3 Min, Vector3 Max)? Step(ViewInfo view, Document doc, Vector2 mouse, bool hovered, float grid, bool snap, bool backfaces)
     {
         _grid = grid;
         var ray = view.ScreenRay(mouse);
@@ -122,7 +150,7 @@ public sealed class BlockTool
         return (min, max);
     }
 
-    public void Draw(ImDrawListPtr dl, Vector2 origin, ViewInfo v)
+    void Draw(ImDrawListPtr dl, Vector2 origin, ViewInfo v)
     {
         if (_stage == Stage.Idle)
         {

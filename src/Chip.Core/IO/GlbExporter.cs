@@ -9,8 +9,9 @@ namespace Chip.Core.IO;
 
 /// <summary>
 /// Writes a glTF 2.0 binary. One node per mesh at the world origin (stable across re-exports), one primitive per material,
-/// flat normals, UVs from each face's projection, and material images embedded as PNG.
-/// With <see cref="Document.ExportCollision"/>, node names get Godot's <c>-col</c> suffix (static trimesh collision).
+/// per-corner normals (flat, or smoothed across soft edges), explicit UVs where present else the face projection,
+/// and material images embedded as PNG. Collision follows Godot's import suffixes: <c>-col</c> (render + trimesh
+/// collider, from <see cref="Document.ExportCollision"/> or <see cref="CollisionMode.Default"/>) and <c>-colonly</c>.
 /// </summary>
 public static class GlbExporter
 {
@@ -71,6 +72,7 @@ public static class GlbExporter
         var tri = new List<int>();
         foreach (var mesh in doc.Meshes)
         {
+            var cornerNormals = Topology.CornerNormals(mesh);
             var primitives = new JsonArray();
             foreach (var group in Enumerable.Range(0, mesh.Faces.Count).GroupBy(f => mesh.Faces[f].Material))
             {
@@ -82,14 +84,13 @@ public static class GlbExporter
                 foreach (var f in group)
                 {
                     var face = mesh.Faces[f];
-                    var n = mesh.FaceNormal(f);
                     uint baseIndex = (uint)pos.Count;
-                    foreach (var v in face.Verts)
+                    for (int i = 0; i < face.Verts.Length; i++)
                     {
-                        var p = mesh.Positions[v];
+                        var p = mesh.Positions[face.Verts[i]];
                         pos.Add(p * s);
-                        nrm.Add(n);
-                        uv.Add(face.Map.Project(p, info.Width, info.Height));
+                        nrm.Add(cornerNormals[f][i]);
+                        uv.Add(face.UV(i, p, info.Width, info.Height));
                     }
                     tri.Clear();
                     Triangulator.Triangulate(mesh, f, tri);
@@ -113,7 +114,13 @@ public static class GlbExporter
             if (primitives.Count == 0) continue;
             string name = $"{mesh.Name}_{mesh.Id}";
             meshes.Add(new JsonObject { ["name"] = name, ["primitives"] = primitives });
-            nodes.Add(new JsonObject { ["name"] = doc.ExportCollision ? name + "-col" : name, ["mesh"] = meshes.Count - 1 });
+            string suffix = mesh.Collision switch
+            {
+                CollisionMode.Only => "-colonly",
+                CollisionMode.None => "",
+                _ => doc.ExportCollision ? "-col" : "",
+            };
+            nodes.Add(new JsonObject { ["name"] = name + suffix, ["mesh"] = meshes.Count - 1 });
         }
 
         var root = new JsonObject

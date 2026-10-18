@@ -36,20 +36,21 @@ public readonly record struct ViewInfo(Matrix4x4 ViewProj, Vector2 Size, Vector3
 public readonly record struct FaceHit(PolyMesh Mesh, int Face, float Distance, Vector3 Point, Vector3 Normal);
 
 /// <summary>
-/// Hit-testing for every selection mode. Hidden meshes are ignored; back faces are ignored unless
+/// Hit-testing for every selection mode. Hidden meshes are ignored, locked meshes can't be selected; back faces are ignored unless
 /// <c>backfaces</c> is set (Scythe-style backface selection, e.g. picking a room's inside from outside).
 /// </summary>
 public static class Picker
 {
     const float VertexRadius = 10f, EdgeRadius = 7f;
 
-    public static FaceHit? RaycastFace(Document doc, Ray ray, bool backfaces = false)
+    /// <param name="selectable">Skip locked meshes (selection); placement and camera queries pass false.</param>
+    public static FaceHit? RaycastFace(Document doc, Ray ray, bool backfaces = false, bool selectable = false)
     {
         FaceHit? best = null;
         var tris = new List<int>();
         foreach (var mesh in doc.Meshes)
         {
-            if (mesh.Hidden) continue;
+            if (mesh.Hidden || (selectable && mesh.Locked)) continue;
             for (int f = 0; f < mesh.Faces.Count; f++)
             {
                 var n = mesh.FaceNormal(f);
@@ -72,7 +73,7 @@ public static class Picker
     public static ElementRef? Pick(Document doc, ViewInfo view, Vector2 mouse, SelectMode mode, float pixelScale = 1, bool backfaces = false)
     {
         var ray = view.ScreenRay(mouse);
-        var hit = RaycastFace(doc, ray, backfaces);
+        var hit = RaycastFace(doc, ray, backfaces, selectable: true);
         switch (mode)
         {
             case SelectMode.Object: return hit is { } h ? ElementRef.Object(h.Mesh.Id) : null;
@@ -85,7 +86,7 @@ public static class Picker
         float bestPx = float.MaxValue;
         foreach (var mesh in doc.Meshes)
         {
-            if (mesh.Hidden) continue;
+            if (mesh.Hidden || mesh.Locked) continue;
             if (mode == SelectMode.Vertex)
             {
                 for (int v = 0; v < mesh.Positions.Count; v++)
@@ -125,7 +126,7 @@ public static class Picker
         var result = new List<ElementRef>();
         foreach (var mesh in doc.Meshes)
         {
-            if (mesh.Hidden) continue;
+            if (mesh.Hidden || mesh.Locked) continue;
             switch (mode)
             {
                 case SelectMode.Vertex:

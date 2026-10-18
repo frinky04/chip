@@ -143,15 +143,17 @@ public static class Widgets
         return index >= 0;
     }
 
-    /// <summary>SemiBold section heading with an optional right-aligned detail; a hairline separates groups.</summary>
-    public static void Heading(string title, bool first = false, string? trailing = null)
+    /// <summary>Hairline between inspector sections (the host draws these, sections don't).</summary>
+    public static void SectionDivider()
     {
-        if (!first)
-        {
-            ImGui.Dummy(Theme.Px(0, 4));
-            ImGui.Separator();
-            ImGui.Dummy(Theme.Px(0, 2));
-        }
+        ImGui.Dummy(Theme.Px(0, 4));
+        ImGui.Separator();
+        ImGui.Dummy(Theme.Px(0, 2));
+    }
+
+    /// <summary>SemiBold section heading with an optional right-aligned detail.</summary>
+    public static void Heading(string title, string? trailing = null)
+    {
         ImGui.PushFont(Fonts.Strong);
         ImGui.Text(title);
         ImGui.PopFont();

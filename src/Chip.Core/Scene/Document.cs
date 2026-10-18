@@ -6,6 +6,7 @@ namespace Chip.Core.Scene;
 public sealed class Document
 {
     public List<PolyMesh> Meshes = new();
+    public List<Entity> Entities = new();
     public int NextId = 1;
     public float ExportScale = 1f;
     public string? ExportPath;
@@ -18,11 +19,22 @@ public sealed class Document
         return m;
     }
 
+    /// <summary>Adds an entity with a fresh id (ids are unique across meshes and entities).</summary>
+    public Entity Add(Entity e)
+    {
+        e.Id = NextId++;
+        Entities.Add(e);
+        return e;
+    }
+
     public PolyMesh? Find(int id) => Meshes.Find(m => m.Id == id);
+
+    public Entity? FindEntity(int id) => Entities.Find(e => e.Id == id);
 
     public Document Clone() => new()
     {
         Meshes = Meshes.Select(m => m.Clone()).ToList(),
+        Entities = Entities.Select(e => e.Clone()).ToList(),
         NextId = NextId,
         ExportScale = ExportScale,
         ExportPath = ExportPath,

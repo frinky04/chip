@@ -10,6 +10,13 @@ public sealed class Face
     public string Material;
     public TextureMapping Map;
 
+    /// <summary>
+    /// Explicit per-corner UVs (one per entry in <see cref="Verts"/>, texture space where 1 = one tile).
+    /// When set they override <see cref="Map"/> everywhere (render, export) and stay glued to the geometry.
+    /// Unwraps and hotspots write these; ops that reorder <see cref="Verts"/> must reorder them too.
+    /// </summary>
+    public Vector2[]? UVs;
+
     public Face(int[] verts, string material, TextureMapping map)
     {
         Verts = verts;
@@ -17,7 +24,11 @@ public sealed class Face
         Map = map;
     }
 
-    public Face Clone() => new((int[])Verts.Clone(), Material, Map);
+    public Face Clone() => new((int[])Verts.Clone(), Material, Map) { UVs = (Vector2[]?)UVs?.Clone() };
+
+    /// <summary>UV of corner <paramref name="i"/>: explicit if present, otherwise projected.</summary>
+    public Vector2 UV(int i, Vector3 position, int texWidth, int texHeight) =>
+        UVs is { } uv && i < uv.Length ? uv[i] : Map.Project(position, texWidth, texHeight);
 
     public IEnumerable<Edge> Edges()
     {
@@ -34,6 +45,9 @@ public readonly record struct Edge
     public Edge(int a, int b) { A = Math.Min(a, b); B = Math.Max(a, b); }
 }
 
+/// <summary>How a mesh takes part in export collision.</summary>
+public enum CollisionMode { Default, None, Only }
+
 /// <summary>
 /// Editable n-gon mesh. Vertices live in world space; edges are derived from face loops.
 /// Topology changes go through <see cref="MeshOps"/>.
@@ -43,14 +57,21 @@ public sealed class PolyMesh
     public int Id;
     public string Name = "mesh";
     public bool Hidden;
+    /// <summary>Visible but not pickable.</summary>
+    public bool Locked;
+    /// <summary>Default follows <c>Document.ExportCollision</c>; None never collides; Only collides without rendering.</summary>
+    public CollisionMode Collision;
     public List<Vector3> Positions = new();
     public List<Face> Faces = new();
+    /// <summary>Edges shaded smooth (Scythe "soft normals"). Everything else is hard, i.e. flat per face.</summary>
+    public HashSet<Edge> SoftEdges = new();
 
     public PolyMesh Clone() => new()
     {
-        Id = Id, Name = Name, Hidden = Hidden,
+        Id = Id, Name = Name, Hidden = Hidden, Locked = Locked, Collision = Collision,
         Positions = new List<Vector3>(Positions),
         Faces = Faces.Select(f => f.Clone()).ToList(),
+        SoftEdges = new HashSet<Edge>(SoftEdges),
     };
 
     public IEnumerable<Edge> Edges()

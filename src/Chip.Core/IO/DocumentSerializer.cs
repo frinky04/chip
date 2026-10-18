@@ -1,28 +1,53 @@
 using System.Numerics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Chip.Core.Geometry;
 using Chip.Core.Scene;
 using Chip.Core.Texturing;
 
 namespace Chip.Core.IO;
 
-/// <summary>Versioned JSON for <c>.chip</c> files. Vectors are float arrays so files stay readable and diffable.</summary>
+/// <summary>
+/// Versioned JSON for <c>.chip</c> files. Vectors are float arrays so files stay readable and diffable.
+/// v2 adds per-corner UVs, soft edges, per-mesh lock/collision and entities; every v2 field is optional, so v1 loads as is.
+/// </summary>
 public static class DocumentSerializer
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
-    static readonly JsonSerializerOptions Options = new() { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    static readonly JsonSerializerOptions Options = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
 
-    sealed record FileDto(int Version, float ExportScale, string? ExportPath, bool ExportCollision, int NextId, List<MeshDto> Meshes);
-    sealed record MeshDto(int Id, string Name, bool Hidden, List<float[]> Positions, List<FaceDto> Faces);
-    sealed record FaceDto(int[] Verts, string Material, float[] U, float[] V, float[] Shift, float[] Scale, float Rotation);
+    sealed record FileDto(int Version, float ExportScale, string? ExportPath, bool ExportCollision, int NextId,
+        List<MeshDto> Meshes, List<EntityDto>? Entities);
+
+    sealed record MeshDto(int Id, string Name, bool Hidden, List<float[]> Positions, List<FaceDto> Faces,
+        bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null);
+
+    sealed record FaceDto(int[] Verts, string Material, float[] U, float[] V, float[] Shift, float[] Scale, float Rotation,
+        List<float[]>? Uvs = null);
+
+    sealed record EntityDto(int Id, string ClassName, string Name, float[] Position, float[] Rotation, bool Hidden,
+        Dictionary<string, string>? Properties);
 
     public static string Serialize(Document doc) => JsonSerializer.Serialize(new FileDto(
         CurrentVersion, doc.ExportScale, doc.ExportPath, doc.ExportCollision, doc.NextId,
         doc.Meshes.Select(m => new MeshDto(m.Id, m.Name, m.Hidden,
             m.Positions.Select(Arr).ToList(),
             m.Faces.Select(f => new FaceDto(f.Verts, f.Material, Arr(f.Map.UAxis), Arr(f.Map.VAxis),
-                [f.Map.ShiftU, f.Map.ShiftV], [f.Map.ScaleU, f.Map.ScaleV], f.Map.Rotation)).ToList())).ToList()), Options);
+                [f.Map.ShiftU, f.Map.ShiftV], [f.Map.ScaleU, f.Map.ScaleV], f.Map.Rotation,
+                f.UVs?.Select(uv => new[] { uv.X, uv.Y }).ToList())).ToList(),
+            m.Locked, m.Collision,
+            m.SoftEdges.Count > 0 ? m.SoftEdges.OrderBy(e => e.A).ThenBy(e => e.B).Select(e => new[] { e.A, e.B }).ToList() : null)).ToList(),
+        doc.Entities.Count > 0
+            ? doc.Entities.Select(e => new EntityDto(e.Id, e.ClassName, e.Name, Arr(e.Position), Arr(e.Rotation), e.Hidden,
+                e.Properties.Count > 0 ? e.Properties : null)).ToList()
+            : null), Options);
 
     public static Document Deserialize(string json)
     {
@@ -31,20 +56,41 @@ public static class DocumentSerializer
         var doc = new Document { ExportScale = dto.ExportScale <= 0 ? 1 : dto.ExportScale, ExportPath = dto.ExportPath, ExportCollision = dto.ExportCollision, NextId = dto.NextId };
         foreach (var m in dto.Meshes)
         {
-            var mesh = new PolyMesh { Id = m.Id, Name = m.Name, Hidden = m.Hidden, Positions = m.Positions.Select(Vec).ToList() };
+            var mesh = new PolyMesh
+            {
+                Id = m.Id, Name = m.Name, Hidden = m.Hidden, Locked = m.Locked, Collision = m.Collision,
+                Positions = m.Positions.Select(Vec).ToList(),
+            };
             foreach (var f in m.Faces)
             {
                 if (f.Verts.Length < 3 || f.Verts.Any(v => v < 0 || v >= mesh.Positions.Count))
                     throw new InvalidDataException($"Mesh {m.Id} has an invalid face");
+                if (f.Uvs != null && f.Uvs.Count != f.Verts.Length)
+                    throw new InvalidDataException($"Mesh {m.Id} has a face whose UV count doesn't match its corners");
                 mesh.Faces.Add(new Face(f.Verts, f.Material, new TextureMapping
                 {
                     UAxis = Vec(f.U), VAxis = Vec(f.V), ShiftU = f.Shift[0], ShiftV = f.Shift[1],
                     ScaleU = f.Scale[0], ScaleV = f.Scale[1], Rotation = f.Rotation,
-                }));
+                })
+                { UVs = f.Uvs?.Select(uv => new Vector2(uv[0], uv[1])).ToArray() });
             }
+            if (m.SoftEdges != null)
+                foreach (var e in m.SoftEdges)
+                    if (e.Length == 2 && e[0] >= 0 && e[1] >= 0 && e[0] < mesh.Positions.Count && e[1] < mesh.Positions.Count)
+                        mesh.SoftEdges.Add(new Edge(e[0], e[1]));
             doc.Meshes.Add(mesh);
             doc.NextId = Math.Max(doc.NextId, mesh.Id + 1);
         }
+        if (dto.Entities != null)
+            foreach (var e in dto.Entities)
+            {
+                doc.Entities.Add(new Entity
+                {
+                    Id = e.Id, ClassName = e.ClassName, Name = e.Name, Position = Vec(e.Position), Rotation = Vec(e.Rotation),
+                    Hidden = e.Hidden, Properties = e.Properties ?? new(),
+                });
+                doc.NextId = Math.Max(doc.NextId, e.Id + 1);
+            }
         return doc;
     }
 

@@ -18,9 +18,13 @@ if (shot)
 {
     window.Initialize();
     using var snapApp = new EditorApp(window);
-    snapApp.RunSnapshot(args[1] == "-" ? null : args[1], args[2], args.Length > 3 ? args[3] : "empty");
+    var rest = args.Skip(3).ToList();
+    int runAt = rest.IndexOf("--run");
+    var commands = runAt >= 0 && runAt + 1 < rest.Count ? rest[runAt + 1].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) : [];
+    if (runAt >= 0) rest.RemoveRange(runAt, Math.Min(2, rest.Count - runAt));
+    int code = snapApp.RunSnapshot(args[1] == "-" ? null : args[1], args[2], rest.FirstOrDefault() ?? "empty", commands);
     window.Close();
-    return 0;
+    return code;
 }
 EditorApp? app = null;
 window.Load += () => app = new EditorApp(window);

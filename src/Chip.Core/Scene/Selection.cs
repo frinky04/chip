@@ -46,13 +46,13 @@ public sealed class Selection
 
     public void SelectAll(Document doc)
     {
-        foreach (var m in doc.Meshes.Where(m => !m.Hidden))
+        foreach (var m in doc.Meshes.Where(m => !m.Hidden && !m.Locked))
             Items.UnionWith(Elements(m, Mode));
     }
 
     public void Invert(Document doc)
     {
-        var all = doc.Meshes.Where(m => !m.Hidden).SelectMany(m => Elements(m, Mode)).ToHashSet();
+        var all = doc.Meshes.Where(m => !m.Hidden && !m.Locked).SelectMany(m => Elements(m, Mode)).ToHashSet();
         all.ExceptWith(Items);
         Clear();
         Items.UnionWith(all);
@@ -151,7 +151,7 @@ public sealed class Selection
     /// <summary>Drops references that no longer resolve (after undo or topology edits).</summary>
     public void Prune(Document doc)
     {
-        Items.RemoveWhere(i => doc.Find(i.Mesh) is not { } m || m.Hidden || !IsValid(m, i));
+        Items.RemoveWhere(i => doc.Find(i.Mesh) is not { } m || m.Hidden || m.Locked || !IsValid(m, i));
         if (Active is { } a && !Items.Contains(a)) Active = null;
     }
 

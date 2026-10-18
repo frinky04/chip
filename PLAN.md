@@ -17,7 +17,7 @@ Phase 2  Integration, performance, release (1–2 agents)
 
 ---
 
-## Phase 0: Foundation (serial, blocks everything)
+## Phase 0: Foundation (serial, blocks everything): **done**
 
 Goal: after this, a feature lives in **its own files** and registers itself. No workstream edits a shared file except to add its own new files.
 
@@ -32,6 +32,8 @@ Goal: after this, a feature lives in **its own files** and registers itself. No 
 | 0.7 | **Data model v2** (schema bump, migration from v1) | **Per-corner explicit UVs** (`Face.UVs: Vector2[]?`; when set, they override the projection in render, export and picking). **Edge sharpness** (`PolyMesh.HardEdges: HashSet<Edge>` plus a smoothing render path). **Stable ids** for meshes (already) and `Document.Entities` (minimal: id, class name, position, rotation, key-values). **Per-mesh flags** (`Collision: Default/None/Only`, `Locked`). The serializer, exporter and renderer read all of these, defaulting to today's behaviour. | E, F, H, J, L need the data shape now. Defining it once avoids four competing versions. |
 | 0.8 | **Test & verification harness** | `--shot` gains `--script` (JSON list of commands to run before capture), so every stream can add a headless UI check. Add a `tests/Chip.Editor.Tests` project for registry/context tests (no GL). CI script: `dotnet test` + scripted shots. | Gives every stream the same proof bar. |
 | 0.9 | **`CONTRIBUTING.md`** | File-ownership rules, how to add a command/tool/section, hotkey policy (Scythe first, then Hammer), widget vocabulary (`UI/Widgets`), and the definition of done. | Agents follow one playbook. |
+
+**Status:** landed on `main`. Hotkey decision: `H`/`Alt+H` stay hide/unhide; Scythe's Hard normals get a different chord (stream L).
 
 **Exit:** the app looks and behaves exactly as now, all existing tests pass, the registry has every current command, and `Panels.cs`/`Commands.cs` are thin hosts.
 
