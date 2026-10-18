@@ -111,9 +111,9 @@ Commands act on the current selection and mode. Each command is one undo step.
 | Bridge (two faces or two edge loops) | `Shift+C` | v2 | |
 | Inset / Outset | `I` / `O` | v2 | Interactive amount. |
 | Weld Overlapping verts | `Shift+Ctrl+Alt+M` | v1 | Distance threshold 1 mm. |
-| Bevel (edges/verts, segments) | `B` | v2 | |
-| Cut / knife (draw a line across faces) | `C` | v2 | |
-| Clip (plane split, keep front/back/both) | `Shift+X` | v2 | |
+| Bevel (edges/verts, segments) | `B` | v2, shipped | Tool: drag sets the width, 1–8 sets segments while dragging (1 = chamfer, more = rounded, soft-shaded). Corners where bevelled edges meet are patched; meshes stay closed. Vertices chamfer flat. Exact values in the Tool section or Mesh > Bevel selection. |
+| Cut / knife (draw a line across faces) | `C` | v2, shipped | Click points (snapped to vertices, edges, grid); Enter cuts every face the line crosses edge to edge, as seen from the camera. Selected faces if any, else the meshes under the line. Backspace removes the last point. |
+| Clip (plane split, keep front/back/both) | `Shift+X` | v2, shipped | Click or drag two points; the plane is perpendicular to that surface (or along the view). Tab cycles keep front/back/both; Enter clips the selected meshes, else every visible mesh the plane crosses. World-aligned caps (cut face or active material); holes are bridged. |
 | Mirror (across pivot axis) | `Shift+Z` | v2 | |
 | Collapse / merge verts to centre **[S2]** | | v2 | |
 | Quad slice / subdivide **[S2]** | | later | |
