@@ -44,6 +44,15 @@ public sealed class EditorContext
     public Document Doc => Session.Doc;
     public Selection Sel => Session.Sel;
     public MaterialLibrary Materials { get; }
+
+    /// <summary>
+    /// Points the material library's default density at the open level's (<see cref="Document.TexelDensity"/>). The host
+    /// calls it every frame, so opening, new, undo and redo are all covered.
+    /// </summary>
+    public void SyncTexelDensity()
+    {
+        if (Materials.DefaultTexelsPerMeter != Doc.TexelDensity) Materials.DefaultTexelsPerMeter = Doc.TexelDensity;
+    }
     /// <summary>Material used by new geometry and by Apply.</summary>
     public string ActiveMaterial { get; set; }
 

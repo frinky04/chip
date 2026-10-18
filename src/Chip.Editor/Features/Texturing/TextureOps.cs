@@ -79,7 +79,7 @@ public static class TextureOps
         _ => "Length",
     };
 
-    /// <summary>Unwraps the addressed faces (per mesh), writing explicit UVs at 512 px/m.</summary>
+    /// <summary>Unwraps the addressed faces (per mesh), writing explicit UVs at their material's texel density.</summary>
     public static void Unwrap(EditorContext ctx, UnwrapMode mode)
     {
         var options = For(ctx);
@@ -93,7 +93,8 @@ public static class TextureOps
             {
                 var list = group.Select(f => f.Index).ToList();
                 int reference = active is { } a && a.Mesh == group.Key ? a.Index : -1;
-                Chip.Core.Texturing.Unwrap.Apply(group.Key, list, mode, size, options.Spacing, reference);
+                float density = ctx.Materials.Get(group.Key.Faces[reference >= 0 ? reference : list[0]].Material).TexelsPerMeter;
+                Chip.Core.Texturing.Unwrap.Apply(group.Key, list, mode, size, options.Spacing, reference, density);
                 count += list.Count;
             }
         });

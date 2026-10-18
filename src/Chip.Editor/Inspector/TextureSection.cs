@@ -60,9 +60,10 @@ public sealed class TextureSection : IInspectorSection
             RowLabel("Shift", "Offset in texels");
             if (TaggedFields("##shift", ["U", "V"], UvTags, [m0.ShiftU, m0.ShiftV], [stats.MixedShiftU, stats.MixedShiftV], "%.1f", out int si, out float sv))
                 ctx.EditMapping("Texture Shift", si == 0 ? m => m with { ShiftU = sv } : m => m with { ShiftV = sv });
-            // Scale is shown as a multiple of the default density (1 = 512 px per metre).
-            float k = TextureMapping.DefaultScale;
-            RowLabel("Scale", "1 = 512 px per metre");
+            // Scale is a multiple of the material's texel density: 1 = "1 m is N px" as set for the level or the texture.
+            var densityOf = ctx.Materials.Get(faces[0].Face.Material);
+            float k = densityOf.Scale;
+            RowLabel("Scale", $"1 = the texture's density: 1 m is {densityOf.TexelsPerMeter:0.##} px");
             if (TaggedFields("##scale", ["U", "V"], UvTags, [m0.ScaleU / k, m0.ScaleV / k], [stats.MixedScaleU, stats.MixedScaleV], "%.3g", out int ci, out float cv))
                 ctx.EditMapping("Texture Scale", ci == 0 ? m => m with { ScaleU = cv * k } : m => m with { ScaleV = cv * k });
             RowLabel("Rotate", "Degrees");

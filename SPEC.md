@@ -10,7 +10,7 @@ Tags: **[v1]** = first shippable slice. **[v2]** = next. **[later]** = backlog. 
 
 ## 0. Ground rules
 
-- **Coordinates:** Y-up, right-handed, metres. The grid runs in powers of two from 1/32 m to 16 m (default 25 cm). Texel density is 512 px/m, so a 512 px dev wall tiles at 1 m. `Document.ExportScale` (default 1) multiplies on export: 1 for Godot, 100 for centimetre engines. glTF and Godot need no axis swizzle.
+- **Coordinates:** Y-up, right-handed, metres. The grid runs in powers of two from 1/32 m to 16 m (default 25 cm). Texel density is per level, Scythe style ("1 m is 64 px" for new levels; files saved before the setting load at 512 px/m, the scale they were built at). `Document.ExportScale` (default 1) multiplies on export: 1 for Godot, 100 for centimetre engines. glTF and Godot need no axis swizzle.
 - **Mesh model:** each mesh is a polygon mesh of vertices and faces, where a face is an ordered vertex loop with a material and a texture mapping. A face is a Hammer face. A Scythe polygroup can be non-planar, but Chip restricts a face to one planar-ish n-gon. Edges are derived from the face loops. A triangle-topology view is **[later]**: Chip keeps n-gons and triangulates (ear clipping, shared by render, pick and export) only for output.
 - **Vertices are stored in world space.** A mesh has no separate transform in v1. The pivot is the selection-bounds centre. Export keeps node origins at the world origin, so Godot placement stays stable across re-exports. **Review risk (v2):** stable vertex/face IDs, per-corner UV/normal attributes, an explicit per-object origin, and transforms are needed before instances, explicit UVs and hotspots. Face-index stability is kept by ops today.
 - **Materials** are image files in `assets/textures`. The file stem is the material name and the pixel size drives texel density. Shift+Alt+1..0 picks the first ten.
@@ -160,7 +160,7 @@ Each face stores a planar projection: U axis, V axis, offset (u, v), scale (u, v
 | Flip texture horizontal/vertical | `Alt+D` / `Alt+E` | v1, done |
 | Flip face UV horizontal/vertical | `Alt+R` / `Alt+T` | v2, done |
 | Modify Texture panel: numeric shift/scale/rotation, Fit to Height/Width, Keep Ratio, Treat as One | | v1 (numeric) / v2 (fit options), done |
-| Texel density setting (px per metre, default 256) | | v1 (global) |
+| Texel density setting ("[1] m is [64 ▾] px", per level, saved in the .chip) | | v2, shipped. Material section, "Level" row. Changing it rescales every face whose texture follows the level (projected scale and explicit UVs), as one undo step. Textures can override it ("Own" row, saved next to the texture). New blocks, Align to grid, unwraps, hotspots, the fast texture tool, the UV checker target and the Scale field (1 = at density) all follow it. |
 | Wrap Texture onto the hovered face (continue the projection, copy the material). Any face, as in Scythe: neighbours fold about the shared edge; other faces, including on other meshes, fold about the line where the two planes meet; parallel faces slide across, or turn half a turn when they face the other way | `Alt+RMB` | v2, done |
 | Wrap Texture to Selection | `Shift+Alt+RMB` | v2, done |
 | Flow Texture along curves (follow quads) | `Ctrl+Alt+RMB` | v2, done |

@@ -11,6 +11,13 @@ public sealed class Document
     /// <summary>Outliner groups (stream H). Optional in files; ids share <see cref="NextId"/> with meshes and entities.</summary>
     public List<Group> Groups = new();
     public int NextId = 1;
+    /// <summary>
+    /// Texel density in pixels per metre ("1 m is 64 px", as in Scythe) for every material without its own override.
+    /// New levels use <see cref="NewLevelTexelDensity"/>; files saved before the setting existed load at 512, the scale they
+    /// were built at. Change it with <see cref="TexelDensityOps.Change"/> so existing faces follow.
+    /// </summary>
+    public float TexelDensity = NewLevelTexelDensity;
+    public const float NewLevelTexelDensity = 64f;
     public float ExportScale = 1f;
     public string? ExportPath;
     public bool ExportCollision = true;
@@ -55,6 +62,7 @@ public sealed class Document
         Entities = Entities.Select(e => e.Clone()).ToList(),
         Groups = Groups.Select(g => g.Clone()).ToList(),
         NextId = NextId,
+        TexelDensity = TexelDensity,
         ExportScale = ExportScale,
         ExportPath = ExportPath,
         ExportCollision = ExportCollision,

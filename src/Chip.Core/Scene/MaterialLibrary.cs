@@ -6,7 +6,8 @@ namespace Chip.Core.Scene;
 
 /// <summary>
 /// A material is one image file; its pixel size sets texel density (Scythe reads Base Color size the same way).
-/// <see cref="TexelDensity"/> overrides the default 512 px/m for textures that should tile at a different size.
+/// Density comes from the level (<see cref="MaterialLibrary.DefaultTexelsPerMeter"/>, "1 m is 64 px") unless
+/// <see cref="TexelDensity"/> overrides it for this texture.
 /// </summary>
 public sealed record MaterialInfo(string Name, string? Path, int Width, int Height)
 {
@@ -14,16 +15,24 @@ public sealed record MaterialInfo(string Name, string? Path, int Width, int Heig
     public string Folder { get; init; } = "";
     /// <summary>The library folder this material was scanned from (full path), or "" for materials added in code.</summary>
     public string Source { get; init; } = "";
-    /// <summary>Pixels per metre for this material; null uses <see cref="TextureMapping.TexelsPerMeter"/>.</summary>
+    /// <summary>Pixels per metre for this material; null uses its library's default (the level's density).</summary>
     public float? TexelDensity { get; init; }
+    /// <summary>Shared with every material of one library, so changing the level's density needs no republish.</summary>
+    internal DensityDefault? Base { get; init; }
 
-    public float TexelsPerMeter => TexelDensity is float d && d > 0 ? d : TextureMapping.TexelsPerMeter;
+    public float TexelsPerMeter => TexelDensity is float d && d > 0 ? d : Base?.Value ?? TextureMapping.TexelsPerMeter;
     /// <summary>Texture-mapping scale (metres per texel) for new and realigned faces.</summary>
     public float Scale => 1f / TexelsPerMeter;
     /// <summary>Metres covered by one repeat of the texture.</summary>
     public float TileWidth => Width * Scale;
     public float TileHeight => Height * Scale;
     public ToolMaterial Tool => MaterialLibrary.ToolKind(Name);
+}
+
+/// <summary>A library's default texel density (px per metre), shared by reference with its materials.</summary>
+internal sealed class DensityDefault
+{
+    public float Value = TextureMapping.TexelsPerMeter;
 }
 
 /// <summary>Result of scanning the library folders.</summary>
@@ -43,6 +52,28 @@ public sealed partial class MaterialLibrary
     public const string SidecarName = "chip-materials.json";
     public static readonly string[] Extensions = [".png", ".jpg", ".jpeg", ".tga"];
     public static readonly MaterialInfo Missing = new("missing", null, 64, 64);
+
+    /// <summary>The placeholder for unknown names (compare with this, not with <see cref="Missing"/>: it carries this library's density).</summary>
+    public static bool IsMissing(MaterialInfo m) => m.Path == null && string.Equals(m.Name, Missing.Name, StringComparison.Ordinal);
+
+    readonly DensityDefault _base = new();
+    MaterialInfo? _missing;
+
+    /// <summary>
+    /// Pixels per metre for every material without its own override: the open level's texel density
+    /// (<see cref="Document.TexelDensity"/>). Defaults to <see cref="TextureMapping.TexelsPerMeter"/>.
+    /// </summary>
+    public float DefaultTexelsPerMeter
+    {
+        get => _base.Value;
+        set
+        {
+            if (value <= 0 || float.IsNaN(value)) throw new ArgumentOutOfRangeException(nameof(value));
+            if (value == _base.Value) return;
+            _base.Value = value;
+            Version++;
+        }
+    }
 
     readonly Dictionary<string, MaterialInfo> _byName = new(StringComparer.OrdinalIgnoreCase);
     readonly List<MaterialInfo> _manual = new();
@@ -102,7 +133,7 @@ public sealed partial class MaterialLibrary
         Publish(list);
     }
 
-    public MaterialInfo Get(string name) => _byName.GetValueOrDefault(name) ?? Missing;
+    public MaterialInfo Get(string name) => _byName.GetValueOrDefault(name) ?? (_missing ??= Missing with { Base = _base });
 
     public bool Contains(string name) => _byName.ContainsKey(name);
 
@@ -150,7 +181,7 @@ public sealed partial class MaterialLibrary
         for (int i = 0; i < list.Count; i++)
         {
             float? d = _density.TryGetValue(list[i].Name, out var v) ? v : list[i].TexelDensity;
-            if (d != list[i].TexelDensity) list[i] = list[i] with { TexelDensity = d };
+            if (d != list[i].TexelDensity || !ReferenceEquals(list[i].Base, _base)) list[i] = list[i] with { TexelDensity = d, Base = _base };
         }
         _byName.Clear();
         foreach (var m in list) _byName.TryAdd(m.Name, m);

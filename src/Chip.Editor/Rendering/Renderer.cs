@@ -187,7 +187,6 @@ public sealed unsafe class Renderer : IDisposable
             SetMatrix(_meshProg, "uViewProj", vp);
             _gl.Uniform1(Loc(_meshProg, "uTex"), 0);
             _gl.Uniform1(Loc(_meshProg, "uMode"), (int)s.Mode);
-            _gl.Uniform1(Loc(_meshProg, "uDensity"), TextureMapping.TexelsPerMeter);
             _gl.ActiveTexture(TextureUnit.Texture0);
             string? boundMaterial = null;
             foreach (var mesh in doc.Meshes)
@@ -200,6 +199,7 @@ public sealed unsafe class Renderer : IDisposable
                     {
                         var info = _lib.Get(mat);
                         _gl.Uniform2(Loc(_meshProg, "uTexSize"), new Vector2(info.Width, info.Height));
+                        _gl.Uniform1(Loc(_meshProg, "uDensity"), info.TexelsPerMeter); // UV checker: the target this texture should hit
                         _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
                         boundMaterial = mat;
                     }

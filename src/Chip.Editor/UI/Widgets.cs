@@ -257,6 +257,58 @@ public static class Widgets
         return index >= 0;
     }
 
+    static readonly Dictionary<string, float> DensityMetres = new();
+    static readonly int[] DensitySteps = [8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+
+    /// <summary>
+    /// Scythe's texel density control: "[1] m is [64 ▾] px". Editing the metres keeps the pixels; picking pixels keeps
+    /// the metres. The metres typed are remembered per <paramref name="id"/> so "2 m is 64 px" reads back as typed.
+    /// Returns true with the new pixels-per-metre in <paramref name="result"/>. <paramref name="reserve"/> leaves room on the right.
+    /// </summary>
+    public static bool DensityField(string id, float pixelsPerMetre, out float result, float reserve = 0, bool dim = false)
+    {
+        result = pixelsPerMetre;
+        float metres = DensityMetres.TryGetValue(id, out var m) ? m : 1f;
+        float px = pixelsPerMetre * metres;
+        bool changed = false;
+
+        ImGui.SetNextItemWidth(Theme.Px(52));
+        float edit = metres;
+        if (dim) ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
+        bool typed = ImGui.InputFloat($"{id}m", ref edit, 0, 0, "%g", ImGuiInputTextFlags.EnterReturnsTrue);
+        if (dim) ImGui.PopStyleColor();
+        if (typed && edit > 1e-3f && edit != metres)
+        {
+            DensityMetres[id] = edit;
+            result = px / edit;
+            changed = true;
+        }
+        Tip("Metres");
+        ImGui.SameLine(0, Theme.Px(6));
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextColored(Theme.TextDim, "m is");
+        ImGui.SameLine(0, Theme.Px(6));
+        float pxLabel = ImGui.CalcTextSize("px").X + Theme.Px(6);
+        ImGui.SetNextItemWidth(MathF.Max(ImGui.GetContentRegionAvail().X - pxLabel - reserve, Theme.Px(64)));
+        if (dim) ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
+        bool open = ImGui.BeginCombo($"{id}px", $"{px:0.##}");
+        if (dim) ImGui.PopStyleColor();
+        if (open)
+        {
+            foreach (int step in DensitySteps)
+                if (ImGui.Selectable(step.ToString(), MathF.Abs(px - step) < 0.01f))
+                {
+                    result = step / metres;
+                    changed = result != pixelsPerMetre;
+                }
+            ImGui.EndCombo();
+        }
+        Tip("Texture pixels across that distance");
+        ImGui.SameLine(0, Theme.Px(6));
+        ImGui.TextColored(Theme.TextDim, "px");
+        return changed;
+    }
+
     /// <summary>Space below a section's body before the next dock title (the host draws these, sections don't).</summary>
     public static void SectionDivider() => ImGui.Dummy(Theme.Px(0, 6));
 

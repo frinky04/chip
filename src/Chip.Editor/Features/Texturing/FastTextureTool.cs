@@ -241,10 +241,10 @@ public sealed class FastTextureTool : IViewportTool
         DrawGrid(dl, info);
         if (bounds is { } b && Ideal(ctx, faces) is { } ideal)
         {
-            var size = ideal * UvSpace.PerMetre(info.Width, info.Height);
+            var size = ideal * UvSpace.PerMetre(info.Width, info.Height, info.TexelsPerMeter);
             var a = ToScreen(b.Min);
             dl.AddRect(a, ToScreen(b.Min + size), Blue, 0, ImDrawFlags.None, Theme.Px(1.5f));
-            dl.AddText(Fonts.Small, Fonts.SmallSize, a + Theme.Px(4, 3), Blue, "512 px/m");
+            dl.AddText(Fonts.Small, Fonts.SmallSize, a + Theme.Px(4, 3), Blue, $"1 m is {info.TexelsPerMeter:0.##} px");
         }
 
         if (bounds is { } box && faces.Count > 0) dl.AddRect(ToScreen(box.Min), ToScreen(box.Max), 0x90FFFFFF);
@@ -269,7 +269,7 @@ public sealed class FastTextureTool : IViewportTool
         if (hovered)
         {
             var m = ToUv(ImGui.GetIO().MousePos);
-            string readout = _worldScale ? $"{m.X * info.Width / TextureMapping.TexelsPerMeter:0.00} m, {m.Y * info.Height / TextureMapping.TexelsPerMeter:0.00} m" : $"u {m.X:0.000}  v {m.Y:0.000}";
+            string readout = _worldScale ? $"{m.X * info.Width / info.TexelsPerMeter:0.00} m, {m.Y * info.Height / info.TexelsPerMeter:0.00} m" : $"u {m.X:0.000}  v {m.Y:0.000}";
             dl.AddText(new Vector2(_c0.X + Theme.Px(8), _c1.Y - ImGui.GetTextLineHeight() - Theme.Px(6)), dim, readout);
         }
         dl.PopClipRect();
@@ -299,10 +299,10 @@ public sealed class FastTextureTool : IViewportTool
     }
 
     Vector2 GridStep(MaterialInfo info) => _worldScale
-        ? UvSpace.PerMetre(info.Width, info.Height) / (1 << _gridLevel)
+        ? UvSpace.PerMetre(info.Width, info.Height, info.TexelsPerMeter) / (1 << _gridLevel)
         : new Vector2(1f / (1 << _gridLevel));
 
-    Vector2 MajorStep(MaterialInfo info) => _worldScale ? UvSpace.PerMetre(info.Width, info.Height) : Vector2.One;
+    Vector2 MajorStep(MaterialInfo info) => _worldScale ? UvSpace.PerMetre(info.Width, info.Height, info.TexelsPerMeter) : Vector2.One;
 
     string GridLabel()
     {
@@ -344,7 +344,7 @@ public sealed class FastTextureTool : IViewportTool
                 var p = ToScreen(uv);
                 if (!seen.Add(((int)(p.X / 4), (int)(p.Y / 4)))) continue;
                 string text = _worldScale
-                    ? $"{uv.X * info.Width / TextureMapping.TexelsPerMeter:0.##}, {uv.Y * info.Height / TextureMapping.TexelsPerMeter:0.##}"
+                    ? $"{uv.X * info.Width / info.TexelsPerMeter:0.##}, {uv.Y * info.Height / info.TexelsPerMeter:0.##}"
                     : $"{uv.X:0.###}, {uv.Y:0.###}";
                 var pos = p + Theme.Px(5, 3);
                 var ts = ImGui.CalcTextSize(text) * (Fonts.SmallSize / Fonts.BodySize);

@@ -157,7 +157,7 @@ public sealed class MaterialLibraryTests : IDisposable
         Assert.Equal(512, lib.Get("wall").Width);
         Assert.Equal((128, 64), (lib.Get("plate").Width, lib.Get("plate").Height));
         Assert.Equal(Path.GetFullPath(_dir), lib.Get("crate").Source);
-        Assert.Same(MaterialLibrary.Missing, lib.Get("nope"));
+        Assert.True(MaterialLibrary.IsMissing(lib.Get("nope"))); // a copy carrying this library's density
 
         // Rescan picks up new files and keeps code-added materials.
         lib.Add(new MaterialInfo("manual", null, 32, 32));

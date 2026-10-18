@@ -86,6 +86,7 @@ public sealed partial class EditorApp : IDisposable
     {
         if (_bench == null) SyncModifiers();
         UpdateUiScale(); // between frames: may rebuild the font atlas
+        Ctx.SyncTexelDensity();
         _imgui.Update(dt);
         var bg = Theme.Bg;
         _gl.ClearColor(bg.X, bg.Y, bg.Z, 1);

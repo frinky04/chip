@@ -9,7 +9,7 @@ src/Chip.Core/            engine-free logic, fully unit-tested
   Geometry/PolyMesh.cs    n-gon mesh: Positions, Faces (Verts, Material, Map, UVs?), SoftEdges, Locked, Collision
   Geometry/Ops/*.cs       MeshOps, one file per op family (static partial class)
   Geometry/Topology.cs    adjacency queries + smoothed corner normals
-  Texturing/              TextureMapping (planar projection, 512 px/m)
+  Texturing/              TextureMapping (planar projection; scale in metres per texel)
   Scene/                  Document (meshes, entities), Selection, Session (undo), TransformGesture, MaterialLibrary
   Picking/                rays, face/vertex/edge picking, marquee
   IO/                     .chip (JSON v2) serializer, GLB exporter
@@ -28,7 +28,7 @@ tests/Chip.Editor.Tests   registry/command tests on a headless EditorContext
 tests/fixtures/level.chip scenario level used by captures
 ```
 
-Units are **metres**, Y-up, right-handed. Texel density is 512 px/m.
+Units are **metres**, Y-up, right-handed. Texel density is per level (`Document.TexelDensity`, new levels 64 px/m, older files 512) unless a texture has its own; read it through `MaterialInfo.TexelsPerMeter`, never a constant.
 
 ## Adding a feature (no shared-file edits)
 

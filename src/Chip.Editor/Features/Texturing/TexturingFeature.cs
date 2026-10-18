@@ -108,10 +108,10 @@ public sealed class TexturingFeature : IEditorFeature
         ctx.AddMouseBinding(new MouseBinding(ImGuiMouseButton.Right, Ctrl: true, Shift: false, Alt: true, "Texture", "flow texture along quads", Flow));
     }
 
-    /// <summary>Moves the image one grid step (in texels at 512 px/m) in a numpad direction on the face.</summary>
+    /// <summary>Moves the image one grid step (in texels at the level's texel density) in a numpad direction on the face.</summary>
     static void Shift(EditorContext ctx, int x, int y)
     {
-        float step = ctx.Grid * TextureMapping.TexelsPerMeter;
+        float step = ctx.Grid * ctx.Materials.DefaultTexelsPerMeter;
         // Image right = UVs decrease at a fixed point; image up = V increases (V points down the image).
         TextureOps.Edit(ctx, "Shift Texture", faces => Justify.Shift(faces, new Vector2(-x * step, y * step), TextureOps.SizeOf(ctx)));
     }

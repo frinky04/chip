@@ -9,7 +9,7 @@ using static Chip.Editor.UI.Widgets;
 namespace Chip.Editor.Inspector;
 
 /// <summary>
-/// The active material (with its tile size, editable as a per-material density override), the selection's materials,
+/// The level's texel density and the active material (with its own density override), the selection's materials,
 /// favourites, the Shift+Alt slots, Apply, and the browser button.
 /// </summary>
 public sealed class MaterialSection : IInspectorSection
@@ -19,8 +19,6 @@ public sealed class MaterialSection : IInspectorSection
     public bool Visible(EditorContext ctx) => true;
 
     readonly Rendering.FrameCache<List<(string Name, int Count)>> _selectionMaterials = new();
-    float _tileEdit;
-    string? _tileFor;
 
     public void Draw(EditorContext ctx)
     {
@@ -42,7 +40,7 @@ public sealed class MaterialSection : IInspectorSection
         ImGui.TextColored(Theme.TextDim, $"{active.Width} × {active.Height} px");
         ImGui.EndGroup();
 
-        DrawTileSize(ctx, active);
+        DrawDensity(ctx, active);
         DrawSelectionMaterials(ctx, browser);
         DrawRow(ctx, browser, "Favourites", browser.Favourites.Where(ctx.Materials.Contains).Select(ctx.Materials.Get).ToList(),
             "Star a material to pin it here", slots: false);
@@ -59,34 +57,41 @@ public sealed class MaterialSection : IInspectorSection
         Tip("Material browser: search, folders, favourites  (T)");
     }
 
-    /// <summary>"Tiles every" in metres. Editing it sets the material's texel density; the default size clears the override.</summary>
-    void DrawTileSize(EditorContext ctx, MaterialInfo active)
+    /// <summary>
+    /// Texel density, Scythe style ("1 m is 64 px"): the level's, which every texture follows by default, and the active
+    /// texture's own override. Changing the level's rescales the faces that follow it, as one undo step.
+    /// </summary>
+    void DrawDensity(EditorContext ctx, MaterialInfo active)
     {
-        if (!string.Equals(_tileFor, active.Name, StringComparison.OrdinalIgnoreCase) || !ImGui.IsAnyItemActive())
+        float level = ctx.Doc.TexelDensity;
+        RowLabel("Level", "Texel density of this level: how many texture pixels cover a metre. Textures without their own density follow it; changing it rescales their faces.");
+        if (DensityField("##levelDensity", level, out float newLevel))
         {
-            _tileFor = active.Name;
-            _tileEdit = active.TileWidth;
+            int faces = 0;
+            ctx.Session.Do("Texel Density", () => faces = TexelDensityOps.Change(ctx.Doc, ctx.Materials, newLevel));
+            ctx.Status($"Level texel density: 1 m is {newLevel:0.##} px. {(faces == 1 ? "1 face" : $"{faces} faces")} rescaled to match");
         }
+
         bool custom = active.TexelDensity != null;
-        RowLabel("Tiles", "Metres covered by one repeat. New blocks use it; Texture > Reset scale to material density applies it to faces.");
+        bool canEdit = !MaterialLibrary.IsMissing(active) && active.Width > 0;
+        RowLabel("Own", custom
+            ? $"{active.Name} has its own density. Reset to follow the level."
+            : $"{active.Name} follows the level. Change it to give this texture its own density (saved next to the texture).");
         float resetW = custom ? Theme.Px(60) + Theme.Px(6) : 0;
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - resetW);
-        bool canEdit = active != MaterialLibrary.Missing && active.Width > 0;
         ImGui.BeginDisabled(!canEdit);
-        if (ImGui.InputFloat("##tile", ref _tileEdit, 0, 0, custom ? "every %.3g m (custom)" : "every %.3g m", ImGuiInputTextFlags.EnterReturnsTrue)
-            && _tileEdit > 1e-3f)
-        {
-            float density = active.Width / _tileEdit;
-            bool isDefault = MathF.Abs(density - Core.Texturing.TextureMapping.TexelsPerMeter) < 1e-3f;
-            SetDensity(ctx, active, isDefault ? null : density);
-        }
+        // Dimmed while the texture just follows the level; setting a value gives it its own density.
+        if (DensityField("##textureDensity", active.TexelsPerMeter, out float own, resetW, dim: !custom))
+            SetDensity(ctx, active, MathF.Abs(own - ctx.Materials.DefaultTexelsPerMeter) < 1e-3f ? null : own);
         ImGui.EndDisabled();
         if (custom)
         {
             ImGui.SameLine(0, Theme.Px(6));
             if (ImGui.Button("Reset", new Vector2(Theme.Px(60), 0))) SetDensity(ctx, active, null);
-            Tip($"Back to {Core.Texturing.TextureMapping.TexelsPerMeter:0} px per metre (tiles every {Labels.Length(active.Width / Core.Texturing.TextureMapping.TexelsPerMeter)})");
+            Tip($"Follow the level again: 1 m is {ctx.Materials.DefaultTexelsPerMeter:0.##} px");
         }
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
+        ImGui.Text($"Tiles every {Labels.Length(active.TileWidth)}{(custom ? " (own density)" : "")}");
+        ImGui.PopStyleColor();
     }
 
     static void SetDensity(EditorContext ctx, MaterialInfo m, float? density)
@@ -118,7 +123,7 @@ public sealed class MaterialSection : IInspectorSection
         {
             if (i > 0) ImGui.SameLine(0, spacing);
             var m = ctx.Materials.Get(counts[i].Name);
-            if (m == MaterialLibrary.Missing) m = m with { Name = counts[i].Name };
+            if (MaterialLibrary.IsMissing(m)) m = m with { Name = counts[i].Name };
             if (MaterialTiles.Tile(ctx, browser, m, cell, caption: false).Clicked) ctx.ActiveMaterial = counts[i].Name;
         }
         if (show < counts.Count)
