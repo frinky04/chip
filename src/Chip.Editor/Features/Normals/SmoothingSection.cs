@@ -65,7 +65,7 @@ public sealed class SmoothingSection(NormalsFeature feature) : IInspectorSection
         float angle = feature.SmoothAngle;
         float presetW = ImGui.CalcTextSize("60°").X + style.FramePadding.X * 2;
         ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (presetW + style.ItemSpacing.X) * Presets.Length);
-        if (ImGui.SliderFloat("##smoothAngle", ref angle, 1, 180, "%.0f°", ImGuiSliderFlags.AlwaysClamp)) feature.SmoothAngle = angle;
+        if (Widgets.ValueSlider("##smoothAngle", "", ref angle, 1, 180, "%.0f°", a => $"{a:0}°")) feature.SmoothAngle = angle;
         foreach (var p in Presets)
         {
             ImGui.SameLine();

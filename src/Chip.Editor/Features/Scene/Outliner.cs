@@ -136,11 +136,12 @@ public sealed class Outliner
         DragSource(ctx, rows, node, selected);
         if (isGroup) DropTarget(ctx, doc.FindGroup(node.Id));
 
-        // Selection tint across the whole row (orange = what you're editing), then chevron, icon, name and detail.
+        // Selected rows are solid orange with dark text (Krita's layer list), then chevron, icon, name and detail.
         var dl = ImGui.GetWindowDrawList();
-        if (selected) dl.AddRectFilled(start, start + new Vector2(rowW, h), ImGui.ColorConvertFloat4ToU32(Theme.Accent with { W = 0.22f }));
-        uint text = ImGui.ColorConvertFloat4ToU32(node.Hidden ? Theme.TextDisabled : Theme.Text);
-        uint dim = ImGui.ColorConvertFloat4ToU32(Theme.TextDim);
+        if (selected) SelectedRow(dl, start, start + new Vector2(rowW, h));
+        else if (hovered) dl.AddRectFilled(start, start + new Vector2(rowW, h), ImGui.ColorConvertFloat4ToU32(Theme.Frame));
+        uint text = selected ? Theme.OnAccentU32 : ImGui.ColorConvertFloat4ToU32(node.Hidden ? Theme.TextDisabled : Theme.Text);
+        uint dim = selected ? Theme.OnAccentU32 & 0xB0FFFFFF : ImGui.ColorConvertFloat4ToU32(Theme.TextDim);
         float x = start.X + Theme.Px(4) + indent;
         float cy = start.Y + h * 0.5f;
         if (isGroup)
@@ -161,7 +162,7 @@ public sealed class Outliner
             OutlinerKind.Mesh => (Icon.Object, dim),
             _ => EntityStyle(doc, node.Id),
         };
-        Icons.Draw(dl, icon, new Vector2(x + Fonts.IconSize * 0.5f, cy), node.Hidden ? ImGui.ColorConvertFloat4ToU32(Theme.TextDisabled) : iconCol);
+        Icons.Draw(dl, icon, new Vector2(x + Fonts.IconSize * 0.5f, cy), selected ? text : node.Hidden ? ImGui.ColorConvertFloat4ToU32(Theme.TextDisabled) : iconCol);
         x += Fonts.IconSize + Theme.Px(6);
         float textY = MathF.Round(start.Y + (h - ImGui.GetTextLineHeight()) * 0.5f);
         if (_renaming == node.Id) DrawRename(ctx, node, new Vector2(x, start.Y), start.X + rowW - buttonsW - x - Theme.Px(4));
@@ -177,10 +178,10 @@ public sealed class Outliner
         // Eye and lock: always shown when on (hidden / locked), otherwise only on the hovered row.
         bool showControls = hovered || ImGui.IsMouseHoveringRect(start, start + new Vector2(rowW, h));
         float bx = start.X + rowW - buttonsW;
-        if (RowToggle("##eye", new Vector2(bx, start.Y), button, node.Hidden ? Icon.EyeOff : Icon.Eye, node.Hidden, showControls,
+        if (RowToggle("##eye", new Vector2(bx, start.Y), button, node.Hidden ? Icon.EyeOff : Icon.Eye, node.Hidden, showControls, selected,
                 node.Hidden ? $"Show {node.Name}" : $"Hide {node.Name}"))
             SetHidden(ctx, node, !node.Hidden);
-        if (RowToggle("##lock", new Vector2(bx + button, start.Y), button, node.Locked ? Icon.Lock : Icon.LockOpen, node.Locked, showControls,
+        if (RowToggle("##lock", new Vector2(bx + button, start.Y), button, node.Locked ? Icon.Lock : Icon.LockOpen, node.Locked, showControls, selected,
                 node.Locked ? $"Unlock {node.Name}" : $"Lock {node.Name}: it stays visible but can't be selected"))
             SetLocked(ctx, node, !node.Locked);
 
@@ -192,14 +193,14 @@ public sealed class Outliner
     static (Icon, uint) EntityStyle(Document doc, int id) =>
         doc.FindEntity(id) is { } e ? EntityDraw.Style(e.ClassName) : (Icon.MapPin, ImGui.ColorConvertFloat4ToU32(Theme.TextDim));
 
-    static bool RowToggle(string id, Vector2 pos, float size, Icon icon, bool on, bool show, string tip)
+    static bool RowToggle(string id, Vector2 pos, float size, Icon icon, bool on, bool show, bool onAccent, string tip)
     {
         ImGui.SetCursorScreenPos(pos);
         bool clicked = ImGui.InvisibleButton(id, new Vector2(size));
         bool hovered = ImGui.IsItemHovered();
         Tip(tip);
         if (!on && !show && !hovered) return clicked;
-        var col = hovered ? Theme.Text : on ? Theme.Text : Theme.TextDim with { W = 0.7f };
+        var col = onAccent ? Theme.OnAccent with { W = hovered || on ? 1 : 0.7f } : hovered || on ? Theme.Text : Theme.TextDim with { W = 0.7f };
         Icons.Draw(ImGui.GetWindowDrawList(), icon, pos + new Vector2(size * 0.5f), ImGui.ColorConvertFloat4ToU32(col));
         return clicked;
     }

@@ -28,9 +28,9 @@ public sealed partial class EditorApp
             if (_recovery.Count > 1) ImGui.TextColored(Theme.TextDim, $"{_recovery.Count - 1} more autosave{(_recovery.Count > 2 ? "s" : "")} after this one.");
             ImGui.Dummy(Theme.Px(0, 8));
             var w = new Vector2(Theme.Px(150), 0);
-            ImGui.PushStyleColor(ImGuiCol.Button, Theme.ActiveFill);
+            Widgets.PushPrimary();
             bool restore = ImGui.Button("Restore", w);
-            ImGui.PopStyleColor();
+            Widgets.PopPrimary();
             Widgets.Tip("Open the autosave. Undo shows the file as it was last saved.");
             ImGui.SameLine();
             bool discard = ImGui.Button("Discard autosave", w);

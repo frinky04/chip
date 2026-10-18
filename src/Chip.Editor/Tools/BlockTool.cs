@@ -253,6 +253,6 @@ public sealed class BlockTool : IViewportTool
     {
         RowLabel(label, tip);
         float pct = ratio * 100;
-        if (ImGui.SliderFloat($"##{label}", ref pct, min * 100, max * 100, "%.0f%%")) ratio = pct / 100;
+        if (Widgets.ValueSlider($"##{label}", "", ref pct, min * 100, max * 100, "%.0f%%", p => $"{p:0}%")) ratio = pct / 100;
     }
 }

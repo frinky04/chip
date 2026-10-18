@@ -5,7 +5,8 @@ namespace Chip.Editor.UI;
 
 /// <summary>
 /// The editor's small widget vocabulary. Every panel is built from these so states read the same everywhere:
-/// tool = warm fill + orange edge bar; segmented option = raised pill + orange icon; setting on = neutral raised fill; hover = frame fill.
+/// active tool / active option / selected row / primary button / value fill = solid orange with dark text;
+/// setting on = neutral raised fill with an orange icon; hover = frame fill.
 /// </summary>
 public static class Widgets
 {
@@ -15,7 +16,7 @@ public static class Widgets
 
     enum Kind { Tool, Segment, Toggle }
 
-    /// <summary>Square icon button for the tool strip, with its hotkey in the corner.</summary>
+    /// <summary>Square icon button for the tool strip; <paramref name="key"/> shows in the tooltip.</summary>
     public static bool ToolButton(Icon icon, string key, string tip, bool active, Vector2 size)
     {
         var p = ImGui.GetCursorScreenPos();
@@ -23,15 +24,15 @@ public static class Widgets
         bool hovered = ImGui.IsItemHovered();
         var dl = ImGui.GetWindowDrawList();
         Background(dl, p, size, active, hovered, Kind.Tool);
-        var center = p + size * 0.5f - (key.Length > 0 ? Theme.Px(2, 2) : Vector2.Zero);
-        Icons.Draw(dl, icon, center, U32(active || hovered ? Theme.Text : Theme.TextDim));
-        if (key.Length > 0) SmallText(dl, p + size - SmallSize(key) - Theme.Px(3, 2), key, Theme.TextDim with { W = 0.75f });
+        // Centred, bright line icons and no corner letters, like Krita's toolbox; the key lives in the tooltip.
+        var center = new Vector2(MathF.Round(p.X + size.X * 0.5f), MathF.Round(p.Y + size.Y * 0.5f));
+        Icons.Draw(dl, icon, center, U32(active ? Theme.OnAccent : hovered ? Theme.Text : Theme.Text with { W = 0.78f }));
         TipFor(hovered, key.Length > 0 ? $"{tip}  ({key})" : tip);
         return clicked;
     }
 
     /// <summary>
-    /// Mutually exclusive options in one recessed track; the active option is a raised pill with an orange icon.
+    /// Mutually exclusive options in one recessed track; the active option is a solid orange pill.
     /// Returns the clicked index, or -1.
     /// </summary>
     public static int SegmentedControl(string id, (Icon Icon, string Label, string Tip)[] items, int active)
@@ -40,7 +41,7 @@ public static class Widgets
         float h = ImGui.GetFrameHeight();
         float total = items.Sum(i => LabeledWidth(i.Label)) + inset * 2;
         var p = ImGui.GetCursorScreenPos();
-        ImGui.GetWindowDrawList().AddRectFilled(p, p + new Vector2(total, h), U32(Theme.Bg), Theme.Px(4));
+        ImGui.GetWindowDrawList().AddRectFilled(p, p + new Vector2(total, h), U32(Theme.Track), Theme.Px(4));
 
         int clicked = -1;
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Vector2.Zero);
@@ -56,7 +57,36 @@ public static class Widgets
         return clicked;
     }
 
-    /// <summary>On/off setting with icon + label; "on" is a neutral raised fill, never orange.</summary>
+    /// <summary>Text-only <see cref="SegmentedControl"/>: a recessed track, the active option a solid orange pill. Returns the clicked index or -1.</summary>
+    public static int TextSegments(string id, (string Label, string Tip)[] items, int active)
+    {
+        float inset = Theme.Px(2), pad = Theme.Px(8);
+        float h = ImGui.GetFrameHeight();
+        var widths = items.Select(i => ImGui.CalcTextSize(i.Label).X + pad * 2).ToArray();
+        var p = ImGui.GetCursorScreenPos();
+        var dl = ImGui.GetWindowDrawList();
+        dl.AddRectFilled(p, p + new Vector2(widths.Sum() + inset * 2, h), U32(Theme.Track), Theme.Px(4));
+        int clicked = -1;
+        float x = p.X + inset;
+        for (int i = 0; i < items.Length; i++)
+        {
+            var a = new Vector2(x, p.Y + inset);
+            var size = new Vector2(widths[i], h - inset * 2);
+            ImGui.SetCursorScreenPos(a);
+            if (ImGui.InvisibleButton($"{id}{i}", size)) clicked = i;
+            bool hovered = ImGui.IsItemHovered();
+            Background(dl, a, size, i == active, hovered, Kind.Segment);
+            var ts = ImGui.CalcTextSize(items[i].Label);
+            dl.AddText(a + (size - ts) * 0.5f, i == active ? Theme.OnAccentU32 : U32(hovered ? Theme.Text : Theme.TextDim), items[i].Label);
+            Tip(items[i].Tip);
+            x += widths[i];
+        }
+        ImGui.SetCursorScreenPos(p);
+        ImGui.Dummy(new Vector2(widths.Sum() + inset * 2, h));
+        return clicked;
+    }
+
+    /// <summary>On/off setting with icon + label; "on" is a neutral raised fill with an orange icon.</summary>
     public static bool Toggle(string id, Icon icon, string label, string tip, bool on) =>
         LabeledButton(id, icon, label, tip, on, Kind.Toggle);
 
@@ -73,8 +103,9 @@ public static class Widgets
         bool hovered = ImGui.IsItemHovered();
         var dl = ImGui.GetWindowDrawList();
         Background(dl, p, size, active, hovered, kind);
-        var fg = U32(active || hovered ? Theme.Text : Theme.TextDim);
-        var iconCol = active && kind == Kind.Segment ? Theme.AccentU32 : fg;
+        bool filled = active && kind == Kind.Segment;
+        var fg = U32(filled ? Theme.OnAccent : active || hovered ? Theme.Text : Theme.TextDim);
+        var iconCol = filled ? fg : active ? Theme.AccentU32 : fg;
         Icons.Draw(dl, icon, new Vector2(p.X + pad + Fonts.IconSize * 0.5f, p.Y + h * 0.5f), iconCol);
         if (label.Length > 0)
             dl.AddText(new Vector2(p.X + pad + Fonts.IconSize + gap, MathF.Round(p.Y + (h - ImGui.GetTextLineHeight()) * 0.5f)), fg, label);
@@ -87,16 +118,92 @@ public static class Widgets
         float r = Theme.Px(3);
         var bg = kind switch
         {
-            Kind.Tool => active ? Theme.ActiveFill : hovered ? Theme.Frame : Vector4.Zero,
-            Kind.Segment => active ? Theme.Raised : hovered ? Theme.Frame : Vector4.Zero, // pill raised out of the track
-            _ => active ? Theme.FrameHover : hovered ? Theme.Frame : Vector4.Zero,
+            Kind.Tool or Kind.Segment => active ? (hovered ? Theme.AccentHover : Theme.Accent) : hovered ? Theme.FrameHover : Vector4.Zero,
+            _ => active ? (hovered ? Theme.FrameActive : Theme.Raised) : hovered ? Theme.FrameHover : Vector4.Zero,
         };
         if (bg.W > 0) dl.AddRectFilled(p, p + size, U32(bg), r);
-        if (active && kind == Kind.Tool)
-        {
-            float t = Theme.Px(2), inset = Theme.Px(6);
-            dl.AddRectFilled(p + new Vector2(0, inset), p + new Vector2(t, size.Y - inset), Theme.AccentU32);
-        }
+    }
+
+    // ---- Accent fills: primary buttons, selected rows, value sliders ----
+
+    /// <summary>Styles the next buttons as the primary action (solid orange, dark text). Pair with <see cref="PopPrimary"/>.</summary>
+    public static void PushPrimary()
+    {
+        ImGui.PushStyleColor(ImGuiCol.Button, Theme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Theme.AccentHover);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, Theme.AccentDim);
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.OnAccent);
+    }
+
+    public static void PopPrimary() => ImGui.PopStyleColor(4);
+
+    /// <summary>Fills a selected row (outliner, palette, lists) with the accent; draw its text in <see cref="RowText"/>.</summary>
+    public static void SelectedRow(ImDrawListPtr dl, Vector2 min, Vector2 max, float rounding = 0) =>
+        dl.AddRectFilled(min, max, Theme.AccentU32, rounding);
+
+    /// <summary>Text colour for a row: dark on the accent fill, body otherwise.</summary>
+    public static uint RowText(bool selected, bool dim = false) =>
+        selected ? Theme.OnAccentU32 : U32(dim ? Theme.TextDim : Theme.Text);
+
+    /// <summary>
+    /// Krita-style value slider: the orange fill is the value, the label and value sit centred on it ("Segments: 3").
+    /// Drag or click to set; Ctrl+click types a value. Text is dark over the fill and light beyond it.
+    /// </summary>
+    public static bool ValueSlider(string id, string label, ref int value, int min, int max)
+    {
+        float v = value;
+        bool changed = SliderCore(id, label, ref v, min, max, "%.0f", x => $"{(int)MathF.Round(x)}");
+        if (changed) value = (int)MathF.Round(v);
+        return changed;
+    }
+
+    /// <summary>Float version. <paramref name="format"/> is printf-style for typing ("%.0f°"); <paramref name="show"/> formats the label.</summary>
+    public static bool ValueSlider(string id, string label, ref float value, float min, float max, string format, Func<float, string> show)
+    {
+        float v = value;
+        bool changed = SliderCore(id, label, ref v, min, max, format, show);
+        if (changed) value = v;
+        return changed;
+    }
+
+    static uint _typingSlider;
+
+    static bool SliderCore(string id, string label, ref float value, float min, float max, string format, Func<float, string> show)
+    {
+        // ImGui's slider does the input (drag, click, Ctrl+click to type); its grab and text are hidden and painted
+        // over, except while typing into it.
+        uint uid = ImGui.GetID(id);
+        bool typing = _typingSlider == uid;
+        ImGui.PushStyleColor(ImGuiCol.SliderGrab, Vector4.Zero);
+        ImGui.PushStyleColor(ImGuiCol.SliderGrabActive, Vector4.Zero);
+        if (!typing) ImGui.PushStyleColor(ImGuiCol.Text, Vector4.Zero);
+        bool changed = ImGui.SliderFloat(id, ref value, min, max, format, ImGuiSliderFlags.AlwaysClamp);
+        ImGui.PopStyleColor(typing ? 2 : 3);
+        bool nowTyping = ImGui.IsItemActive() && ImGui.GetIO().WantTextInput;
+        if (nowTyping) _typingSlider = uid;
+        else if (typing) _typingSlider = 0;
+        if (nowTyping) return changed;
+        string shown = show(value);
+
+        var a = ImGui.GetItemRectMin();
+        var b = ImGui.GetItemRectMax();
+        var dl = ImGui.GetWindowDrawList();
+        float t = max > min ? Math.Clamp((value - min) / (max - min), 0, 1) : 0;
+        float split = MathF.Round(a.X + (b.X - a.X) * t);
+        float r = ImGui.GetStyle().FrameRounding;
+        if (split > a.X) dl.AddRectFilled(a, new Vector2(split, b.Y), U32(ImGui.IsItemHovered() || ImGui.IsItemActive() ? Theme.AccentHover : Theme.Accent),
+            r, split >= b.X - r ? ImDrawFlags.RoundCornersAll : ImDrawFlags.RoundCornersLeft);
+
+        string text = label.Length > 0 ? $"{label}: {shown}" : shown;
+        var ts = ImGui.CalcTextSize(text);
+        var pos = new Vector2(MathF.Round((a.X + b.X - ts.X) * 0.5f), MathF.Round((a.Y + b.Y - ts.Y) * 0.5f));
+        dl.PushClipRect(a, new Vector2(split, b.Y), true);
+        dl.AddText(pos, Theme.OnAccentU32, text);
+        dl.PopClipRect();
+        dl.PushClipRect(new Vector2(split, a.Y), b, true);
+        dl.AddText(pos, U32(Theme.Text), text);
+        dl.PopClipRect();
+        return changed;
     }
 
     /// <summary>A regular button whose label is an icon glyph, at the row's frame height.</summary>
@@ -127,7 +234,7 @@ public static class Widgets
         {
             if (a > 0) ImGui.SameLine(0, gap);
             var p = ImGui.GetCursorScreenPos();
-            dl.AddRectFilled(p, p + new Vector2(tagW, h), U32(Theme.Bg), Theme.Px(3), ImDrawFlags.RoundCornersLeft);
+            dl.AddRectFilled(p, p + new Vector2(tagW, h), U32(Theme.Track), Theme.Px(3), ImDrawFlags.RoundCornersLeft);
             var ts = ImGui.CalcTextSize(tags[a]);
             dl.AddText(p + new Vector2(MathF.Round((tagW - ts.X) * 0.5f), ImGui.GetStyle().FramePadding.Y), colors[a], tags[a]);
             ImGui.Dummy(new Vector2(tagW, h));
@@ -143,17 +250,27 @@ public static class Widgets
         return index >= 0;
     }
 
-    /// <summary>Hairline between inspector sections (the host draws these, sections don't).</summary>
-    public static void SectionDivider()
-    {
-        ImGui.Dummy(Theme.Px(0, 4));
-        ImGui.Separator();
-        ImGui.Dummy(Theme.Px(0, 2));
-    }
+    /// <summary>Space below a section's body before the next dock title (the host draws these, sections don't).</summary>
+    public static void SectionDivider() => ImGui.Dummy(Theme.Px(0, 6));
 
-    /// <summary>SemiBold section heading with an optional right-aligned detail.</summary>
+    static bool _dockTitle;
+
+    /// <summary>
+    /// The inspector host brackets each section with these: the section's first <see cref="Heading"/> becomes a
+    /// full-width dock title bar (Krita's docker headers); later headings inside it stay plain group headings.
+    /// </summary>
+    public static void BeginDockSection() => _dockTitle = true;
+    public static void EndDockSection() => _dockTitle = false;
+
+    /// <summary>SemiBold heading with an optional right-aligned detail; a dock title bar at the top of an inspector section.</summary>
     public static void Heading(string title, string? trailing = null)
     {
+        if (_dockTitle)
+        {
+            _dockTitle = false;
+            DockTitle(title, trailing);
+            return;
+        }
         ImGui.PushFont(Fonts.Strong);
         ImGui.Text(title);
         ImGui.PopFont();
@@ -163,6 +280,29 @@ public static class Widgets
             ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - w);
             ImGui.TextColored(Theme.TextDim, trailing);
         }
+    }
+
+    /// <summary>Chrome-coloured bar across the whole panel, dark hairline above, title left, detail right.</summary>
+    static void DockTitle(string title, string? trailing)
+    {
+        var dl = ImGui.GetWindowDrawList();
+        var wp = ImGui.GetWindowPos();
+        float x0 = wp.X, x1 = wp.X + ImGui.GetWindowWidth();
+        var cur = ImGui.GetCursorScreenPos();
+        float h = MathF.Round(ImGui.GetTextLineHeight() + Theme.Px(12));
+        dl.PushClipRect(new Vector2(x0, cur.Y), new Vector2(x1, cur.Y + h), false); // past the window padding
+        dl.AddRectFilled(new Vector2(x0, cur.Y), new Vector2(x1, cur.Y + h), U32(Theme.Bg));
+        dl.AddLine(new Vector2(x0, cur.Y), new Vector2(x1, cur.Y), U32(Theme.Border), Theme.Px(1));
+        float ty = MathF.Round(cur.Y + (h - ImGui.GetTextLineHeight()) * 0.5f);
+        dl.AddText(Fonts.Strong, Fonts.BodySize, new Vector2(cur.X, ty), U32(Theme.Text), title);
+        if (trailing != null)
+        {
+            float w = ImGui.CalcTextSize(trailing).X;
+            dl.AddText(new Vector2(MathF.Round(wp.X + ImGui.GetWindowContentRegionMax().X - w), ty), U32(Theme.TextDim), trailing);
+        }
+        dl.PopClipRect();
+        ImGui.Dummy(new Vector2(0, h));
+        ImGui.Dummy(Theme.Px(0, 2));
     }
 
     /// <summary>Starts an inspector row: dim label in a fixed column; the next widget fills the rest.</summary>
@@ -197,11 +337,15 @@ public static class Widgets
         ImGui.SameLine(0, Theme.Px(8));
     }
 
+    /// <summary>Gap between tool groups: a short centred hairline, not a full-width rule.</summary>
     public static void StripGap()
     {
-        ImGui.Dummy(Theme.Px(0, 2));
-        ImGui.Separator();
-        ImGui.Dummy(Theme.Px(0, 2));
+        float gap = Theme.Px(10);
+        var p = ImGui.GetCursorScreenPos();
+        float x0 = ImGui.GetWindowPos().X, w = ImGui.GetWindowWidth(), inset = Theme.Px(12);
+        float y = MathF.Round(p.Y + gap * 0.5f);
+        ImGui.GetWindowDrawList().AddLine(new Vector2(x0 + inset, y), new Vector2(x0 + w - inset, y), U32(Theme.FrameHover), Theme.Px(1));
+        ImGui.Dummy(new Vector2(0, gap));
     }
 
     public static void Tip(string text)
@@ -213,9 +357,4 @@ public static class Widgets
     {
         if (hovered && ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort)) ImGui.SetTooltip(text);
     }
-
-    static Vector2 SmallSize(string s) => ImGui.CalcTextSize(s) * (Fonts.SmallSize / Fonts.BodySize);
-
-    static void SmallText(ImDrawListPtr dl, Vector2 pos, string s, Vector4 col) =>
-        dl.AddText(Fonts.Small, Fonts.SmallSize, new Vector2(MathF.Round(pos.X), MathF.Round(pos.Y)), U32(col), s);
 }

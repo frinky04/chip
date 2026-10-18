@@ -17,25 +17,30 @@ public sealed partial class EditorApp
         ImGui.SetNextWindowSize(size);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Theme.Px(4, 6));
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Theme.Px(0, 2));
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, Theme.Bg); // chrome, like Krita's toolbox
         ImGui.Begin("##tools", FixedPanel);
-        var btn = new Vector2(size.X - Theme.Px(8), Theme.Px(36));
+        // Square tiles, centred in the strip whatever its width.
+        float side = MathF.Min(size.X - Theme.Px(8), Theme.Px(36));
+        var btn = new Vector2(side, side);
+        float left = MathF.Round((size.X - side) * 0.5f);
 
         foreach (var tool in Ctx.Tools)
         {
-            // The command's current binding, so a remapped tool shows its new key.
-            string? hotkey = Ctx.Commands.Find($"tool.{tool.Id}")?.HotkeyText;
-            string key = hotkey is { Length: 1 } k ? k : "";
-            string tip = hotkey != null && key.Length == 0 ? $"{tool.Name}  ({hotkey})" : tool.Name; // ToolButton appends a corner key itself
-            if (ToolButton(tool.Icon, key, tip, Ctx.ActiveTool == tool, btn)) Ctx.ToggleTool(tool);
+            // The command's current binding (tooltip only), so a remapped tool shows its new key.
+            string hotkey = Ctx.Commands.Find($"tool.{tool.Id}")?.HotkeyText ?? "";
+            ImGui.SetCursorPosX(left);
+            if (ToolButton(tool.Icon, hotkey, tool.Name, Ctx.ActiveTool == tool, btn)) Ctx.ToggleTool(tool);
         }
         StripGap();
         foreach (var (id, icon) in TransformButtons)
         {
             if (Ctx.Commands.Find(id) is not { } c) continue;
             string tip = c.Description != null ? $"{c.Label}\n{c.Description}" : c.Label;
+            ImGui.SetCursorPosX(left);
             if (ToolButton(icon, c.HotkeyText ?? "", tip, c.IsChecked?.Invoke() ?? false, btn)) c.Execute();
         }
         ImGui.End();
+        ImGui.PopStyleColor();
         ImGui.PopStyleVar(2);
     }
 }

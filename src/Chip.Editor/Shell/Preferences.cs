@@ -68,7 +68,7 @@ public sealed partial class EditorApp
         if (!open) _captureId = null;
     }
 
-    /// <summary>Section list item: neutral raised fill when current (navigation, not editing, so not orange).</summary>
+    /// <summary>Section list item: the current page is a selected row (solid orange, dark text).</summary>
     static bool NavItem(string label, bool current)
     {
         var p = ImGui.GetCursorScreenPos();
@@ -76,9 +76,10 @@ public sealed partial class EditorApp
         bool clicked = ImGui.InvisibleButton(label, size);
         bool hovered = ImGui.IsItemHovered();
         var dl = ImGui.GetWindowDrawList();
-        if (current || hovered) dl.AddRectFilled(p, p + size, ImGui.ColorConvertFloat4ToU32(current ? Theme.Raised : Theme.Frame), Theme.Px(3));
+        if (current) Widgets.SelectedRow(dl, p, p + size, Theme.Px(3));
+        else if (hovered) dl.AddRectFilled(p, p + size, ImGui.ColorConvertFloat4ToU32(Theme.FrameHover), Theme.Px(3));
         float ty = MathF.Round(p.Y + (size.Y - ImGui.GetTextLineHeight()) * 0.5f);
-        dl.AddText(new Vector2(p.X + Theme.Px(10), ty), ImGui.ColorConvertFloat4ToU32(current || hovered ? Theme.Text : Theme.TextDim), label);
+        dl.AddText(new Vector2(p.X + Theme.Px(10), ty), current ? Theme.OnAccentU32 : ImGui.ColorConvertFloat4ToU32(hovered ? Theme.Text : Theme.TextDim), label);
         return clicked;
     }
 
@@ -257,7 +258,7 @@ public sealed partial class EditorApp
         // Capturing is the thing being edited: orange outline. A rebound shortcut reads in body text, a default dimmer.
         if (capturing)
         {
-            ImGui.PushStyleColor(ImGuiCol.Button, Theme.ActiveFill);
+            ImGui.PushStyleColor(ImGuiCol.Button, Theme.Raised);
             ImGui.PushStyleColor(ImGuiCol.Border, Theme.Accent);
             ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, Theme.Px(1));
         }

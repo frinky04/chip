@@ -83,8 +83,9 @@ Scythe's bindings first (`SPEC.md` §4–§9), then Source 2 Hammer. `Chip.Edito
 
 ## UI rules
 
-- Build from `UI/Widgets` (ToolButton, SegmentedControl, Toggle, IconButton, TaggedFields, Heading, RowLabel, KeyHints).
-- **Orange means "what you're editing"**: the selection, the active tool or mode. Settings that are on use a neutral raised fill. Never orange for decoration.
+- Build from `UI/Widgets` (ToolButton, SegmentedControl, TextSegments, Toggle, IconButton, ValueSlider, TaggedFields, Heading, RowLabel, KeyHints, PushPrimary, SelectedRow).
+- **Krita dark orange**: neutral greys (chrome `Theme.Bg`, docks `Theme.Panel`, fields `Theme.Frame`, recessed tracks `Theme.Track`), dark hairlines (`Theme.Border`), and one solid orange fill with dark text (`Theme.OnAccent`) for what is active or selected: the active tool and mode, selected rows (`SelectedRow` + `RowText`), the primary button of a dialog or pending tool (`PushPrimary`), and the value part of a slider (`ValueSlider`). Settings that are on use a neutral raised fill with an orange icon. Never orange for decoration.
+- Inspector sections start with `Heading`; the host turns that first heading into the section's dock title bar.
 - Sizes go through `Theme.Px(...)` (DPI scaling). Text sizes are `Fonts.BodySize` / `Fonts.SmallSize`. Icons come from Tabler (`UI/Icons.cs`; add glyphs to the map).
 - Copy: sentence case, plain verbs, and buttons say what happens. Errors say what happened and how to fix it (`ctx.Status(msg, error: true)`). No ALL-CAPS labels, no middle-dot meta strings.
 

@@ -11,7 +11,8 @@ public sealed partial class EditorApp
     {
         ImGui.SetNextWindowPos(pos);
         ImGui.SetNextWindowSize(size);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Theme.Px(12, 10));
+        // No top padding: the first section's dock title sits flush with the top, like Krita's dockers.
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Theme.Px(12, 0));
         ImGui.Begin("##inspector", FixedPanel);
         ImGui.PushItemWidth(-1);
         bool first = true;
@@ -22,10 +23,13 @@ public sealed partial class EditorApp
             if (!first) Widgets.SectionDivider();
             first = false;
             ImGui.PushID(section.Id);
+            Widgets.BeginDockSection();
             section.Draw(Ctx);
+            Widgets.EndDockSection();
             _bench?.RecordSection(section.Id, started);
             ImGui.PopID();
         }
+        Widgets.SectionDivider();
         ImGui.PopItemWidth();
         ImGui.End();
         ImGui.PopStyleVar();

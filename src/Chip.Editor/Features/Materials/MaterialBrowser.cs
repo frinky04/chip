@@ -164,7 +164,7 @@ public sealed class MaterialBrowser
         ImGui.InputTextWithHint("##search", "Search materials", ref _search, 128);
         ImGui.SameLine(0, gap);
         ImGui.SetNextItemWidth(sliderW);
-        ImGui.SliderFloat("##thumb", ref _thumb, 40, 160, "");
+        Widgets.ValueSlider("##thumb", "", ref _thumb, 40, 160, "%.0f px", t => $"{t:0} px");
         Tip($"Thumbnail size: {_thumb:0} px");
 
         var shown = Filtered(lib);

@@ -38,9 +38,9 @@ public sealed partial class EditorApp
             ImGui.TextColored(Theme.TextDim, "Unsaved changes are lost if you don't save.");
             ImGui.Dummy(Theme.Px(0, 8));
             var w = new Vector2(Theme.Px(104), 0);
-            ImGui.PushStyleColor(ImGuiCol.Button, Theme.ActiveFill);
+            Widgets.PushPrimary();
             bool save = ImGui.Button("Save", w);
-            ImGui.PopStyleColor();
+            Widgets.PopPrimary();
             ImGui.SameLine();
             bool discard = ImGui.Button("Don't save", w);
             ImGui.SameLine();

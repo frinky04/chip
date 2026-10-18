@@ -253,21 +253,24 @@ public sealed class BevelTool : IViewportTool
         Widgets.Tip("Distance from the edge on each side, in metres. Dragging snaps it to the grid; hold Ctrl for free.");
         float w = Width;
         if (ImGui.InputFloat("##width", ref w, 0, 0, "%.3f m")) Width = Math.Clamp(w, 0.001f, 100f);
-        ImGui.TextColored(Theme.TextDim, "Segments");
-        Widgets.Tip("1 is a flat chamfer; more give a rounded edge. Mouse wheel or 1–9 while the bevel is showing.");
+        ImGui.Dummy(Theme.Px(0, 2));
         int s = Segments;
-        if (ImGui.SliderInt("##segments", ref s, 1, MaxSegments)) Segments = s;
+        if (Widgets.ValueSlider("##segments", "Segments", ref s, 1, MaxSegments)) Segments = s;
+        Widgets.Tip("1 is a flat chamfer; more give a rounded edge. Mouse wheel or 1–9 while the bevel is showing.");
         if (_pending) Refresh(ctx); // inspector edits show immediately
         ImGui.Dummy(Theme.Px(0, 2));
 
         if (_pending)
         {
-            if (ImGui.Button("Apply", new Vector2(ImGui.GetContentRegionAvail().X * 0.5f - Theme.Px(2), 0)))
+            Widgets.PushPrimary();
+            bool apply = ImGui.Button("Apply", new Vector2(ImGui.GetContentRegionAvail().X * 0.5f - Theme.Px(2), 0));
+            Widgets.PopPrimary();
+            Widgets.Tip("Enter");
+            if (apply)
             {
                 Commit(ctx);
                 if (ctx.DefaultTool != null) ctx.SetTool(ctx.DefaultTool);
             }
-            Widgets.Tip("Enter");
             ImGui.SameLine();
             if (ImGui.Button("Cancel", new Vector2(-1, 0))) Cancel(ctx);
             Widgets.Tip("Esc");

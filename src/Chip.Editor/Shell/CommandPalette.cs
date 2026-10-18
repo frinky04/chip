@@ -104,27 +104,23 @@ public sealed partial class EditorApp
 
         var dl = ImGui.GetWindowDrawList();
         uint U32(Vector4 v) => ImGui.ColorConvertFloat4ToU32(v);
-        if (selected)
-        {
-            dl.AddRectFilled(p, p + new Vector2(w, rowH), U32(Theme.ActiveFill), Theme.Px(3));
-            dl.AddRectFilled(p + new Vector2(0, Theme.Px(5)), p + new Vector2(Theme.Px(2), rowH - Theme.Px(5)), Theme.AccentU32);
-        }
+        if (selected) Widgets.SelectedRow(dl, p, p + new Vector2(w, rowH), Theme.Px(3));
         else if (hovered) dl.AddRectFilled(p, p + new Vector2(w, rowH), U32(Theme.Frame), Theme.Px(3));
 
         bool enabled = c.Enabled;
         float ty = MathF.Round(p.Y + (rowH - ImGui.GetTextLineHeight()) * 0.5f);
         float x = p.X + Theme.Px(10);
         string label = c.CurrentLabel;
-        dl.AddText(new Vector2(x, ty), U32(enabled ? Theme.Text : Theme.TextDisabled), label);
+        dl.AddText(new Vector2(x, ty), selected ? Theme.OnAccentU32 : U32(enabled ? Theme.Text : Theme.TextDisabled), label);
         x += ImGui.CalcTextSize(label).X + Theme.Px(10);
         string where = c.Menu ?? c.Category ?? "";
-        if (where.Length > 0) dl.AddText(new Vector2(x, ty), U32(enabled ? Theme.TextDim : Theme.TextDisabled), where);
+        if (where.Length > 0) dl.AddText(new Vector2(x, ty), selected ? Theme.OnAccentU32 & 0xB0FFFFFF : U32(enabled ? Theme.TextDim : Theme.TextDisabled), where);
 
         if (c.Hotkeys.Length > 0)
         {
             string keys = string.Join(" / ", c.Hotkeys.Select(h => h.ToString()));
             float kw = ImGui.CalcTextSize(keys).X;
-            dl.AddText(new Vector2(p.X + w - kw - Theme.Px(10), ty), U32(enabled ? Theme.TextDim : Theme.TextDisabled), keys);
+            dl.AddText(new Vector2(p.X + w - kw - Theme.Px(10), ty), selected ? Theme.OnAccentU32 & 0xB0FFFFFF : U32(enabled ? Theme.TextDim : Theme.TextDisabled), keys);
         }
         if (!enabled && hovered) ImGui.SetTooltip("Not available right now");
         return clicked;

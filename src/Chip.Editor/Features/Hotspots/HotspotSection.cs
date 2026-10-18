@@ -84,35 +84,6 @@ public sealed class HotspotSection : IInspectorSection
         Tip("Write hotspot UVs but keep each face's material");
     }
 
-    /// <summary>Text-only segmented control (same look as the fast texture tool's spacing picker). Returns the clicked index or -1.</summary>
-    internal static int TextSegments(string id, (string Label, string Tip)[] items, int active)
-    {
-        float inset = Theme.Px(2), pad = Theme.Px(8);
-        float h = ImGui.GetFrameHeight();
-        var widths = items.Select(i => ImGui.CalcTextSize(i.Label).X + pad * 2).ToArray();
-        var p = ImGui.GetCursorScreenPos();
-        var dl = ImGui.GetWindowDrawList();
-        dl.AddRectFilled(p, p + new Vector2(widths.Sum() + inset * 2, h), ImGui.ColorConvertFloat4ToU32(Theme.Bg), Theme.Px(4));
-        int clicked = -1;
-        float x = p.X + inset;
-        for (int i = 0; i < items.Length; i++)
-        {
-            var a = new Vector2(x, p.Y + inset);
-            var size = new Vector2(widths[i], h - inset * 2);
-            ImGui.SetCursorScreenPos(a);
-            if (ImGui.InvisibleButton($"{id}{i}", size)) clicked = i;
-            bool hovered = ImGui.IsItemHovered();
-            if (i == active || hovered)
-                dl.AddRectFilled(a, a + size, ImGui.ColorConvertFloat4ToU32(i == active ? Theme.Raised : Theme.Frame), Theme.Px(3));
-            var ts = ImGui.CalcTextSize(items[i].Label);
-            dl.AddText(a + (size - ts) * 0.5f, ImGui.ColorConvertFloat4ToU32(i == active || hovered ? Theme.Text : Theme.TextDim), items[i].Label);
-            Tip(items[i].Tip);
-            x += widths[i];
-        }
-        ImGui.SetCursorScreenPos(p);
-        ImGui.Dummy(new Vector2(widths.Sum() + inset * 2, h));
-        return clicked;
-    }
 
     /// <summary>A text-only on/off button: neutral raised fill when on (never orange), frame fill on hover.</summary>
     internal static bool TextToggle(string id, string label, string tip, bool on)

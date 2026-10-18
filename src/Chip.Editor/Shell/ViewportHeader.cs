@@ -30,7 +30,7 @@ public sealed partial class EditorApp
     void DrawViewportHeader(float width)
     {
         float h = HeaderHeight;
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Panel);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Bg); // chrome, like Krita's toolbar
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(Theme.Px(8), MathF.Floor((h - ImGui.GetFrameHeight()) * 0.5f)));
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Theme.Px(2, 0));
         ImGui.BeginChild("##vpheader", new Vector2(width, h), ImGuiChildFlags.AlwaysUseWindowPadding, ImGuiWindowFlags.NoScrollbar);
