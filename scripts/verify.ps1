@@ -6,7 +6,9 @@ $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 dotnet test --nologo -v q
 if ($LASTEXITCODE -ne 0) { throw "tests failed" }
-$bin = Join-Path $env:TEMP "chip-verify-build"
+# Per-checkout build folder so parallel worktrees never share binaries.
+$hash = [BitConverter]::ToString([Security.Cryptography.SHA1]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($root))).Replace("-", "").Substring(0, 10)
+$bin = Join-Path $env:TEMP "chip-verify-$hash"
 dotnet build src/Chip.Editor -o $bin --nologo -v q
 if ($LASTEXITCODE -ne 0) { throw "editor build failed" }
 New-Item -ItemType Directory -Force $Out | Out-Null

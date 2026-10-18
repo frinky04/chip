@@ -77,7 +77,7 @@ public class ScenarioTests
         Assert.Equal(5, s.Doc.Find(ramp.Id)!.Faces.Count);
 
         // Save → reopen → export.
-        var dir = Path.Combine(Path.GetTempPath(), "chip-scenario");
+        var dir = Path.Combine(Path.GetTempPath(), "chip-scenario", Guid.NewGuid().ToString("N")); // unique: tests may run in parallel worktrees
         Directory.CreateDirectory(dir);
         var chip = Path.Combine(dir, "level.chip");
         DocumentSerializer.Save(s.Doc, chip);
