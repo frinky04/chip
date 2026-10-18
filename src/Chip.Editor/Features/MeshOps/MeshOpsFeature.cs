@@ -45,9 +45,8 @@ public sealed class MeshOpsFeature : IEditorFeature
         c.Add("mesh.extract", "Extract faces", () => Detach(keepSource: true), "Mesh", "Alt+N", () => Mode(SelectMode.Face), "4-meshes", 2);
         c.Add("mesh.mirror", "Mirror", Mirror, "Mesh", "Shift+Z", () => !Sel.IsEmpty, "4-meshes", 3);
 
-        c.AddReference("Mesh", "Ctrl+Shift + drag", "push/pull faces along their normal (move gizmo)");
-        c.AddReference("Mesh", "Shift + drag (edge mode)", "extrude open edges (move gizmo)");
-        c.AddReference("Mesh", "I / O, then move", "inset / outset width; click or Enter applies");
+        c.AddReference("Mesh", "Ctrl+Shift + drag", "push/pull faces");
+        c.AddReference("Mesh", "Shift + drag edges", "extrude open edges");
     }
 
     /// <summary>

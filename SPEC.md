@@ -96,26 +96,26 @@ Commands act on the current selection and mode. Each command is one undo step.
 |---|---|---|---|
 | Move / Rotate / Scale gizmo | `W` / `E` / `R` | v1 | Axis, plane and screen handles. Snapped. |
 | Extrude faces | Shift + drag gizmo (face mode) | v1 | Duplicates the selected region, bridges its boundary with quads, then moves. |
-| Push/pull faces (extrude, then move along normal, merging coplanar sides) | Shift+Ctrl + drag gizmo | v2 | |
-| Extrude boundary edges | Shift + drag gizmo (edge mode) | v2 | Boundary edges only. |
+| Push/pull faces (extrude, then move along normal, merging coplanar sides) | Shift+Ctrl + drag gizmo | v2 shipped | Motion is constrained to the faces' average normal. Outline vertices whose neighbours already contain that direction slide instead of extruding, so pushing a box face resizes the box with no new faces; side faces left flush with a neighbour merge into it. |
+| Extrude boundary edges | Shift + drag gizmo (edge mode) | v2 shipped | Boundary edges only; the new outer edges become the selection. Closed edges just move. |
 | Rotate-extrude (Shift while rotating) | Shift + drag rotate gizmo | later | |
 | Delete selection | `Del` | v1 | Faces → remove. Verts/edges → remove adjacent faces. Objects → remove mesh. |
 | Duplicate | `Shift+D` | v1 | Object mode: copy the mesh. Face mode: copy the faces into the same mesh. |
 | Flip / invert normals | `Shift+N` | v1 | |
-| Merge Meshes | `M` | v1 | Object mode, ≥2 meshes → one mesh. |
-| Detach faces → new mesh | `N` | v1 | |
-| Extract (detach a copy) | `Alt+N` | v1 | |
+| Merge Meshes | `M` | v1 shipped | Object mode, ≥2 meshes → one mesh (the active one, else the first). Vertices are not welded. |
+| Detach faces → new mesh | `N` | v1 shipped | The new mesh's faces stay selected. |
+| Extract (detach a copy) | `Alt+N` | v1 shipped | |
 | Soft / Hard / Dominant normals | `J` / `H` / `K` | v2 | Per-edge smoothing flags. Export smooth groups. |
-| Connect (split faces between selected verts/edges) | `V` | v2 | |
-| Merge Faces (dissolve shared edges) | `Backspace` | v2 | |
-| Bridge (two faces or two edge loops) | `Shift+C` | v2 | |
-| Inset / Outset | `I` / `O` | v2 | Interactive amount. |
-| Weld Overlapping verts | `Shift+Ctrl+Alt+M` | v1 | Distance threshold 1 mm. |
+| Connect (split faces between selected verts/edges) | `V` | v2 shipped | Vertices: chords between selected corners of each face. Edges: midpoints, joined across faces holding two or more (edge-ring connect). |
+| Merge Faces (dissolve shared edges) | `Backspace` | v2 shipped | Each connected region becomes one n-gon with the active face's surface. Regions with holes are skipped. Leftover straight-through vertices are dissolved. |
+| Bridge (two faces or two edge loops) | `Shift+C` | v2 shipped | Same mesh, same corner/edge count. Faces are removed and their outlines joined by world-aligned quads. Open edge chains or closed loops of boundary edges. |
+| Inset / Outset | `I` / `O` | v2 shipped | Interactive amount: previews the last width, move the mouse to change it (grid-snapped), click/Enter applies, Esc cancels; width also in the inspector. Region-aware. Outset keeps the faces' size and pushes the old outline outward. |
+| Weld Overlapping verts | `Shift+Ctrl+Alt+M` | v1 shipped | Distance threshold 1 mm, per selected mesh (selected vertices only in vertex mode). |
 | Bevel (edges/verts, segments) | `B` | v2 | |
 | Cut / knife (draw a line across faces) | `C` | v2 | |
 | Clip (plane split, keep front/back/both) | `Shift+X` | v2 | |
-| Mirror (across pivot axis) | `Shift+Z` | v2 | |
-| Collapse / merge verts to centre **[S2]** | | v2 | |
+| Mirror (across pivot axis) | `Shift+Z` | v2 shipped | In place, across the selection pivot, along the horizontal world axis closest to the view's left-right. Faces fully inside the selection flip winding. |
+| Collapse / merge verts to centre **[S2]** | | v2 shipped | Mesh menu. Vertices merge to one point; each connected edge chain or face region collapses to its own centre. |
 | Quad slice / subdivide **[S2]** | | later | |
 | Boolean subtract/union **[S2-ish]** | | later | |
 

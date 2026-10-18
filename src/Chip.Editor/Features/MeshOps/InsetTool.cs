@@ -161,6 +161,6 @@ public sealed class InsetTool : IViewportTool
             _raw = a;
             SetAmount(ctx, a);
         }
-        ImGui.TextColored(Theme.TextDim, _outset ? "The faces keep their size; the ring pushes outward" : "The ring grows inward from the outline");
+        ImGui.TextColored(Theme.TextDim, _outset ? "Ring pushes outward" : "Ring grows inward");
     }
 }
