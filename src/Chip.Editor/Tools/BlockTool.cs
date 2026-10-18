@@ -1,17 +1,20 @@
 using System.Numerics;
-using Chip.Core.Geometry;
-using Chip.Core.Picking;
+using Chip.Core.Geometry.Primitives;
 using Chip.Core.Scene;
 using Chip.Core.Texturing;
 using Chip.Editor.Framework;
+using Chip.Editor.Tools.Block;
 using Chip.Editor.UI;
 using ImGuiNET;
+using static Chip.Editor.UI.Widgets;
 
 namespace Chip.Editor.Tools;
 
 /// <summary>
-/// Hammer-style block creation: drag the base on the hovered surface (or the ground), release,
-/// move to set the height, click or Enter to create. The construction plane is axis-aligned and snapped.
+/// Hammer-style block creation: drag the base on the hovered surface (or the ground), release, move to set the height,
+/// click or Enter to create. The dragged box is filled by the chosen shape (box, cylinder, wedge, stairs, arch, sphere,
+/// torus, spiral stairs), previewed as a wireframe. Ctrl at the start of the drag stands the base plane up toward the camera.
+/// Shape and parameters live on the tool instance, so they are remembered between uses.
 /// </summary>
 public sealed class BlockTool : IViewportTool
 {
@@ -21,20 +24,37 @@ public sealed class BlockTool : IViewportTool
     public string? Hotkey => "Shift+B";
     public int Order => 10;
 
+    public static readonly PrimitiveShape[] ShapeList = Enum.GetValues<PrimitiveShape>();
+    static readonly string[] ShapeLabels = ["Box", "Cylinder", "Wedge", "Stairs", "Arch", "Sphere", "Torus", "Spiral stairs"];
+
+    public static string Label(PrimitiveShape shape) => ShapeLabels[(int)shape];
+
+    public PrimitiveShape Shape { get; set; } = PrimitiveShape.Box;
+    public PrimitiveOptions Options { get; } = new();
+    /// <summary>Directional shapes (wedge, stairs, arch) run along the other side of the base.</summary>
+    public bool Turn { get; set; }
+    /// <summary>Stairs: derive the step count from <see cref="StepHeight"/> instead of <see cref="PrimitiveOptions.Steps"/>.</summary>
+    public bool StepsByHeight { get; set; }
+    public float StepHeight { get; set; } = 0.25f;
+
     enum Stage { Idle, Base, Height }
 
+    readonly ConstructionPlane _plane = new();
     Stage _stage;
-    Vector3 _planePoint, _normal, _a, _b;
+    Vector3 _a, _b;
     float _height, _grid = 0.25f;
     Vector3? _cursor; // where a drag would start, shown before the first click
 
+    bool _frozen; // set by PreviewForCapture: hold the gesture still for headless captures
+
     public bool Busy => _stage != Stage.Idle;
+    public bool HasOptions => true;
 
     public (string Key, string Action)[] Hints => _stage switch
     {
-        Stage.Idle => [("Drag", "draw a base on a surface or the grid"), ("Esc", "exit tool")],
+        Stage.Idle => [("Drag", "draw a base on a surface or the grid"), ("Ctrl+drag", "on a plane facing you"), ("Esc", "exit tool")],
         Stage.Base => [("Release", "set the base")],
-        _ => [("Move", "set height"), ("Click/Enter", "create"), ("Esc", "cancel")],
+        _ => [("Move", "set height"), ("Click/Enter", $"create {Label(Shape).ToLowerInvariant()}"), ("Esc", "cancel")],
     };
 
     public bool Cancel(EditorContext ctx)
@@ -42,136 +62,197 @@ public sealed class BlockTool : IViewportTool
         bool wasBusy = Busy;
         _stage = Stage.Idle;
         _cursor = null;
+        _frozen = false;
         return wasBusy;
     }
 
     public void Update(EditorContext ctx)
     {
         ctx.Hover = null;
-        if (Step(ctx.View, ctx.Doc, ctx.Mouse, ctx.ViewportHovered, ctx.Grid, ctx.Snap, ctx.Backfaces) is not { } box) return;
-        ctx.Session.Do("Create Block", () =>
+        if (_frozen) return; // capture preview: ignore the (absent) mouse
+        _grid = ctx.Grid;
+        var ray = ctx.MouseRay();
+        switch (_stage)
         {
-            var mesh = ctx.Doc.Add(MeshOps.CreateBox(box.Min, box.Max, ctx.ActiveMaterial, TextureMapping.Default));
+            case Stage.Idle:
+                _cursor = ctx.ViewportHovered ? _plane.Pick(ctx, ImGui.GetIO().KeyCtrl) : null;
+                if (_cursor == null || !ImGui.IsMouseClicked(ImGuiMouseButton.Left)) return;
+                _a = _b = _cursor.Value;
+                _stage = Stage.Base;
+                return;
+
+            case Stage.Base:
+                if (_plane.Hit(ray) is { } p) _b = p;
+                if (ImGui.IsMouseDown(ImGuiMouseButton.Left)) return;
+                var d = Vector3.Abs(_b - _a);
+                int flat = (d.X < 1e-3f ? 1 : 0) + (d.Y < 1e-3f ? 1 : 0) + (d.Z < 1e-3f ? 1 : 0);
+                _stage = flat > 1 ? Stage.Idle : Stage.Height;
+                _height = _grid;
+                return;
+
+            default:
+                if (_plane.Height(ray, _b) is { } h) _height = h;
+                bool confirm = (ctx.ViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                    || ImGui.IsKeyPressed(ImGuiKey.Enter) || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter);
+                if (!confirm) return;
+                _stage = Stage.Idle;
+                Create(ctx, Frame());
+                return;
+        }
+    }
+
+    void Create(EditorContext ctx, PrimitiveFrame frame)
+    {
+        var mesh = Primitive.Build(Shape, EffectiveOptions(frame), frame, ctx.ActiveMaterial, TextureMapping.Default);
+        ctx.Session.Do($"Create {Label(Shape)}", () =>
+        {
+            ctx.Doc.Add(mesh);
             ctx.Sel.ConvertTo(SelectMode.Object, ctx.Doc);
             ctx.Sel.Clear();
             ctx.Sel.Add(ElementRef.Object(mesh.Id));
         });
     }
 
-    public void Draw(EditorContext ctx, ImDrawListPtr dl, Vector2 origin) => Draw(dl, origin, ctx.View);
+    PrimitiveFrame Frame() => PrimitiveFrame.FromBlock(_a, _b, _plane.Normal, MathF.Abs(_height) < 1e-4f ? _grid : _height, Turn);
 
-    /// <summary>Snapped construction cursor: a cross along the construction plane, one grid step per arm.</summary>
-    void DrawCursor(ImDrawListPtr dl, Vector2 origin, ViewInfo v, Vector3 c)
+    PrimitiveOptions EffectiveOptions(PrimitiveFrame frame)
     {
-        var u = MathF.Abs(_normal.Y) > 0.5f ? Vector3.UnitX : Vector3.UnitY;
-        var w = Vector3.Cross(_normal, u);
-        foreach (var axis in new[] { u, w })
-        {
-            if (!v.Project(c - axis * _grid, out var a) || !v.Project(c + axis * _grid, out var b)) continue;
-            dl.AddLine(origin + a, origin + b, 0xE6100F0E, Theme.Px(4));
-            dl.AddLine(origin + a, origin + b, Theme.AccentU32, Theme.Px(1.5f));
-        }
-        if (v.Project(c, out var p))
-        {
-            dl.AddCircleFilled(origin + p, Theme.Px(4), 0xE6100F0E);
-            dl.AddCircleFilled(origin + p, Theme.Px(2.5f), Theme.AccentU32);
-        }
+        if (!StepsByHeight || Shape is not (PrimitiveShape.Stairs or PrimitiveShape.SpiralStairs)) return Options;
+        var o = Options.Clone();
+        o.Steps = Primitive.StepsFor(frame.Size.Y, StepHeight);
+        return o;
     }
 
-    /// <summary>Feeds one frame of input. Returns box corners when the user confirms a block.</summary>
-    (Vector3 Min, Vector3 Max)? Step(ViewInfo view, Document doc, Vector2 mouse, bool hovered, float grid, bool snap, bool backfaces)
+    /// <summary>Puts the tool mid-gesture with a fixed 4 × 3 × 3 m box, so headless captures show the shape preview.</summary>
+    public void PreviewForCapture()
     {
-        _grid = grid;
-        var ray = view.ScreenRay(mouse);
-        float S(float x) => snap ? MeshOps.Snap(x, grid) : x;
-        Vector3 SnapInPlane(Vector3 p)
-        {
-            var q = new Vector3(S(p.X), S(p.Y), S(p.Z));
-            return q - _normal * Vector3.Dot(q - _planePoint, _normal); // stay exactly on the plane
-        }
+        _a = new Vector3(2, 0, 2);
+        _b = new Vector3(6, 0, 5);
+        _height = 3;
+        _stage = Stage.Height;
+        _frozen = true;
+    }
 
-        Vector3? StartPoint()
-        {
-            if (Picker.RaycastFace(doc, ray, backfaces) is { } hit)
-            {
-                _normal = TextureMapping.DominantAxis(hit.Normal);
-                _planePoint = _normal * S(Vector3.Dot(hit.Point, _normal));
-            }
-            else
-            {
-                _normal = Vector3.UnitY;
-                _planePoint = Vector3.Zero;
-            }
-            return Picker.RayPlane(ray, _planePoint, _normal, out float t0) ? SnapInPlane(ray.At(t0)) : null;
-        }
-
+    public void Draw(EditorContext ctx, ImDrawListPtr dl, Vector2 origin)
+    {
+        var v = ctx.View;
         switch (_stage)
         {
             case Stage.Idle:
-                _cursor = hovered ? StartPoint() : null;
-                if (_cursor == null || !ImGui.IsMouseClicked(ImGuiMouseButton.Left)) return null;
-                _a = _b = _cursor.Value;
-                _stage = Stage.Base;
-                return null;
-
+                if (_cursor is { } c) _plane.DrawCursor(dl, origin, v, c);
+                return;
             case Stage.Base:
-                if (Picker.RayPlane(ray, _planePoint, _normal, out float t1)) _b = SnapInPlane(ray.At(t1));
-                if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
                 {
-                    var d = Vector3.Abs(_b - _a);
-                    int flat = (d.X < 1e-3f ? 1 : 0) + (d.Y < 1e-3f ? 1 : 0) + (d.Z < 1e-3f ? 1 : 0);
-                    _stage = flat > 1 ? Stage.Idle : Stage.Height;
-                    _height = grid;
+                    var (min, max) = (Vector3.Min(_a, _b), Vector3.Max(_a, _b));
+                    Overlay.Box(dl, origin, v, min, max, Theme.AccentU32, Theme.Px(2));
+                    Overlay.Label(dl, origin, v, max, Overlay.Size(max - min));
+                    return;
                 }
-                return null;
-
             default:
                 {
-                    // Height = closest point on the normal line through the far corner to the mouse ray.
-                    var w0 = _b - ray.Origin;
-                    float bd = Vector3.Dot(_normal, ray.Dir);
-                    float denom = 1 - bd * bd;
-                    if (denom > 1e-5f) _height = S((bd * Vector3.Dot(ray.Dir, w0) - Vector3.Dot(_normal, w0)) / denom);
-                    bool confirm = (hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left)) || ImGui.IsKeyPressed(ImGuiKey.Enter) || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter);
-                    if (!confirm) return null;
-                    _stage = Stage.Idle;
-                    var (min, max) = Box();
-                    return (min, max);
+                    var frame = Frame();
+                    var options = EffectiveOptions(frame);
+                    if (Shape == PrimitiveShape.Box) Overlay.Box(dl, origin, v, frame.Min, frame.Max, Theme.AccentU32, Theme.Px(2));
+                    else
+                    {
+                        Overlay.Box(dl, origin, v, frame.Min, frame.Max, Overlay.Faint, Theme.Px(1));
+                        Overlay.Wire(dl, origin, v, Primitive.Build(Shape, options, frame, "", TextureMapping.Default));
+                    }
+                    string text = Overlay.Size(frame.Max - frame.Min);
+                    if (Shape is PrimitiveShape.Stairs or PrimitiveShape.SpiralStairs)
+                        text += $", {options.Steps} steps of {frame.Size.Y / Math.Max(1, options.Steps):0.###} m";
+                    Overlay.Label(dl, origin, v, frame.Max, text);
+                    return;
                 }
         }
     }
 
-    (Vector3 Min, Vector3 Max) Box()
+    public void DrawOptions(EditorContext ctx)
     {
-        float h = MathF.Abs(_height) < 1e-4f ? _grid : _height;
-        var c = _b + _normal * h;
-        var min = Vector3.Min(Vector3.Min(_a, _b), c);
-        var max = Vector3.Max(Vector3.Max(_a, _b), c);
-        return (min, max);
+        RowLabel("Shape");
+        int shape = (int)Shape;
+        if (ImGui.Combo("##shape", ref shape, ShapeLabels, ShapeLabels.Length)) Shape = (PrimitiveShape)shape;
+
+        var o = Options;
+        switch (Shape)
+        {
+            case PrimitiveShape.Cylinder:
+                Int("Sides", "Sides around the cylinder", ref o.Sides);
+                break;
+            case PrimitiveShape.Stairs:
+                StepOptions(ctx);
+                break;
+            case PrimitiveShape.Arch:
+                Int("Curve", "Segments along the curve", ref o.ArchSegments);
+                Float("Arc", "Degrees swept by the arch; 180 is a semicircle", ref o.ArchDegrees, 5, "%.0f°");
+                Float("Width", "Thickness of the arch band in metres", ref o.ArchThickness, ctx.Grid, "%.3g m");
+                break;
+            case PrimitiveShape.Sphere:
+                Int("Rings", "Bands from pole to pole", ref o.SphereRings);
+                Int("Around", "Segments around the equator", ref o.SphereSegments);
+                break;
+            case PrimitiveShape.Torus:
+                Int("Around", "Segments around the ring", ref o.TorusSegments);
+                Int("Sides", "Segments around the tube", ref o.TorusSides);
+                Percent("Tube", "Tube radius as a share of the outer radius", ref o.TorusTube, 0.05f, 0.5f);
+                break;
+            case PrimitiveShape.SpiralStairs:
+                StepOptions(ctx);
+                Float("Turn", "Total rotation in degrees", ref o.SpiralDegrees, 15, "%.0f°");
+                Percent("Inner", "Opening in the middle as a share of the radius; 0 makes a solid centre", ref o.SpiralInner, 0, 0.9f);
+                RowLabel("");
+                ImGui.Checkbox("Solid to floor", ref o.SpiralSolid);
+                Tip("Each step reaches the floor instead of floating");
+                RowLabel("");
+                ImGui.Checkbox("Clockwise", ref o.SpiralClockwise);
+                break;
+        }
+        if (Shape is PrimitiveShape.Wedge or PrimitiveShape.Stairs or PrimitiveShape.Arch)
+        {
+            RowLabel("");
+            bool turn = Turn;
+            if (ImGui.Checkbox("Rotate 90°", ref turn)) Turn = turn;
+            Tip("Run along the other side of the base. By default the shape runs along the longer side, in the drag direction");
+        }
+        if (Shape is PrimitiveShape.Cylinder or PrimitiveShape.Arch or PrimitiveShape.Sphere or PrimitiveShape.Torus)
+        {
+            RowLabel("");
+            ImGui.Checkbox("Smooth", ref o.Smooth);
+            Tip("Soft edges across the curved surface");
+        }
+        o.Clamp();
     }
 
-    void Draw(ImDrawListPtr dl, Vector2 origin, ViewInfo v)
+    void StepOptions(EditorContext ctx)
     {
-        if (_stage == Stage.Idle)
+        RowLabel("Steps", "Set the number of steps, or a step height that the rise is divided into");
+        int mode = StepsByHeight ? 1 : 0;
+        if (ImGui.Combo("##stepmode", ref mode, "By count\0By height\0")) StepsByHeight = mode == 1;
+        if (!StepsByHeight) Int("Count", "Number of steps", ref Options.Steps);
+        else
         {
-            if (_cursor is { } c) DrawCursor(dl, origin, v, c);
-            return;
+            float sh = StepHeight;
+            Float("Height", "Target step height; the count is the rise divided by this, rounded", ref sh, ctx.Grid, "%.3g m");
+            StepHeight = MathF.Max(sh, 1 / 64f);
         }
-        var (min, max) = _stage == Stage.Base ? (Vector3.Min(_a, _b), Vector3.Max(_a, _b)) : Box();
-        Span<Vector3> corners = stackalloc Vector3[8];
-        for (int i = 0; i < 8; i++)
-            corners[i] = new Vector3((i & 1) == 0 ? min.X : max.X, (i & 2) == 0 ? min.Y : max.Y, (i & 4) == 0 ? min.Z : max.Z);
-        int[] edges = [0, 1, 2, 3, 4, 5, 6, 7, 0, 2, 1, 3, 4, 6, 5, 7, 0, 4, 1, 5, 2, 6, 3, 7];
-        for (int i = 0; i < edges.Length; i += 2)
-            if (v.Project(corners[edges[i]], out var p) && v.Project(corners[edges[i + 1]], out var q))
-                dl.AddLine(origin + p, origin + q, Theme.AccentU32, Theme.Px(2));
-        var size = max - min;
-        if (!v.Project(max, out var anchor)) return;
-        string text = $"{size.X:0.###} × {size.Y:0.###} × {size.Z:0.###} m";
-        var ts = ImGui.CalcTextSize(text);
-        var pad = Theme.Px(6, 3);
-        var pos = Vector2.Clamp(anchor + new Vector2(Theme.Px(10), -ts.Y - Theme.Px(12)), new Vector2(Theme.Px(6)), v.Size - ts - Theme.Px(14, 10));
-        dl.AddRectFilled(origin + pos - pad, origin + pos + ts + pad, 0xE0141416, Theme.Px(2));
-        dl.AddText(origin + pos, Theme.AccentU32, text);
+    }
+
+    static void Int(string label, string tip, ref int value)
+    {
+        RowLabel(label, tip);
+        ImGui.InputInt($"##{label}", ref value);
+    }
+
+    static void Float(string label, string tip, ref float value, float step, string fmt)
+    {
+        RowLabel(label, tip);
+        ImGui.InputFloat($"##{label}", ref value, step, step * 4, fmt);
+    }
+
+    static void Percent(string label, string tip, ref float ratio, float min, float max)
+    {
+        RowLabel(label, tip);
+        float pct = ratio * 100;
+        if (ImGui.SliderFloat($"##{label}", ref pct, min * 100, max * 100, "%.0f%%")) ratio = pct / 100;
     }
 }
