@@ -1,0 +1,119 @@
+using System.Numerics;
+using Chip.Core.Hotspots;
+using Chip.Editor.Framework;
+using Chip.Editor.UI;
+using ImGuiNET;
+using static Chip.Editor.UI.Widgets;
+
+namespace Chip.Editor.Features.Hotspots;
+
+/// <summary>Inspector block under Texture: which hotspot applies, the apply buttons, and Scythe's apply options.</summary>
+public sealed class HotspotSection : IInspectorSection
+{
+    static readonly string[] MappingLabels = ["Automatic", "Square", "Conforming", "Follow active quads"];
+
+    public string Id => "hotspot";
+    public int Order => 310;
+
+    public bool Visible(EditorContext ctx) =>
+        ctx.Sel.FaceSets(ctx.Doc).Count > 0 && HotspotState.For(ctx).AllAssets().Count > 0;
+
+    public void Draw(EditorContext ctx)
+    {
+        var state = HotspotState.For(ctx);
+        var s = state.Settings;
+        var target = state.Resolve();
+        Heading("Hotspot", target?.Asset.Name);
+
+        RowLabel("Uses", "Hotspots use the active material when it has a hotspot asset, else the selected face's");
+        if (target is { } t) ImGui.Text(t.Material);
+        else ImGui.TextColored(Theme.TextDim, "None with a hotspot asset");
+        if (target == null) Tip($"{ctx.ActiveMaterial} has no hotspot asset. Pick a hotspot material in the browser (T), or make an asset in the hotspot editor");
+
+        float gap = Theme.Px(4);
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(gap, Theme.Px(4)));
+        float w = (ImGui.GetContentRegionAvail().X - gap * 2) / 3;
+        ImGui.BeginDisabled(target == null);
+        if (ImGui.Button("Apply", new Vector2(w, 0))) ctx.Commands.Execute("hotspot.apply");
+        Tip("Apply hotspot: fit each coplanar region into the best patch  (Shift+H)");
+        ImGui.SameLine();
+        if (ImGui.Button("Each face", new Vector2(w, 0))) ctx.Commands.Execute("hotspot.applyFaces");
+        Tip("Hotspot individual faces: fit every face into its own patch  (Shift+F)");
+        ImGui.EndDisabled();
+        ImGui.SameLine();
+        if (ImGui.Button("Edit…", new Vector2(w, 0))) HotspotEditor.For(ctx).Show(ctx, target?.Asset);
+        Tip("Open the hotspot editor  (Ctrl+Shift+H)");
+        ImGui.PopStyleVar();
+
+        RowLabel("Tiling", "Whether tiling patches (full-width strips) are used");
+        int tiling = TextSegments("hstiling", [("No", "Never use tiling patches"), ("Allow", "Tiling patches compete with the rest; long strips get them"),
+            ("Only", "Use tiling patches only")], (int)s.Tiling);
+        if (tiling >= 0) s.Tiling = (HotspotTiling)tiling;
+
+        RowLabel("Mapping", "How each region is flattened before it is fitted");
+        int mapping = (int)s.Mapping;
+        ImGui.SetNextItemWidth(-1);
+        if (ImGui.Combo("##hsmapping", ref mapping, MappingLabels, MappingLabels.Length)) s.Mapping = (HotspotMapping)mapping;
+        Tip(s.Mapping switch
+        {
+            HotspotMapping.Automatic => "Square when the quads are close to square, else conforming",
+            HotspotMapping.Square => "Every quad becomes an equal square",
+            HotspotMapping.Conforming => "Keep every face's true shape",
+            _ => "Straighten quad strips, starting from the active face",
+        });
+
+        bool noRandom = s.DisallowRandom;
+        if (ImGui.Checkbox("Disallow random", ref noRandom)) s.DisallowRandom = noRandom;
+        Tip("Never mirror or turn patches at random, even where their flags allow it");
+        ImGui.SameLine(0, Theme.Px(12));
+        bool keep = s.DontApplyMaterial;
+        if (ImGui.Checkbox("Don't apply material", ref keep)) s.DontApplyMaterial = keep;
+        Tip("Write hotspot UVs but keep each face's material");
+    }
+
+    /// <summary>Text-only segmented control (same look as the fast texture tool's spacing picker). Returns the clicked index or -1.</summary>
+    internal static int TextSegments(string id, (string Label, string Tip)[] items, int active)
+    {
+        float inset = Theme.Px(2), pad = Theme.Px(8);
+        float h = ImGui.GetFrameHeight();
+        var widths = items.Select(i => ImGui.CalcTextSize(i.Label).X + pad * 2).ToArray();
+        var p = ImGui.GetCursorScreenPos();
+        var dl = ImGui.GetWindowDrawList();
+        dl.AddRectFilled(p, p + new Vector2(widths.Sum() + inset * 2, h), ImGui.ColorConvertFloat4ToU32(Theme.Bg), Theme.Px(4));
+        int clicked = -1;
+        float x = p.X + inset;
+        for (int i = 0; i < items.Length; i++)
+        {
+            var a = new Vector2(x, p.Y + inset);
+            var size = new Vector2(widths[i], h - inset * 2);
+            ImGui.SetCursorScreenPos(a);
+            if (ImGui.InvisibleButton($"{id}{i}", size)) clicked = i;
+            bool hovered = ImGui.IsItemHovered();
+            if (i == active || hovered)
+                dl.AddRectFilled(a, a + size, ImGui.ColorConvertFloat4ToU32(i == active ? Theme.Raised : Theme.Frame), Theme.Px(3));
+            var ts = ImGui.CalcTextSize(items[i].Label);
+            dl.AddText(a + (size - ts) * 0.5f, ImGui.ColorConvertFloat4ToU32(i == active || hovered ? Theme.Text : Theme.TextDim), items[i].Label);
+            Tip(items[i].Tip);
+            x += widths[i];
+        }
+        ImGui.SetCursorScreenPos(p);
+        ImGui.Dummy(new Vector2(widths.Sum() + inset * 2, h));
+        return clicked;
+    }
+
+    /// <summary>A text-only on/off button: neutral raised fill when on (never orange), frame fill on hover.</summary>
+    internal static bool TextToggle(string id, string label, string tip, bool on)
+    {
+        float pad = Theme.Px(8);
+        var size = new Vector2(ImGui.CalcTextSize(label).X + pad * 2, ImGui.GetFrameHeight());
+        var p = ImGui.GetCursorScreenPos();
+        bool clicked = ImGui.InvisibleButton(id, size);
+        bool hovered = ImGui.IsItemHovered();
+        var dl = ImGui.GetWindowDrawList();
+        if (on || hovered) dl.AddRectFilled(p, p + size, ImGui.ColorConvertFloat4ToU32(on ? Theme.FrameHover : Theme.Frame), Theme.Px(3));
+        var ts = ImGui.CalcTextSize(label);
+        dl.AddText(p + new Vector2(pad, MathF.Round((size.Y - ts.Y) * 0.5f)), ImGui.ColorConvertFloat4ToU32(on || hovered ? Theme.Text : Theme.TextDim), label);
+        Tip(tip);
+        return clicked;
+    }
+}

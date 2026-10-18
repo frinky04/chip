@@ -11,7 +11,7 @@ namespace Chip.Editor;
 /// <summary>
 /// <c>Chip --shot [level.chip|-] out.png [state] [--run cmd.id,cmd.id]</c>: renders the whole editor UI from an invisible
 /// window into an offscreen buffer, after an optional preset <c>state</c> (empty|objects|faces|block|blockpreview|polygonpreview|
-/// backfaces|shortcuts|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale) and a
+/// backfaces|shortcuts|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale|hotspot-editor) and a
 /// comma-separated list of command ids. Every feature can prove its UI headlessly this way.
 /// </summary>
 public sealed partial class EditorApp
@@ -93,6 +93,10 @@ public sealed partial class EditorApp
                 _prefSection = 3;
                 _settings.Current.TextureFolders.AddRange([@"D:\Art\textures\dev", @"C:\missing\folder"]);
                 _shell.PreferencesRequested = true;
+                break;
+            case "hotspot-editor": // editor open on the active material's asset with a patch selected (properties visible)
+                Features.Hotspots.HotspotEditor.For(ctx).Show(ctx, null);
+                Features.Hotspots.HotspotEditor.For(ctx).Selected = 1;
                 break;
             case "rescale":
                 _snapshotRescaleTo = Theme.Scale >= 1.5f ? 1f : 2f;
