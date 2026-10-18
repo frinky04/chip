@@ -18,7 +18,9 @@ foreach ($state in "empty", "objects", "faces", "block", "shortcuts") {
     $src = if ($state -eq "empty") { "-" } else { $level }
     $shotArgs = @("--shot", $src, (Join-Path $Out "$state.png"), $state)
     if ($Run) { $shotArgs += @("--run", $Run) }
-    & (Join-Path $bin "Chip.exe") @shotArgs
+    # Chip.exe is a GUI app: without the pipe PowerShell returns at once and $LASTEXITCODE is stale.
+    & (Join-Path $bin "Chip.exe") @shotArgs | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "capture '$state' failed ($LASTEXITCODE)" }
+    if (-not (Test-Path (Join-Path $Out "$state.png"))) { throw "capture '$state' wrote no image" }
 }
 Write-Host "OK: tests passed, captures in $Out"

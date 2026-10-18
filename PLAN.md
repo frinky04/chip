@@ -90,7 +90,13 @@ Each stream gets a branch `feat/<letter>-<name>` in its own worktree off post-Ph
 - Single-file `dotnet publish` profile plus an icon.
 - Done: settings persist in `%APPDATA%/Chip`; recovery restores after a forced kill.
 
-### Wave 2 (start when their Wave 1 dependency merges)
+### Wave 2 (start when their Wave 1 dependency merges): **merged** (F L J H)
+
+Follow-ups carried into Phase 2:
+- **Input:** the hotspot editor swallows keys by setting `io.WantTextInput`; give panels a proper keyboard-capture hook in `EditorApp`.
+- **Normals:** ops that build faces with `new Face(...)` (clip and others) drop `Dominant`; rounded-bevel corner patches meet their bands at a hard edge; inset rings stay hard; the auto-smooth angle isn't persisted.
+- **Scene:** entity export is flat, so emit group parent nodes; per-object pivot; Local gizmo orientation should follow entity rotation; groups keep stale member ids after merge/delete-all-faces; the Material section shows for entity-only selections.
+- **Pipeline:** the Godot addon has never run in Godot 4.3+; a None mesh re-imports as Default; re-imported OBJ names keep their `_<id>` suffix.
 
 **F · Hotspots** (§9) · needs E (explicit UVs) · owns `Core/Hotspots/*`, `Editor/Panels/HotspotEditor.cs`, `Editor/Features/HotspotFeature.cs`
 - `.hotspot.json` asset (normalized rects + flags + target materials). Hotspot editor (draw rects on the texture with a grid, flags R/X/Y/T, inset, lit/hide toggles).
