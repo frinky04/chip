@@ -96,6 +96,8 @@ public class FrameCacheTests
         session.Undo(); Get(Vector3.One, true); Assert.Equal(5, calls);
         session.Redo(); Get(Vector3.One, true); Assert.Equal(6, calls);
         session.Begin("Move"); session.Touch(); Get(Vector3.One, true);
+        Assert.Equal(6, calls); // mid-gesture: last answers stand until the gesture ends
+        Get(Vector3.Zero, true); Assert.Equal(7, calls); // ...but a new eye still recomputes
         session.Cancel(); Get(Vector3.One, true); Assert.Equal(8, calls);
     }
 

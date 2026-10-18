@@ -9,7 +9,7 @@ public sealed class EntityVisibilityFrameCache
 {
     readonly Rendering.FrameCache<Dictionary<int, bool>> _cache = new(selection: false);
     Vector3 _eye;
-    bool _backfaces;
+    bool _backfaces, _stored;
 
     /// <summary>
     /// Whether the entity's centre is visible from <paramref name="eye"/>; rays go through <paramref name="picks"/> when given.
@@ -17,9 +17,13 @@ public sealed class EntityVisibilityFrameCache
     /// </summary>
     public bool Get(Session session, Vector3 eye, bool backfaces, Entity entity, PickCache? picks = null, Func<bool>? compute = null)
     {
-        if (!_cache.IsCurrent(session) || _eye != eye || _backfaces != backfaces)
+        // Mid-gesture the scene changes every frame; keep the last answers until it ends rather than re-ray every entity
+        // (and force picking to rebuild every dragged mesh) each frame. The eye and backface policy still invalidate.
+        bool stale = !_cache.IsCurrent(session) && !(session.InGesture && _stored);
+        if (stale || _eye != eye || _backfaces != backfaces)
         {
             _cache.Store(session, new Dictionary<int, bool>());
+            _stored = true;
             _eye = eye; _backfaces = backfaces;
         }
         if (!_cache.Value.TryGetValue(entity.Id, out bool visible))

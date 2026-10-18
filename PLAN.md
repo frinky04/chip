@@ -119,7 +119,11 @@ Follow-ups carried into Phase 2:
 ## Phase 2: Integration and hardening
 
 - **Merge train:** merge Wave 1 in dependency-risk order G → D → A → B → C → E → I → K, rebasing each on `main` and re-running the full suite. Wave 2 follows the same way.
-- **Performance:** a BVH for picking, incremental per-mesh GPU buffers (today the whole scene rebuilds on any edit), and snapshot undo by per-mesh deltas. Target 2,000 meshes / 100k faces interactive.
+- **Performance: done** (P1 picking, P2 undo, P3 frame cost; all run on GPT-6.1-Sol). Target 2,000 meshes / 100k faces interactive. Measured with `Chip.exe --bench stress` (Release, 1600×900, CPU median):
+  - idle 2.6 ms, orbit 4.2 ms, hover 2.3–4.6 ms, outliner 2.3 ms, 500-face inspector 2.5 ms, four panes 8.8 ms;
+  - dragging 1 mesh 6.6 ms, dragging 200 meshes 16.2 ms;
+  - undo: 75 µs per scoped step, and 256 steps retain 7.4 MB (was 5.3 GB).
+  - Left over: a 200-mesh drag still rebuilds 200 GPU buffers per frame (~9 ms, 35 MB/frame). Draw dragged meshes with a transform instead. Unscoped `Session.Begin` still clones the whole document.
 - **Robustness:** n-gon validity checks (concave/non-planar warnings, auto-triangulate on export), fuzz tests for ops, and load/save of hostile files.
 - **UX pass:** run the Sol UI review loop again on the full feature set; first-run onboarding; docs site from the registry (every command with its hotkey).
 - **Release:** versioned builds and a changelog.
