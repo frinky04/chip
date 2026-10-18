@@ -191,14 +191,16 @@ Each face stores a planar projection: U axis, V axis, offset (u, v), scale (u, v
 
 ## 11. Interop
 
-| Feature | Tag |
-|---|---|
-| Export `.glb` (meshes, materials, embedded textures) | v1 |
-| Godot import hints: `-col`/`-colonly` suffixes, per-node `extras` | v2 |
-| Re-export on save (watch mode) so Godot hot-reloads | v2 |
-| OBJ export | later |
-| Import `.glb`/`.obj` as an editable mesh | later |
-| Source `.vmf` / UE `.t3d` import | later |
+| Feature | Tag | Notes |
+|---|---|---|
+| Export `.glb` (meshes, materials, embedded textures) | v1 | Shipped (J): File > Export settings adds smoothing on/off, include hidden, and embed vs reference textures (relative paths to the library files; TGA and other-drive images are copied to `name_textures/`). Settings are saved in an optional `export` block of the `.chip` file. |
+| Godot import hints: `-col`/`-colonly` suffixes, per-node `extras` | v2 | Shipped (J): per-mesh collision in the inspector (Default / None / Collision only / Convex only, the last giving `-convcolonly`). Mesh nodes carry `extras.chip_mesh`/`chip_id`; clip and trigger nodes carry `chip_tool`. Entities are empty nodes (translation, rotation, × export scale) with `extras = { chip_class, chip_id, chip_name?, properties }`, exported flat (groups once H lands). |
+| Material remap to engine resources | v2 | Shipped (J): table in Export settings (Chip material to `res://` path), written to material `extras.godot_path` and mesh node `extras.chip_remap`. |
+| Godot import addon | v2 | Shipped (J): `godot/addons/chip_import` (Godot 4.3+). Entities become `Marker3D` (spawn), `OmniLight3D` or `SpotLight3D`; remapped materials load; triggers become `Area3D`. Collision suffixes are left to Godot. |
+| Re-export on save (watch mode) so Godot hot-reloads | v2 | Shipped (J): `Ctrl+Alt+E` toggles File > Export on save (saved with the level). It hooks `Session.Saved`; the status bar reports the export or how to fix it. |
+| OBJ export | later | Shipped (J): File > Export OBJ… writes OBJ + MTL with n-gons, UVs and normals, and no collision-only or tool faces. |
+| Import `.glb`/`.obj` as an editable mesh | later | Shipped (J): File > Import mesh… welds vertices and rebuilds coplanar, same-material, UV-continuous triangles into simple n-gons. It keeps UVs as explicit UVs, recovers soft edges from normals, and matches materials to the library by name. Chip's own exports round-trip names, collision, clip/trigger faces and entities. One undo step; the imported meshes are selected. |
+| Source `.vmf` / UE `.t3d` import | later | |
 
 ## 12. Architecture (v1)
 

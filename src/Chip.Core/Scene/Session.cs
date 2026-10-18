@@ -41,7 +41,10 @@ public sealed class Session
         Version++;
     }
 
-    public void MarkSaved(string path) { Path = path; Dirty = false; }
+    /// <summary>Raised by <see cref="MarkSaved"/>, i.e. after every successful save, with the saved path (watch mode hooks this).</summary>
+    public event Action<string>? Saved;
+
+    public void MarkSaved(string path) { Path = path; Dirty = false; Saved?.Invoke(path); }
 
     public void Begin(string label)
     {
