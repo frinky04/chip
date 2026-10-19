@@ -35,7 +35,7 @@ public static partial class MeshOps
 
         var src = m.Faces[fa];
         var quads = Enumerable.Range(0, n)
-            .Select(i => new Face([a[i], a[(i + 1) % n], J(i + 1), J(i)], src.Material, src.Map))
+            .Select(i => src.Derive([a[i], a[(i + 1) % n], J(i + 1), J(i)]))
             .ToList();
         var result = new List<int>();
         m.Faces[fa] = quads[0];
@@ -140,7 +140,7 @@ public static partial class MeshOps
         foreach (var q in quads)
         {
             result.Add(m.Faces.Count);
-            m.Faces.Add(new Face(q, src.Material, src.Map));
+            m.Faces.Add(src.Derive(q));
         }
         AlignToGrid(m, result, src.Map);
         return result;

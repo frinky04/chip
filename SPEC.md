@@ -193,6 +193,8 @@ Each face stores a planar projection: U axis, V axis, offset (u, v), scale (u, v
 | Per-object origin / pivot for the gizmo | later |
 | Prefabs / instances (referenced `.chip` files) | later |
 | Collision-only meshes / nodraw-style tool materials (`tools/clip`, `nodraw`, `trigger`) exported with a name suffix (`-col`, `-colonly`) for Godot's import hints | v2 |
+| Tags on faces and meshes (what dressing rules select by) | v2 (done: `Ctrl+T` popup at the mouse, inspector Tags section, select by tag; tags travel with the surface through every op and undo; optional `tags` arrays in the file) |
+| Dressing: rule files turn the blockout into the shipped level (trims, bevels, proxies, scatter) **[new, not in Scythe or S2]** | later (design in `docs/dressing.md`; phase 0 is tags) |
 
 ## 11. Interop
 

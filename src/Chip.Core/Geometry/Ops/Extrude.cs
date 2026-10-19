@@ -38,7 +38,7 @@ public static partial class MeshOps
             {
                 int a = v[i], b = v[(i + 1) % v.Length];
                 if (directed.Contains((b, a))) continue; // interior edge of the region
-                sides.Add(new Face([a, b, Dup(b), Dup(a)], face.Material, face.Map));
+                sides.Add(face.Derive([a, b, Dup(b), Dup(a)]));
             }
         }
         foreach (var f in region)

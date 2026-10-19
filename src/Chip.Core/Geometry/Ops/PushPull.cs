@@ -57,7 +57,7 @@ public static partial class MeshOps
                 int na = Moved(a), nb = Moved(b);
                 if (na == a && nb == b) continue;
                 int[] loop = na == a ? [a, b, nb] : nb == b ? [a, b, na] : [a, b, nb, na];
-                sides.Add(new Face(loop, face.Material, face.Map));
+                sides.Add(face.Derive(loop));
             }
         }
         foreach (var f in region)

@@ -123,7 +123,7 @@ public static partial class MeshOps
         foreach (var (a, b, f) in outline)
         {
             result.RingFaces.Add(m.Faces.Count);
-            m.Faces.Add(new Face([a, b, dup[b], dup[a]], m.Faces[f].Material, m.Faces[f].Map));
+            m.Faces.Add(m.Faces[f].Derive([a, b, dup[b], dup[a]]));
         }
     }
 

@@ -23,6 +23,9 @@ public sealed class Face
     /// </summary>
     public bool Dominant;
 
+    /// <summary>What dressing rules select this face by (<c>wall</c>, <c>floor</c>). Travels with the surface like <see cref="Material"/>.</summary>
+    public TagSet Tags;
+
     public Face(int[] verts, string material, TextureMapping map)
     {
         Verts = verts;
@@ -30,7 +33,15 @@ public sealed class Face
         Map = map;
     }
 
-    public Face Clone() => new((int[])Verts.Clone(), Material, Map) { UVs = (Vector2[]?)UVs?.Clone(), Dominant = Dominant };
+    public Face Clone() => new((int[])Verts.Clone(), Material, Map) { UVs = (Vector2[]?)UVs?.Clone(), Dominant = Dominant, Tags = Tags };
+
+    /// <summary>
+    /// A new face on <paramref name="verts"/> with this face's surface: material, mapping and tags. Ops building faces from
+    /// a source face (sides, strips, caps, pieces) go through here so every surface property propagates. Explicit UVs and
+    /// <see cref="Dominant"/> are not copied: the corners differ, and a bevel strip or extrude side isn't the dominant
+    /// face. Pieces of the same face set those themselves.
+    /// </summary>
+    public Face Derive(int[] verts) => new(verts, Material, Map) { Tags = Tags };
 
     /// <summary>UV of corner <paramref name="i"/>: explicit if present, otherwise projected.</summary>
     public Vector2 UV(int i, Vector3 position, int texWidth, int texHeight) =>
@@ -71,10 +82,12 @@ public sealed class PolyMesh
     public List<Face> Faces = new();
     /// <summary>Edges shaded smooth (Scythe "soft normals"). Everything else is hard, i.e. flat per face.</summary>
     public HashSet<Edge> SoftEdges = new();
+    /// <summary>Tags on the whole mesh, for dressing rules that work per object (a box tagged <c>railing</c> becomes a railing).</summary>
+    public TagSet Tags;
 
     public PolyMesh Clone() => new()
     {
-        Id = Id, Name = Name, Hidden = Hidden, Locked = Locked, Collision = Collision,
+        Id = Id, Name = Name, Hidden = Hidden, Locked = Locked, Collision = Collision, Tags = Tags,
         Positions = new List<Vector3>(Positions),
         Faces = Faces.Select(f => f.Clone()).ToList(),
         SoftEdges = new HashSet<Edge>(SoftEdges),

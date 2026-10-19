@@ -31,7 +31,7 @@ public static partial class MeshOps
             int from = forward ? e.A : e.B, to = forward ? e.B : e.A;
             int nf = Dup(from), nt = Dup(to);
             sides.Add(m.Faces.Count);
-            m.Faces.Add(new Face([to, from, nf, nt], face.Material, face.Map));
+            m.Faces.Add(face.Derive([to, from, nf, nt]));
             newEdges.Add(new Edge(nf, nt));
         }
         return (newEdges, sides);

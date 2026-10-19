@@ -180,7 +180,7 @@ public static partial class MeshOps
             for (int s = 0; s < segments; s++)
             {
                 added.Add(m.Faces.Count);
-                m.Faces.Add(new Face([B[s], A[s], A[s + 1], B[s + 1]], src.Material, src.Map));
+                m.Faces.Add(src.Derive([B[s], A[s], A[s + 1], B[s + 1]]));
                 if (s > 0) m.SoftEdges.Add(new Edge(A[s], B[s]));
             }
         }
@@ -228,7 +228,7 @@ public static partial class MeshOps
             {
                 if (TryMergeCoplanar(m, loop, normal, directed)) continue;
                 added.Add(m.Faces.Count);
-                m.Faces.Add(new Face(loop.ToArray(), srcFace.Material, srcFace.Map));
+                m.Faces.Add(srcFace.Derive(loop.ToArray()));
                 continue;
             }
 
@@ -246,7 +246,7 @@ public static partial class MeshOps
             for (int i = 0; i < loop.Count; i++)
             {
                 added.Add(m.Faces.Count);
-                m.Faces.Add(new Face([loop[i], loop[(i + 1) % loop.Count], ci], srcFace.Material, srcFace.Map));
+                m.Faces.Add(srcFace.Derive([loop[i], loop[(i + 1) % loop.Count], ci]));
                 if (smooth) m.SoftEdges.Add(new Edge(loop[i], ci));
             }
         }

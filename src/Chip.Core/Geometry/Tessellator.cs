@@ -372,7 +372,10 @@ public static class Tessellator
                     ns[c] = len > 1e-12f ? nr / len : normal;
                     if (uv is not null) uv[c] = w.Uv[p];
                 }
-                _out.Faces.Add(new Face(vs, face.Material, face.Map) { UVs = uv, Dominant = face.Dominant });
+                var piece = face.Derive(vs);
+                piece.UVs = uv;
+                piece.Dominant = face.Dominant;
+                _out.Faces.Add(piece);
                 _outNormals.Add(ns);
                 _outSource.Add(f);
             }

@@ -102,10 +102,13 @@ public static partial class MeshOps
         if (k >= 3) pieces.Add(corners);
         if (pieces.Count < 2) return [];
 
-        Face Piece(List<int> c) => new(c.Select(i => face.Verts[i]).ToArray(), face.Material, face.Map)
+        Face Piece(List<int> c)
         {
-            UVs = face.UVs is { } uv ? c.Select(i => uv[i]).ToArray() : null,
-        };
+            var piece = face.Derive(c.Select(i => face.Verts[i]).ToArray());
+            piece.UVs = face.UVs is { } uv ? c.Select(i => uv[i]).ToArray() : null;
+            piece.Dominant = face.Dominant; // pieces of the same face
+            return piece;
+        }
         m.Faces[f] = Piece(pieces[0]);
         foreach (var p in pieces.Skip(1)) m.Faces.Add(Piece(p));
         return chords;

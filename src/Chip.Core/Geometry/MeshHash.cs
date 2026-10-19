@@ -3,9 +3,9 @@ using System.Numerics;
 namespace Chip.Core.Geometry;
 
 /// <summary>
-/// Cheap 64-bit content hash of everything a mesh's GPU buffers depend on (positions, face loops, materials, mappings,
-/// explicit UVs, soft edges, dominant faces). Per-mesh caches (GPU buffers, picking) key on it, so a gizmo drag rebuilds
-/// only the meshes it moves.
+/// Cheap 64-bit content hash of a mesh's content: everything its GPU buffers depend on (positions, face loops, materials,
+/// mappings, explicit UVs, soft edges, dominant faces) plus face and mesh tags. Per-mesh caches (GPU buffers, picking,
+/// dressing) key on it, so a gizmo drag rebuilds only the meshes it moves.
 /// </summary>
 public static class MeshHash
 {
@@ -21,6 +21,11 @@ public static class MeshHash
         }
         void AddF(float f) => Add(BitConverter.SingleToUInt32Bits(f));
         void AddV(Vector3 v) { AddF(v.X); AddF(v.Y); AddF(v.Z); }
+        void AddTags(TagSet tags)
+        {
+            Add((uint)tags.Count);
+            foreach (var t in tags) Add((uint)StringComparer.Ordinal.GetHashCode(t));
+        }
 
         Add((uint)m.Positions.Count);
         foreach (var p in m.Positions) AddV(p);
@@ -40,7 +45,9 @@ public static class MeshHash
             }
             else Add(0xFFFFFFFF);
             if (f.Dominant) Add(0xD0D0D0D0); // dominant normals change corner normals
+            AddTags(f.Tags); // dressing rules select by tags, so a tag edit is a content change
         }
+        AddTags(m.Tags);
         // Order-independent: a cloned HashSet may enumerate differently.
         ulong soft = 0;
         foreach (var e in m.SoftEdges) soft += (ulong)(uint)e.A * 2654435761UL ^ (ulong)(uint)e.B * 40503UL + 0x9E3779B97F4A7C15UL;

@@ -55,7 +55,7 @@ public sealed class MeshOpsFeature : IEditorFeature
 - **Commands**: id `area.camelCase`; `Menu` must be one of `CommandRegistry.MenuOrder`. `Group` names sort, so prefix with a number. `CanExecute` greys the item and blocks the hotkey. Set `DuringInteraction` only for things that must work mid-drag (undo/redo/cancel).
 - **Tools** implement `IViewportTool`. Read the mouse from `ctx.Mouse` / `ctx.MouseRay()`, set `ctx.Hover`, draw overlays in `Draw`, return `Busy` while mid-operation, and undo partial work in `Cancel` (Esc). Options go in `HasOptions`/`DrawOptions`.
 - **Edits** happen inside `ctx.Session.Do(label, ...)` (one undo step), or a `TransformGesture` for interactive transforms (`Begin` → `Apply` repeatedly → `Commit`/`Cancel`). Never mutate the document outside a step.
-- **Mesh ops** go in a new `Geometry/Ops/<Name>.cs` partial of `MeshOps`. Keep face indices stable when you can. Route vertex renumbering through `RemoveUnusedVertices`/`Reindex` so `SoftEdges` and `UVs` stay valid. Reorder `Face.UVs` whenever you reorder `Face.Verts`. Return what the caller needs to fix the selection (maps or new indices).
+- **Mesh ops** go in a new `Geometry/Ops/<Name>.cs` partial of `MeshOps`. Build a face from a source face with `src.Derive(verts)` (material, mapping and tags; never `new Face(v, src.Material, src.Map)`, which drops tags), and add the op to `TagTests.Every_op_keeps_tags_on_every_face`. Keep face indices stable when you can. Route vertex renumbering through `RemoveUnusedVertices`/`Reindex` so `SoftEdges` and `UVs` stay valid. Reorder `Face.UVs` whenever you reorder `Face.Verts`. Return what the caller needs to fix the selection (maps or new indices).
 - **Helpers inside `MeshOps` partials share one class**: give private helpers op-specific names, or promote common ones (like `SafeNormalize`) to `Ops/MeshOps.cs`.
 - **Per-mesh caches** key on `Session.MeshRevision(mesh)`, which changes whenever that mesh's content does (undo and cancel included). Don't hash meshes yourself.
 - **Performance**: `dotnet run -c Release --project tests/Chip.Bench [-- prefix]` times core operations on `StressLevel.Generate()` (2,000 meshes, ~100k faces). Add benches as `tests/Chip.Bench/Benches/<Area>.cs`.
@@ -79,6 +79,7 @@ Everything else: create new files in your stream's folders (listed in `PLAN.md`)
 Scythe's bindings first (`SPEC.md` §4–§9), then Source 2 Hammer. `Chip.Editor.Tests` fails on any duplicate, so check `F1` / the tests before claiming a key. Decisions so far:
 - `H` / `Alt+H` = hide / unhide (Hammer). Scythe's Hard normals (`H`) gets a menu entry and a free chord instead.
 - `Shift+H` / `Shift+F` are reserved for hotspots (stream F).
+- `Ctrl+T` = tags popup; `` ` `` is reserved for the dressed/blockout view toggle (`docs/dressing.md`).
 - Tool-internal keys (Enter, Esc, Q/E in a UV editor) are read inside the tool's `Update`, not registered globally.
 
 ## UI rules

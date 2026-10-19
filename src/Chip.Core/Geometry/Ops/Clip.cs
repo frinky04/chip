@@ -79,8 +79,8 @@ public static partial class MeshOps
                 fv.Add(x); fuv.Add(uvX);
                 bv.Add(x); buv.Add(uvX);
             }
-            if (fv.Count >= 3) front.Add(new Face(fv.ToArray(), face.Material, face.Map) { UVs = uvs != null ? fuv.ToArray() : null, Dominant = face.Dominant });
-            if (bv.Count >= 3) back.Add(new Face(bv.ToArray(), face.Material, face.Map) { UVs = uvs != null ? buv.ToArray() : null, Dominant = face.Dominant });
+            if (fv.Count >= 3) { var piece = face.Derive(fv.ToArray()); piece.UVs = uvs != null ? fuv.ToArray() : null; piece.Dominant = face.Dominant; front.Add(piece); }
+            if (bv.Count >= 3) { var piece = face.Derive(bv.ToArray()); piece.UVs = uvs != null ? buv.ToArray() : null; piece.Dominant = face.Dominant; back.Add(piece); }
         }
 
         // Soft edges that were cut continue on both halves of the edge.
@@ -164,7 +164,9 @@ public static partial class MeshOps
             int src = source.TryGetValue(loop[0], out var s) ? s : 0;
             var srcFace = m.Faces[src];
             added.Add(m.Faces.Count);
-            m.Faces.Add(new Face(loop.ToArray(), capMaterial ?? srcFace.Material, srcFace.Map));
+            var cap = srcFace.Derive(loop.ToArray());
+            cap.Material = capMaterial ?? srcFace.Material;
+            m.Faces.Add(cap);
             AlignToGrid(m, [m.Faces.Count - 1], srcFace.Map);
         }
         return added;

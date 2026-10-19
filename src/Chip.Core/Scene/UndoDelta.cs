@@ -95,13 +95,13 @@ sealed class UndoDelta
 
     internal static bool MeshEquals(PolyMesh a, PolyMesh b)
     {
-        if (a.Id != b.Id || a.Name != b.Name || a.Hidden != b.Hidden || a.Locked != b.Locked || a.Collision != b.Collision ||
+        if (a.Id != b.Id || a.Name != b.Name || a.Hidden != b.Hidden || a.Locked != b.Locked || a.Collision != b.Collision || a.Tags != b.Tags ||
             !Bits<System.Numerics.Vector3>(CollectionsMarshal.AsSpan(a.Positions), CollectionsMarshal.AsSpan(b.Positions)) ||
             a.Faces.Count != b.Faces.Count || !a.SoftEdges.SetEquals(b.SoftEdges)) return false;
         for (int i = 0; i < a.Faces.Count; i++)
         {
             var x = a.Faces[i]; var y = b.Faces[i];
-            if (x.Material != y.Material || x.Dominant != y.Dominant || !x.Verts.AsSpan().SequenceEqual(y.Verts) ||
+            if (x.Material != y.Material || x.Dominant != y.Dominant || x.Tags != y.Tags || !x.Verts.AsSpan().SequenceEqual(y.Verts) ||
                 !BitsValue(x.Map, y.Map) ||
                 (x.UVs == null) != (y.UVs == null) || !Bits<System.Numerics.Vector2>(x.UVs, y.UVs)) return false;
         }

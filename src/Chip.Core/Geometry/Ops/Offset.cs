@@ -100,11 +100,10 @@ public static partial class MeshOps
             foreach (var f in part)
             {
                 var src = m.Faces[f];
-                caps.Add(new Face(src.Verts.Reverse().ToArray(), src.Material, src.Map)
-                {
-                    UVs = src.UVs?.Reverse().ToArray(),
-                    Dominant = src.Dominant,
-                });
+                var cap = src.Derive(src.Verts.Reverse().ToArray());
+                cap.UVs = src.UVs?.Reverse().ToArray();
+                cap.Dominant = src.Dominant;
+                caps.Add(cap);
             }
         }
         if (directed.Any(e => !directed.Contains((e.Item2, e.Item1))))

@@ -31,10 +31,20 @@ public static partial class DocumentSerializer
         float? TexelDensity = null);   // px per metre; files without it predate the setting and were built at 512
 
     sealed record MeshDto(int Id, string Name, bool Hidden, List<float[]> Positions, List<FaceDto> Faces,
-        bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null);
+        bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null,
+        string[]? Tags = null); // dressing tags (optional, no version bump)
 
     sealed record FaceDto(int[] Verts, string Material, float[] U, float[] V, float[] Shift, float[] Scale, float Rotation,
-        List<float[]>? Uvs = null, bool? Dominant = null);
+        List<float[]>? Uvs = null, bool? Dominant = null, string[]? Tags = null);
+
+    static string[]? TagsDto(TagSet tags) => tags.IsEmpty ? null : tags.ToArray();
+
+    static TagSet TagsFromDto(string[]? tags, string where)
+    {
+        if (tags == null) return default;
+        try { return TagSet.Of(tags); }
+        catch (ArgumentException e) { throw new InvalidDataException($"{where}: {e.Message}"); }
+    }
 
     sealed record EntityDto(int Id, string ClassName, string Name, float[] Position, float[] Rotation, bool Hidden,
         Dictionary<string, string>? Properties,
@@ -49,9 +59,10 @@ public static partial class DocumentSerializer
             m.Positions.Select(Arr).ToList(),
             m.Faces.Select(f => new FaceDto(f.Verts, f.Material, Arr(f.Map.UAxis), Arr(f.Map.VAxis),
                 [f.Map.ShiftU, f.Map.ShiftV], [f.Map.ScaleU, f.Map.ScaleV], f.Map.Rotation,
-                f.UVs?.Select(uv => new[] { uv.X, uv.Y }).ToList(), f.Dominant ? true : null)).ToList(),
+                f.UVs?.Select(uv => new[] { uv.X, uv.Y }).ToList(), f.Dominant ? true : null, TagsDto(f.Tags))).ToList(),
             m.Locked, m.Collision,
-            m.SoftEdges.Count > 0 ? m.SoftEdges.OrderBy(e => e.A).ThenBy(e => e.B).Select(e => new[] { e.A, e.B }).ToList() : null)).ToList(),
+            m.SoftEdges.Count > 0 ? m.SoftEdges.OrderBy(e => e.A).ThenBy(e => e.B).Select(e => new[] { e.A, e.B }).ToList() : null,
+            TagsDto(m.Tags))).ToList(),
         doc.Entities.Count > 0
             ? doc.Entities.Select(e => new EntityDto(e.Id, e.ClassName, e.Name, Arr(e.Position), Arr(e.Rotation), e.Hidden,
                 e.Properties.Count > 0 ? e.Properties : null,
@@ -79,7 +90,7 @@ public static partial class DocumentSerializer
             var mesh = new PolyMesh
             {
                 Id = m.Id, Name = m.Name, Hidden = m.Hidden, Locked = m.Locked, Collision = m.Collision,
-                Positions = m.Positions.Select(Vec).ToList(),
+                Positions = m.Positions.Select(Vec).ToList(), Tags = TagsFromDto(m.Tags, $"Mesh {m.Id}"),
             };
             foreach (var f in m.Faces)
             {
@@ -92,7 +103,10 @@ public static partial class DocumentSerializer
                     UAxis = Vec(f.U), VAxis = Vec(f.V), ShiftU = f.Shift[0], ShiftV = f.Shift[1],
                     ScaleU = f.Scale[0], ScaleV = f.Scale[1], Rotation = f.Rotation,
                 })
-                { UVs = f.Uvs?.Select(uv => new Vector2(uv[0], uv[1])).ToArray(), Dominant = f.Dominant == true });
+                {
+                    UVs = f.Uvs?.Select(uv => new Vector2(uv[0], uv[1])).ToArray(), Dominant = f.Dominant == true,
+                    Tags = TagsFromDto(f.Tags, $"Mesh {m.Id}"),
+                });
             }
             if (m.SoftEdges != null)
                 foreach (var e in m.SoftEdges)

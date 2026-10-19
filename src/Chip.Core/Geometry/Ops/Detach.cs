@@ -19,7 +19,9 @@ public static partial class MeshOps
                 if (!map.TryGetValue(v, out int nv)) { nv = copy.Positions.Count; copy.Positions.Add(m.Positions[v]); map[v] = nv; }
                 return nv;
             }).ToArray();
-            copy.Faces.Add(new Face(verts, src.Material, src.Map) { UVs = (System.Numerics.Vector2[]?)src.UVs?.Clone(), Dominant = src.Dominant });
+            var face = src.Clone();
+            face.Verts = verts;
+            copy.Faces.Add(face);
         }
         var live = copy.Edges().ToHashSet();
         foreach (var e in m.SoftEdges)
@@ -37,7 +39,11 @@ public static partial class MeshOps
             int offset = target.Positions.Count;
             target.Positions.AddRange(o.Positions);
             foreach (var f in o.Faces)
-                target.Faces.Add(new Face(f.Verts.Select(v => v + offset).ToArray(), f.Material, f.Map) { UVs = (System.Numerics.Vector2[]?)f.UVs?.Clone(), Dominant = f.Dominant });
+            {
+                var face = f.Clone();
+                face.Verts = f.Verts.Select(v => v + offset).ToArray();
+                target.Faces.Add(face);
+            }
             foreach (var e in o.SoftEdges) target.SoftEdges.Add(new Edge(e.A + offset, e.B + offset));
         }
     }

@@ -116,6 +116,20 @@ public class MeshOpsCommandTests
     }
 
     [Fact]
+    public void Tags_popup_is_ctrl_t_and_only_for_faces_or_objects()
+    {
+        var ctx = WithBoxes(1);
+        var cmd = ctx.Commands.Find("tags.edit")!;
+        Assert.Contains(cmd.Hotkeys, h => h.ToString() == "Ctrl+T");
+        ctx.Commands.Execute("select.modeVertex");
+        Assert.False(cmd.Enabled);
+        SelectFaces(ctx, 1);
+        Assert.True(cmd.Enabled);
+        ctx.Commands.Execute("select.modeObject");
+        Assert.True(cmd.Enabled);
+    }
+
+    [Fact]
     public void Merge_meshes_then_detach_and_extract()
     {
         var ctx = WithBoxes(2);

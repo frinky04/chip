@@ -13,7 +13,7 @@ namespace Chip.Editor;
 /// <summary>
 /// <c>Chip --shot [level.chip|-] out.png [state] [--run cmd.id,cmd.id]</c>: renders the whole editor UI from an invisible
 /// window into an offscreen buffer, after an optional preset <c>state</c> (empty|objects|faces|block|blockpreview|polygonpreview|
-/// backfaces|bevelpending|offsetpending|shortcuts|shortcuts-search|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale|hotspot-editor) and a
+/// backfaces|bevelpending|offsetpending|tags|tags-popup|shortcuts|shortcuts-search|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale|hotspot-editor) and a
 /// comma-separated list of command ids. Every feature can prove its UI headlessly this way.
 /// </summary>
 public sealed partial class EditorApp
@@ -127,6 +127,21 @@ public sealed partial class EditorApp
                     if (MathF.Abs(wall.FaceNormal(f).Y) < 0.1f) ctx.Sel.Add(ElementRef.Face(wall.Id, f));
                 ctx.Commands.Execute("mesh.offset");
                 (ctx.ActiveTool as Features.MeshEditing.OffsetTool)?.SetAmount(ctx, 0.25f);
+                break;
+            }
+            case "tags" or "tags-popup" when doc.Meshes.Count > 2: // floor top tagged (half of it "trim" too), walls tagged
+            {
+                ctx.SetMode(SelectMode.Face);
+                var ground = doc.Meshes[0];
+                var tops = Enumerable.Range(0, ground.Faces.Count).Where(f => ground.FaceNormal(f).Y > 0.9f).ToList();
+                foreach (var f in tops) ground.Faces[f].Tags = ground.Faces[f].Tags.Add("floor");
+                foreach (var face in doc.Meshes[2].Faces) face.Tags = face.Tags.Add("wall");
+                doc.Meshes[1].Tags = doc.Meshes[1].Tags.Add("railing");
+                foreach (var f in tops) ctx.Sel.Add(ElementRef.Face(ground.Id, f));
+                foreach (var face in doc.Meshes[2].Faces.Take(3)) face.Tags = face.Tags.Add("trim-base");
+                ctx.Sel.Add(ElementRef.Face(doc.Meshes[2].Id, 0));
+                ctx.Session.Touch();
+                if (state == "tags-popup") ctx.Commands.Execute("tags.edit");
                 break;
             }
             case "polygonpreview":
