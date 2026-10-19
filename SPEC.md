@@ -194,7 +194,7 @@ Each face stores a planar projection: U axis, V axis, offset (u, v), scale (u, v
 | Prefabs / instances (referenced `.chip` files) | later |
 | Collision-only meshes / nodraw-style tool materials (`tools/clip`, `nodraw`, `trigger`) exported with a name suffix (`-col`, `-colonly`) for Godot's import hints | v2 |
 | Tags on faces and meshes (what dressing rules select by) | v2 (done: `Ctrl+T` popup at the mouse, inspector Tags section, select by tag; tags travel with the surface through every op and undo; optional `tags` arrays in the file) |
-| Dressing: rule files turn the blockout into the shipped level (trims, bevels, proxies, scatter) **[new, not in Scythe or S2]** | later (design in `docs/dressing.md`; phase 0 is tags) |
+| Dressing: rule files turn the blockout into the shipped level (trims, bevels, proxies, scatter) **[new, not in Scythe or S2]** | v2 (phases 0–1 done: tags; `level.dressing.json` with imports, vars and overrides; `bevel` and `sweep` (contact across separate meshes, mitred, overlapping corners handled; boundary, border, convex, concave); live reload; `` ` `` dressed/blockout view; export ships the dressed level with blockout collision; inspector Dressing section; `--rules-check`, `--rules-schema`; Tools > Open dressing sample. Phase 2: proxies (railing, stairs), `repeat`, `scatter`, overrides, bake. Design in `docs/dressing.md`) |
 
 ## 11. Interop
 

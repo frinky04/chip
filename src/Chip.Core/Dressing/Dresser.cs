@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Chip.Core.Geometry;
 using Chip.Core.Scene;
 
@@ -19,7 +20,10 @@ public sealed class Dresser(IDressingFiles files)
     RuleSet _rules = RuleSet.Empty;
     string? _rulesPath;
     long[] _stamps = [];
-    int _nextId = -1, _nextRevision;
+    int _nextId = -1;
+    /// <summary>Shared by every dresser: ids restart per dresser, so revisions must never repeat across them (GPU caches key on both).</summary>
+    static int _nextRevision;
+    static int NextRevision() => Interlocked.Increment(ref _nextRevision);
     readonly Dictionary<(string Rule, int Source), int> _ids = new();
     readonly Dictionary<(string Rule, int Mesh), ShapeJob> _shape = new();
     readonly Dictionary<(string Rule, int Mesh), SegmentJob> _segments = new();
@@ -35,6 +39,9 @@ public sealed class Dresser(IDressingFiles files)
     /// <summary>The rules last loaded.</summary>
     public RuleSet Rules => _rules;
 
+    /// <summary>Whether <see cref="Dress"/> would load different rules: another path, or a rules file changed on disk.</summary>
+    public bool RulesChanged(string? rulesPath) => rulesPath != _rulesPath || StampsChanged();
+
     /// <summary>How many jobs the last <see cref="Dress"/> ran (rather than reused). For tests and the frame benchmark.</summary>
     public int LastRebuilds { get; private set; }
 
@@ -49,6 +56,13 @@ public sealed class Dresser(IDressingFiles files)
         if (rulesPath != _rulesPath || (checkFiles && StampsChanged())) Reload(rulesPath);
         Func<PolyMesh, int> rev = revision ?? (m => unchecked((int)MeshHash.Of(m)));
         LastRebuilds = 0;
+
+        // Nothing changed since the last pass (same rules, same mesh objects at the same revisions): same result.
+        ulong state = Key(Key(1, (ulong)RuntimeHelpers.GetHashCode(_rules)), (ulong)RuntimeHelpers.GetHashCode(doc));
+        foreach (var m in doc.Meshes)
+            state = Key(Key(state, ((ulong)(uint)m.Id << 32) | (uint)rev(m)),
+                ((ulong)(uint)RuntimeHelpers.GetHashCode(m) << 2) | (m.Hidden ? 1UL : 0) | ((ulong)m.Collision << 1));
+        if (_last is { } last && _lastState == state) return last;
 
         var run = new Run(doc, doc.Meshes.Where(Dressable).ToList(), rev);
         run.Diagnostics.AddRange(_rules.Diagnostics);
@@ -89,8 +103,12 @@ public sealed class Dresser(IDressingFiles files)
             info[mesh] = (new MeshOrigin(source, rule, DressRole.Added), made);
         }
         Prune(doc);
-        return new DressedLevel(doc, _rules, meshes, info, rev, run.Diagnostics, run.Stats);
+        _lastState = state;
+        return _last = new DressedLevel(doc, _rules, meshes, info, rev, run.Diagnostics, run.Stats);
     }
+
+    DressedLevel? _last;
+    ulong _lastState, _prunedFor;
 
     /// <summary>One dressing pass: the live meshes and what the rules produced so far.</summary>
     sealed class Run(Document doc, List<PolyMesh> live, Func<PolyMesh, int> rev)
@@ -104,7 +122,68 @@ public sealed class Dresser(IDressingFiles files)
         public readonly Dictionary<int, string> ClaimedBy = new();
         public readonly HashSet<int> Conflicts = new();
         public readonly List<(PolyMesh Mesh, string Rule, int Source, int Revision)> Added = new();
-        public BoundsGrid? Grid;
+        public readonly Dictionary<int, PolyMesh> ById = live.ToDictionary(m => m.Id);
+        public bool NeighboursCurrent;
+    }
+
+    readonly NeighbourIndex _neighbours = new();
+
+    /// <summary>
+    /// Which meshes touch which (bounds overlap, within the contact tolerance), kept between passes: after an edit only the
+    /// changed meshes and those near their old or new bounds are re-queried, so a drag doesn't rescan the level.
+    /// </summary>
+    sealed class NeighbourIndex
+    {
+        readonly Dictionary<int, (int Revision, Vector3 Min, Vector3 Max)> _seen = new();
+        readonly Dictionary<int, int[]> _lists = new();
+
+        public int[] Of(int id) => _lists.TryGetValue(id, out var l) ? l : [id];
+
+        public void Update(Run run, Func<PolyMesh, int, (Vector3 Min, Vector3 Max)> bounds)
+        {
+            var live = run.Live;
+            var boxes = new List<(Vector3 Min, Vector3 Max)>();
+            var changed = new List<PolyMesh>();
+            foreach (var m in live)
+            {
+                int rev = run.Revisions[m.Id];
+                bool known = _seen.TryGetValue(m.Id, out var old);
+                if (known && old.Revision == rev) continue;
+                if (known) boxes.Add((old.Min, old.Max));
+                var (min, max) = bounds(m, rev);
+                boxes.Add((min, max));
+                changed.Add(m);
+                _seen[m.Id] = (rev, min, max);
+            }
+            foreach (var id in _seen.Keys.Where(id => !run.ById.ContainsKey(id)).ToList())
+            {
+                boxes.Add((_seen[id].Min, _seen[id].Max));
+                _seen.Remove(id);
+                _lists.Remove(id);
+            }
+            if (boxes.Count == 0) return;
+
+            if (_lists.Count == 0 || changed.Count > live.Count / 8)
+            {
+                var grid = new BoundsGrid(live.Select(m => (m, (_seen[m.Id].Min, _seen[m.Id].Max))));
+                foreach (var m in live) _lists[m.Id] = grid.Touching(m).Select(n => n.Id).ToArray();
+                return;
+            }
+            var tol = new Vector3(SweepKind.Tolerance);
+            bool Overlap((Vector3 Min, Vector3 Max) a, (Vector3 Min, Vector3 Max) b) =>
+                a.Min.X <= b.Max.X + tol.X && a.Max.X + tol.X >= b.Min.X && a.Min.Y <= b.Max.Y + tol.Y && a.Max.Y + tol.Y >= b.Min.Y &&
+                a.Min.Z <= b.Max.Z + tol.Z && a.Max.Z + tol.Z >= b.Min.Z;
+            foreach (var m in live)
+            {
+                var box = (_seen[m.Id].Min, _seen[m.Id].Max);
+                if (!changed.Contains(m) && !boxes.Any(b => Overlap(box, b))) continue;
+                var list = new List<int>();
+                foreach (var o in live)
+                    if (o == m || Overlap(box, (_seen[o.Id].Min, _seen[o.Id].Max))) list.Add(o.Id);
+                list.Sort();
+                _lists[m.Id] = list.ToArray();
+            }
+        }
     }
 
     /// <summary>Meshes dressing reads: visible and rendered (collision-only meshes are neither dressed nor stood on).</summary>
@@ -132,7 +211,7 @@ public sealed class Dresser(IDressingFiles files)
             }
             catch (Exception e) { jobs[i] = jobs[i] with { Problem = Failed(rule, m, e) }; }
         });
-        foreach (var i in dirty) _shape[(rule.Id, live[i].Id)] = jobs[i] = jobs[i] with { Revision = ++_nextRevision };
+        foreach (var i in dirty) _shape[(rule.Id, live[i].Id)] = jobs[i] = jobs[i] with { Revision = NextRevision() };
         LastRebuilds += dirty.Count;
 
         int matchedFaces = 0, targets = 0, outputs = 0, skipped = 0;
@@ -165,19 +244,19 @@ public sealed class Dresser(IDressingFiles files)
     {
         var live = run.Live;
         bool contact = rule.Text("edges") == "contact";
-        if (contact) run.Grid ??= new BoundsGrid(live.Select(m => (m, Bounds(m, run.Revisions[m.Id]))));
+        if (contact && !run.NeighboursCurrent)
+        {
+            _neighbours.Update(run, Bounds);
+            run.NeighboursCurrent = true;
+        }
         var segs = new SegmentJob[live.Count];
-        var neighbours = new List<PolyMesh>[live.Count];
         var dirty = new List<int>();
         for (int i = 0; i < live.Count; i++)
         {
             var m = live[i];
             ulong key = Key(rule.Fingerprint, (ulong)run.Revisions[m.Id]);
             if (contact)
-            {
-                neighbours[i] = run.Grid!.Touching(m);
-                foreach (var n in neighbours[i]) key = Key(key, ((ulong)(uint)n.Id << 32) | (uint)run.Revisions[n.Id]);
-            }
+                foreach (var n in _neighbours.Of(m.Id)) key = Key(key, ((ulong)(uint)n << 32) | (uint)run.Revisions[n]);
             if (_segments.TryGetValue((rule.Id, m.Id), out var job) && job.Key == key) segs[i] = job;
             else { dirty.Add(i); segs[i] = new SegmentJob(key, [], 0, 0, null); }
         }
@@ -185,7 +264,8 @@ public sealed class Dresser(IDressingFiles files)
         {
             try
             {
-                var (list, matched) = SweepKind.Segments(live[i], rule, contact ? neighbours[i] : [live[i]]);
+                var near = contact ? _neighbours.Of(live[i].Id).Select(id => run.ById[id]).ToList() : [live[i]];
+                var (list, matched) = SweepKind.Segments(live[i], rule, near);
                 segs[i] = segs[i] with { Segments = list, Matched = matched, Hash = HashSegments(list) };
             }
             catch (Exception e) { segs[i] = segs[i] with { Problem = Failed(rule, live[i], e) }; }
@@ -193,15 +273,18 @@ public sealed class Dresser(IDressingFiles files)
         foreach (var i in dirty) _segments[(rule.Id, live[i].Id)] = segs[i];
         LastRebuilds += dirty.Count;
 
-        // Join segment ends across all meshes, then rebuild a mesh's sweep only if its segments or their joints changed.
-        var all = new List<(int Mesh, int Index, SweepKind.Segment Seg)>();
+        // Join segment ends across meshes (incrementally: only near segments that changed), then rebuild a mesh's sweep
+        // only if its segments or their joints changed.
+        if (!_joins.TryGetValue(rule.Id, out var join) || join.Fingerprint != rule.Fingerprint) _joins[rule.Id] = join = new JoinIndex(rule.Fingerprint);
+        var changes = new Dictionary<int, List<SweepKind.Segment>>();
         for (int i = 0; i < live.Count; i++)
-            for (int s = 0; s < segs[i].Segments.Count; s++) all.Add((i, s, segs[i].Segments[s]));
-        var joints = Join(all, out var openEnds);
+            if (!join.Holds(live[i].Id, segs[i].Segments)) changes[live[i].Id] = segs[i].Segments;
+        foreach (var id in join.Meshes) if (!run.ById.ContainsKey(id)) changes[id] = [];
+        join.Update(changes);
 
         int matchedFaces = 0, segmentCount = 0, before = run.Added.Count;
         var build = new List<(int Index, ulong Key, (SweepKind.Joint?, SweepKind.Joint?)[] Joints)>();
-        int cursor = 0;
+        var results = new OutputJob?[live.Count]; // reused and rebuilt alike, emitted in blockout order (stable exports)
         for (int i = 0; i < live.Count; i++)
         {
             matchedFaces += segs[i].Matched;
@@ -209,19 +292,9 @@ public sealed class Dresser(IDressingFiles files)
             int n = segs[i].Segments.Count;
             segmentCount += n;
             if (n == 0) continue;
-            var mine = new (SweepKind.Joint?, SweepKind.Joint?)[n];
-            ulong key = Key(rule.Fingerprint, segs[i].Hash);
-            for (int s = 0; s < n; s++)
-            {
-                mine[s] = joints[cursor + s];
-                key = Key(Key(key, HashJoint(mine[s].Item1)), HashJoint(mine[s].Item2));
-            }
-            cursor += n;
-            if (_outputs.TryGetValue((rule.Id, live[i].Id), out var job) && job.Key == key)
-            {
-                if (job.Mesh != null) run.Added.Add((job.Mesh, rule.Id, live[i].Id, job.Revision));
-                if (job.Problem != null) run.Diagnostics.Add(job.Problem);
-            }
+            var (mine, jointHash) = join.JointsOf(live[i].Id);
+            ulong key = Key(Key(rule.Fingerprint, segs[i].Hash), jointHash);
+            if (_outputs.TryGetValue((rule.Id, live[i].Id), out var job) && job.Key == key) results[i] = job;
             else build.Add((i, key, mine));
         }
         var built = new OutputJob[build.Count];
@@ -237,13 +310,14 @@ public sealed class Dresser(IDressingFiles files)
             catch (Exception e) { built[b] = new OutputJob(key, null, 0, Failed(rule, live[i], e)); }
         });
         for (int b = 0; b < build.Count; b++)
+            results[build[b].Index] = _outputs[(rule.Id, live[build[b].Index].Id)] = built[b] with { Revision = NextRevision() };
+        LastRebuilds += build.Count;
+        for (int i = 0; i < live.Count; i++)
         {
-            int i = build[b].Index;
-            var job = _outputs[(rule.Id, live[i].Id)] = built[b] with { Revision = ++_nextRevision };
+            if (results[i] is not { } job) continue;
             if (job.Mesh != null) run.Added.Add((job.Mesh, rule.Id, live[i].Id, job.Revision));
             if (job.Problem != null) run.Diagnostics.Add(job.Problem);
         }
-        LastRebuilds += build.Count;
 
         if (segmentCount == 0)
             run.Diagnostics.Add(NothingMatched(rule, run, matchedFaces == 0 ? null : rule.Text("edges") switch
@@ -251,55 +325,135 @@ public sealed class Dresser(IDressingFiles files)
                 "contact" => $"{matchedFaces} faces match, but none has an edge lying on a face matching \"onto\" ({Describe(rule.Get<FaceSelector>("onto"))})",
                 var k => $"{matchedFaces} faces match, but none has a {k} edge",
             }));
-        foreach (var gap in Gaps(openEnds, all, live).Take(10)) run.Diagnostics.Add(gap with { Rule = rule.Id, Path = $"rules.{rule.Id}" });
+        if (join.Changed || !_gaps.ContainsKey(rule.Id))
+            _gaps[rule.Id] = Gaps(join.OpenEnds().OrderBy(e => e.Mesh).ThenBy(e => e.P.X).ThenBy(e => e.P.Y).ThenBy(e => e.P.Z).ToList(), run)
+                .Take(10).Select(g => g with { Rule = rule.Id, Path = $"rules.{rule.Id}" }).ToList();
+        run.Diagnostics.AddRange(_gaps[rule.Id]);
         run.Stats.Add(new RuleStats(rule.Id, rule.Kind.Name, Stage.Dress, true, segmentCount, "edge", run.Added.Count - before, 0, clock.Elapsed.TotalMilliseconds));
     }
 
+    readonly Dictionary<string, JoinIndex> _joins = new();
+    readonly Dictionary<string, List<Diagnostic>> _gaps = new();
+
     /// <summary>
-    /// For every segment end, the segment it joins at that point (if exactly one other end meets it there with a
-    /// compatible frame). Ends that join nothing come back in <paramref name="openEnds"/>.
+    /// Where sweep segments of one rule meet, kept between passes. Segment ends sit in a hash of tolerance-sized cells;
+    /// when a mesh's segments change, only joints within reach of its old and new ends are recomputed. Two ends join
+    /// when they are the only two within tolerance of each other, don't fold back, and agree on which way is up.
     /// </summary>
-    static (SweepKind.Joint?, SweepKind.Joint?)[] Join(List<(int Mesh, int Index, SweepKind.Segment Seg)> all, out List<(int Seg, bool Start)> openEnds)
+    sealed class JoinIndex(ulong fingerprint)
     {
-        var result = new (SweepKind.Joint?, SweepKind.Joint?)[all.Count];
-        var weld = new PointWeld(SweepKind.Tolerance);
-        var nodes = new Dictionary<int, List<(int Seg, bool Start)>>();
-        for (int i = 0; i < all.Count; i++)
-            foreach (var start in (bool[])[true, false])
-            {
-                int node = weld.Id(start ? all[i].Seg.A : all[i].Seg.B);
-                (nodes.TryGetValue(node, out var l) ? l : nodes[node] = new()).Add((i, start));
-            }
-        openEnds = new();
-        foreach (var ends in nodes.Values)
+        public readonly ulong Fingerprint = fingerprint;
+        readonly Dictionary<int, List<SweepKind.Segment>> _segs = new();
+        readonly Dictionary<(int, int, int), List<(int Mesh, int Seg, bool Start)>> _cells = new();
+        readonly Dictionary<int, ((SweepKind.Joint?, SweepKind.Joint?)[] Joints, ulong Hash)> _joints = new();
+
+        /// <summary>Whether the last <see cref="Update"/> changed anything (gap warnings need recounting).</summary>
+        public bool Changed { get; private set; }
+        public IEnumerable<int> Meshes => _segs.Keys.ToList();
+
+        public bool Holds(int mesh, List<SweepKind.Segment> segs) =>
+            _segs.TryGetValue(mesh, out var held) ? ReferenceEquals(held, segs) : segs.Count == 0;
+
+        public ((SweepKind.Joint?, SweepKind.Joint?)[] Joints, ulong Hash) JointsOf(int mesh) => _joints[mesh];
+
+        static (int, int, int) Cell(Vector3 p) =>
+            ((int)MathF.Floor(p.X / SweepKind.Tolerance), (int)MathF.Floor(p.Y / SweepKind.Tolerance), (int)MathF.Floor(p.Z / SweepKind.Tolerance));
+
+        static Vector3 End(SweepKind.Segment s, bool start) => start ? s.A : s.B;
+
+        /// <summary>Replaces each listed mesh's segments (an empty list removes it) and recomputes joints near the changes.</summary>
+        public void Update(Dictionary<int, List<SweepKind.Segment>> changes)
         {
-            if (ends.Count == 2)
+            Changed = changes.Count > 0;
+            if (!Changed) return;
+            var touched = new HashSet<(int, int, int)>();
+            foreach (var (mesh, list) in changes)
             {
-                var (i, si) = ends[0];
-                var (j, sj) = ends[1];
-                var a = all[i].Seg;
-                var b = all[j].Seg;
-                var awayA = si ? a.Dir : -a.Dir;
-                var awayB = sj ? b.Dir : -b.Dir;
-                if (i != j && Vector3.Dot(awayA, awayB) < 0.95f && Vector3.Dot(a.Up, b.Up) > 0.5f)
+                if (_segs.TryGetValue(mesh, out var old))
+                    for (int s = 0; s < old.Count; s++)
+                        foreach (var start in (bool[])[true, false])
+                        {
+                            var c = Cell(End(old[s], start));
+                            touched.Add(c);
+                            if (_cells.TryGetValue(c, out var l)) { l.Remove((mesh, s, start)); if (l.Count == 0) _cells.Remove(c); }
+                        }
+                if (list.Count == 0) { _segs.Remove(mesh); _joints.Remove(mesh); continue; }
+                _segs[mesh] = list;
+                for (int s = 0; s < list.Count; s++)
+                    foreach (var start in (bool[])[true, false])
+                    {
+                        var c = Cell(End(list[s], start));
+                        touched.Add(c);
+                        (_cells.TryGetValue(c, out var l) ? l : _cells[c] = new()).Add((mesh, s, start));
+                    }
+            }
+            var redo = changes.Keys.Where(_segs.ContainsKey).ToHashSet();
+            foreach (var (cx, cy, cz) in touched)
+                for (int dx = -1; dx <= 1; dx++)
+                for (int dy = -1; dy <= 1; dy++)
+                for (int dz = -1; dz <= 1; dz++)
+                    if (_cells.TryGetValue((cx + dx, cy + dy, cz + dz), out var l))
+                        foreach (var e in l) redo.Add(e.Mesh);
+            foreach (var mesh in redo) _joints[mesh] = Compute(mesh);
+        }
+
+        ((SweepKind.Joint?, SweepKind.Joint?)[], ulong) Compute(int mesh)
+        {
+            var segs = _segs[mesh];
+            var result = new (SweepKind.Joint?, SweepKind.Joint?)[segs.Count];
+            ulong hash = 17;
+            for (int s = 0; s < segs.Count; s++)
+            {
+                foreach (var start in (bool[])[true, false])
                 {
-                    var jb = new SweepKind.Joint(awayB, b.Out, b.Up);
-                    var ja = new SweepKind.Joint(awayA, a.Out, a.Up);
-                    if (si) result[i].Item1 = jb; else result[i].Item2 = jb;
-                    if (sj) result[j].Item1 = ja; else result[j].Item2 = ja;
-                    continue;
+                    var joint = JointAt(mesh, s, start);
+                    if (start) result[s].Item1 = joint; else result[s].Item2 = joint;
+                    hash = Key(hash, HashJoint(joint));
                 }
             }
-            openEnds.AddRange(ends);
+            return (result, hash);
         }
-        return result;
+
+        SweepKind.Joint? JointAt(int mesh, int seg, bool start)
+        {
+            var a = _segs[mesh][seg];
+            var p = End(a, start);
+            var (cx, cy, cz) = Cell(p);
+            (int Mesh, int Seg, bool Start)? other = null;
+            for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dz = -1; dz <= 1; dz++)
+                if (_cells.TryGetValue((cx + dx, cy + dy, cz + dz), out var l))
+                    foreach (var e in l)
+                    {
+                        if (e == (mesh, seg, start) || Vector3.DistanceSquared(End(_segs[e.Mesh][e.Seg], e.Start), p) > SweepKind.Tolerance * SweepKind.Tolerance) continue;
+                        if (other != null) return null; // three or more ends meet: a branch, leave it open
+                        other = e;
+                    }
+            if (other is not { } o || (o.Mesh == mesh && o.Seg == seg)) return null;
+            var b = _segs[o.Mesh][o.Seg];
+            var awayA = start ? a.Dir : -a.Dir;
+            var awayB = o.Start ? b.Dir : -b.Dir;
+            if (Vector3.Dot(awayA, awayB) >= 0.95f || Vector3.Dot(a.Up, b.Up) <= 0.5f) return null;
+            return new SweepKind.Joint(awayB, b.Out, b.Up);
+        }
+
+        /// <summary>Ends that join nothing, with the mesh they belong to.</summary>
+        public IEnumerable<(int Mesh, Vector3 P)> OpenEnds()
+        {
+            foreach (var (mesh, (joints, _)) in _joints)
+                for (int s = 0; s < joints.Length; s++)
+                {
+                    if (joints[s].Item1 == null) yield return (mesh, _segs[mesh][s].A);
+                    if (joints[s].Item2 == null) yield return (mesh, _segs[mesh][s].B);
+                }
+        }
     }
 
     /// <summary>Open ends that nearly meet another (within 5 cm, but further than the weld tolerance): likely blockout gaps.</summary>
-    static IEnumerable<Diagnostic> Gaps(List<(int Seg, bool Start)> openEnds, List<(int Mesh, int Index, SweepKind.Segment Seg)> all, List<PolyMesh> live)
+    static IEnumerable<Diagnostic> Gaps(List<(int Mesh, Vector3 P)> points, Run run)
     {
         const float near = 0.05f;
-        var points = openEnds.Select(e => (e.Seg, P: e.Start ? all[e.Seg].Seg.A : all[e.Seg].Seg.B)).ToList();
         var cells = new Dictionary<(int, int, int), List<int>>();
         (int, int, int) Cell(Vector3 p) => ((int)MathF.Floor(p.X / near), (int)MathF.Floor(p.Y / near), (int)MathF.Floor(p.Z / near));
         for (int i = 0; i < points.Count; i++) (cells.TryGetValue(Cell(points[i].P), out var l) ? l : cells[Cell(points[i].P)] = new()).Add(i);
@@ -317,8 +471,8 @@ public sealed class Dresser(IDressingFiles files)
                     float d = Vector3.Distance(points[i].P, points[j].P);
                     if (d <= SweepKind.Tolerance || d > near) continue;
                     var p = points[i].P;
-                    var mi = live[all[points[i].Seg].Mesh];
-                    var mj = live[all[points[j].Seg].Mesh];
+                    var mi = run.ById[points[i].Mesh];
+                    var mj = run.ById[points[j].Mesh];
                     yield return new Diagnostic(Severity.Warning, "W520",
                         $"trim gap of {d * 1000:0.#} mm at ({p.X:0.###}, {p.Y:0.###}, {p.Z:0.###}) between \"{mi.Name}\" and \"{mj.Name}\"",
                         "move the meshes so they meet (snap to grid), or weld the vertices", MeshId: mi.Id);
@@ -405,12 +559,17 @@ public sealed class Dresser(IDressingFiles files)
     /// <summary>Drops cached jobs for meshes and rules that no longer exist.</summary>
     void Prune(Document doc)
     {
+        ulong key = (ulong)RuntimeHelpers.GetHashCode(_rules);
+        foreach (var m in doc.Meshes) key = Key(key, (ulong)(uint)m.Id);
+        if (key == _prunedFor) return; // same meshes and rules: nothing to drop
+        _prunedFor = key;
         var ids = doc.Meshes.Select(m => m.Id).ToHashSet();
         var rules = _rules.Rules.Select(r => r.Id).ToHashSet();
         foreach (var k in _shape.Keys.Where(k => !ids.Contains(k.Mesh) || !rules.Contains(k.Rule)).ToList()) _shape.Remove(k);
         foreach (var k in _segments.Keys.Where(k => !ids.Contains(k.Mesh) || !rules.Contains(k.Rule)).ToList()) _segments.Remove(k);
         foreach (var k in _outputs.Keys.Where(k => !ids.Contains(k.Mesh) || !rules.Contains(k.Rule)).ToList()) _outputs.Remove(k);
         foreach (var k in _bounds.Keys.Where(k => !ids.Contains(k)).ToList()) _bounds.Remove(k);
+        foreach (var k in _joins.Keys.Where(k => !rules.Contains(k)).ToList()) { _joins.Remove(k); _gaps.Remove(k); }
     }
 
     static ulong Key(ulong h, ulong x)
@@ -488,26 +647,6 @@ public sealed class Dresser(IDressingFiles files)
                         foreach (var b in l) if (Overlap(b.Min, b.Max)) found.Add(b.Mesh);
             found.Add(m);
             return found.OrderBy(x => x.Id).ToList();
-        }
-    }
-
-    /// <summary>Gives points within <c>tolerance</c> of each other the same id.</summary>
-    sealed class PointWeld(float tolerance)
-    {
-        readonly Dictionary<(int, int, int), List<(Vector3 P, int Id)>> _cells = new();
-        int _next;
-
-        public int Id(Vector3 p)
-        {
-            var c = ((int)MathF.Floor(p.X / tolerance), (int)MathF.Floor(p.Y / tolerance), (int)MathF.Floor(p.Z / tolerance));
-            for (int dx = -1; dx <= 1; dx++)
-            for (int dy = -1; dy <= 1; dy++)
-            for (int dz = -1; dz <= 1; dz++)
-                if (_cells.TryGetValue((c.Item1 + dx, c.Item2 + dy, c.Item3 + dz), out var list))
-                    foreach (var (q, id) in list)
-                        if (Vector3.DistanceSquared(p, q) <= tolerance * tolerance) return id;
-            (_cells.TryGetValue(c, out var own) ? own : _cells[c] = new()).Add((p, _next));
-            return _next++;
         }
     }
 }

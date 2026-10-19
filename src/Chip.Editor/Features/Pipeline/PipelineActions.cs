@@ -46,7 +46,7 @@ public static class PipelineActions
         }
         try
         {
-            var r = GlbExporter.Export(ctx.Doc, ctx.Materials, glb);
+            var r = GlbExporter.Export(ctx.ExportDocument(), ctx.Materials, glb);
             ctx.Status($"Saved {saved} and exported {Describe(r.Meshes, r.Entities)} to {Path.GetFileName(glb)}{Report(r)}");
         }
         catch (Exception e)
@@ -68,7 +68,7 @@ public static class PipelineActions
     {
         try
         {
-            var r = ObjExporter.Export(ctx.Doc, ctx.Materials, path);
+            var r = ObjExporter.Export(ctx.ExportDocument(), ctx.Materials, path);
             ctx.Status($"Exported {Describe(r.Meshes, 0)} to {Path.GetFileName(path)} and {Path.GetFileName(Path.ChangeExtension(path, ".mtl"))}");
             return true;
         }

@@ -6,7 +6,14 @@ Standalone level-blockout editor in the spirit of Scythe / Source 2 Hammer. C# (
 dotnet run --project src/Chip.Editor          # editor
 dotnet test                                    # core + scenario tests
 Chip.exe --shot level.chip out.png faces      # headless UI capture (empty|objects|faces|block|backfaces)
+Chip.exe --rules-check level.chip [--json]    # check a level's dressing rules (exit 0 clean, 1 warnings, 2 errors)
+Chip.exe --rules-schema [out.json]            # JSON Schema for dressing rules files
 ```
+
+**Dressing** (docs/dressing.md): tag surfaces (Ctrl+T), then a JSON rules file beside the level (`level.dressing.json`)
+turns the blockout into the shipped level: baseboards and trims along walls, pipes in corners, bevelled corners. Edit the
+blockout and the dressing follows; edit the rules and Chip reloads them live. `` ` `` switches between the dressed level
+and the bare blockout; export always ships the dressed level. Try it: Tools > Open dressing sample.
 
 Everything is in metres. Materials are the PNGs in `assets/textures`, and texel density is set per level, Scythe style, in the Material section: "1 m is 256 px" by default, so a 128 px texture tiles every 50 cm. Textures can have their own density. `Shift+Alt+1..0` picks the first ten. The export scale defaults to 1 (Godot); use 100 for centimetre engines.
 

@@ -1,6 +1,7 @@
 # Dressing
 
-Status: phase 0 (tags) built; the rest is design. Name: **Dressing** (as in set dressing).
+Status: phases 0 (tags) and 1 (engine, `bevel`, `sweep`) built; proxies, `repeat` and `scatter` are design. Name:
+**Dressing** (as in set dressing). Try it: Tools > Open dressing sample.
 
 You build the blockout. Dressing turns it into the level you ship, following rules written in a JSON file: trims along every
 wall base, bevels on every outside corner, a railing built from a box, stairs from a ramp, rubble on the floors. Change the
@@ -112,14 +113,18 @@ the mesh and the reason.
 
 ### Vocabulary (v1)
 
-| Kind | Stage | Targets | Key parameters |
-|---|---|---|---|
-| `bevel` | shape | edges of faces | `edges` (convex/concave), `minDeg`, `width`, `segments` |
-| `railing` | shape | meshes | `height`, `balusterEvery`, `postEvery`, `rail` profile, `baluster`/`post` prop or size |
-| `stairs` | shape | meshes | `stepHeight` (fits the nearest whole count to the box) |
-| `sweep` | dress | edge chains | `profile` (`rect`, `round`, `points`), `offset`, `material`, `uv` (`along`) |
-| `repeat` | dress | edge chains | `prop`, `every`, `start`, `align` |
-| `scatter` | dress | faces | `props`, `perM2`, `minGap`, `yawDeg`, `scale`, `seed`, `nearEdges` |
+| Kind | Stage | Targets | Key parameters | |
+|---|---|---|---|---|
+| `bevel` | shape | edges between two matching faces | `faces`, `edges` (convex/concave), `minDeg`, `width`, `segments` | built |
+| `sweep` | dress | edges of matching faces, chained across meshes | `faces`, `edges`, `onto`, `minDeg`, `profile` (`rect`, `round` + `sides`, `points`), `offset`, `material` | built |
+| `railing` | shape | meshes | `height`, `balusterEvery`, `postEvery`, `rail` profile, `baluster`/`post` prop or size | phase 2 |
+| `stairs` | shape | meshes | `stepHeight` (fits the nearest whole count to the box) | phase 2 |
+| `repeat` | dress | edge chains | `prop`, `every`, `start`, `align` | phase 2 |
+| `scatter` | dress | faces | `props`, `perM2`, `minGap`, `yawDeg`, `scale`, `seed`, `nearEdges` | phase 2 |
+
+The full, current parameter list with descriptions is the generated schema: `Chip --rules-schema` (Chip also writes
+`dressing-1.schema.json` beside rules files it creates or opens). Sweeps are textured world-aligned with the source face's
+scale; a texture running along the trim (`uv: along`) is later.
 
 Face selectors: `tags`, `notTags`, `materials` (globs), `facing` (`up`, `down`, `upright`). Mesh selectors: `tags`. Edge
 kinds: `contact` (with `onto`: an edge of these faces lying on a matching face of **any** mesh, 1 mm tolerance; walls and
@@ -131,31 +136,28 @@ Proxies read their box through `PrimitiveFrame`: run along the longest horizonta
 
 ### Checking rules: `Chip.exe --rules-check level.chip [--json]`
 
-Loads the rules, dresses the level headlessly and exits 0 (clean), 1 (warnings) or 2 (errors). This is how an agent closes
-the loop; `--shot` shows what the result looks like.
+Loads the rules, dresses the level headlessly and exits 0 (clean), 1 (warnings), 2 (errors), 3 (no rules file) or 4 (the
+level can't be read). `--json` gives the same as structured data. This is how an agent closes the loop; `--shot` shows
+what the result looks like. Real output, for the sample with a typo and a misspelt tag:
 
 ```
-rules: hangar.dressing.json (+1 import)  chipDressing 1
-ERROR E104 styles/industrial.dressing.json:18:7  rules.railing.balusterSpace
-      unknown key "balusterSpace" for kind "railing"
-      fix: did you mean "balusterEvery"? (allowed: height, balusterEvery, postEvery, rail, baluster, post, material)
-WARN  W310 rules.wall-bevel  mesh 41 "corridor_b"
-      width 0.02 is more than half the shortest selected edge (0.012); mesh skipped
-      fix: lower width below 0.012, or tag its faces "skip:wall-bevel"
-WARN  W402 rules.pipes  matched 0 edges
-      no face has tag "ceiling" (tags in level: wall ×212, floor ×38, roof ×9)
-      fix: tag the ceiling faces "ceiling", or use "tags": ["roof"]
-WARN  W520 rules.baseboard  chain gap of 3 mm at (12.0, 0, 4.5) between meshes 7 and 9
-rule       stage  targets   outputs    skipped  ms
-wall-bevel  shape  37 mesh   36 mesh    1        4.1
-railing    shape  3 mesh    3 mesh     0        2.0   (1 override)
-stairs     shape  2 mesh    2 mesh     0        0.6
-baseboard  dress  64 chain  64 mesh    0        3.3
-crown      -      disabled
-debris     dress  38 face   412 prop   0        1.9
-pipes      dress  0         0          0        0.0
-1 error, 3 warnings.  content 9f3a1c
+rules: .../chip-dressing-broken/room.dressing.json  chipDressing 1
+ERROR E104 .../room.dressing.json:17:7  rules.pillar-bevel.widht
+      unknown key "widht" for kind "bevel"
+      fix: did you mean "width"? (allowed: kind, enabled, note, faces, edges, minDeg, width, segments)
+WARN  W402 .../room.dressing.json:20:13  rules.pipe
+      pipe matched nothing: no face matches tags plinht, facing upright
+      fix: did you mean the tag "plinth"?
+rule             stage  targets      outputs    skipped  ms
+baseboard        dress  11 edge      6 mesh     0        52.0
+pipe             dress  0 edge       0 mesh     0        2.0
+pillar-bevel     -      not run (errors above)
+1 error, 1 warning.  content 37880ade
 ```
+
+Other codes: W310 (bevel wider than half the shortest edge; the mesh is left as is), W311 (the bevel broke a mesh), W520
+(two trim ends within 5 cm that don't meet: a blockout gap, with its position), E330 (two shape rules on one mesh; neither
+applies), E901 (a rule threw on a mesh; that mesh is skipped).
 
 Every diagnostic has a code, file:line:col, JSON path, mesh id when relevant, what happened and a fix. A selector that
 matches nothing is always a warning: it is the commonest mistake. Chip writes `dressing-1.schema.json` (generated from the
@@ -166,58 +168,64 @@ same code that parses the rules, so they can't drift) beside any rules file it c
 ### Interface (`src/Chip.Core/Dressing/`)
 
 ```csharp
-/// What the renderer and picker draw from: meshes plus change tokens. Two adapters: the blockout and the dressed level.
-public interface IMeshSet
-{
-    IReadOnlyList<PolyMesh> Meshes { get; }
-    int Revision(PolyMesh mesh);   // changes whenever that mesh's content does; never repeats for a mesh
-}
+/// Meshes with change tokens. Two adapters: Blockout (the session) and DressedLevel. The renderer draws from it.
+public interface IMeshSet { IReadOnlyList<PolyMesh> Meshes { get; } int Revision(PolyMesh mesh); }
 
-public sealed class Dresser
+public sealed class Dresser(IDressingFiles files)
 {
-    public Dresser(IDressingFiles files);
-    /// Never mutates doc; never throws on rule or prop content. Keeps its cache between calls; one thread.
-    public DressedLevel Dress(Document doc, Func<PolyMesh, int>? revision = null);   // null: content hash (CLI, export)
+    /// Never mutates doc; never throws on rule content. Caches between calls; one thread. Returns the same object when
+    /// nothing changed. Rules reload when the path changes or (checkFiles) a rules file changed.
+    public DressedLevel Dress(Document doc, string? rulesPath, Func<PolyMesh, int>? revision = null, bool checkFiles = true);
+    public bool RulesChanged(string? rulesPath);   // cheap poll for the editor's four-times-a-second check
+    public RuleSet Rules { get; }
+    public int LastRebuilds { get; }               // jobs run (not reused) by the last pass: tests and benches
 }
 
 public sealed class DressedLevel : IMeshSet
 {
-    public MeshOrigin Origin(PolyMesh mesh);                 // (SourceId, RuleId?, Role: Passthrough|Modified|Proxy|Added)
-    public IReadOnlyList<Diagnostic> Diagnostics { get; }
+    public MeshOrigin Origin(PolyMesh mesh);       // (SourceId, Rule?, Role: Passthrough | Modified | Added)
+    public IReadOnlyList<(string Rule, DressRole Role)> RulesFor(int meshId);
+    public IReadOnlyList<Diagnostic> Diagnostics { get; }   // rule-file problems, then dressing problems
     public IReadOnlyList<RuleStats> Stats { get; }
-    public IReadOnlyList<RuleMatch> RulesFor(int meshId);   // inspector: which rules touch this mesh, with its parameters
-    public string ContentHash { get; }
-    public Document ForExport();                             // dressed meshes + blockout collision stand-ins
-    public IReadOnlyList<PolyMesh> Bake(int sourceId);       // fresh editable copies of that source's output
+    public RuleSet Rules { get; }
+    public string ContentHash { get; }             // stable across runs and machines: did an edit change the output?
+    public Document ForExport();                   // dressed meshes + collision-only blockout stand-ins
 }
 
-public interface IDressingFiles { string? ReadText(string path); byte[]? ReadBytes(string path); long Stamp(string path); }
-public static class RulesCheck { public static int Run(string levelPath, IDressingFiles files, TextWriter output, bool json); }
+public interface IDressingFiles { string? ReadText(string path); long Stamp(string path); }   // DiskFiles, MemoryFiles
+public static class DressingRules { string? PathFor(Document, string? levelPath, IDressingFiles); string DefaultPathFor(string levelPath); }
+public static class RulesCheck { int Run(Document, string? levelPath, IDressingFiles, TextWriter, bool json); }
+public static class DressingSchema { string Generate(); string Starter(string? levelName); }
 ```
 
-Invariants: blockout meshes pass through as the same objects with their own revisions. Generated meshes have negative,
-stable ids per (source, rule, chain anchor) and revisions from the dresser's own counter, so per-mesh GPU and pick caches
-keyed on id and revision stay correct with no extra work. Generated meshes are `Locked` and `Collision = None`. Every source
-mesh appears exactly once as passthrough, modified, or omitted (a proxy).
+Invariants: blockout meshes pass through as the same objects with the session's revisions. Generated meshes have negative
+ids, stable per (rule, source) for the dresser's life, and revisions from a counter shared by every dresser, so GPU caches
+keyed on id and revision are always right. Generated meshes are `Locked` and `Collision = None`. Outputs come in blockout
+order whatever was rebuilt, so exports are stable.
 
-Seams with two real adapters: `IMeshSet` (Blockout, DressedLevel), `IDressingFiles` (DiskFiles watching stamps four times
-a second, MemoryFiles for tests). The revision function is a delegate: `Session.MeshRevision` in the editor, `MeshHash`
-elsewhere.
+### Behind the seam (`src/Chip.Core/Dressing/`)
 
-### Behind the seam
+- **`JNode`**: a JSON reader that keeps line and column for every value (comments and trailing commas allowed).
+- **`RuleSet`** (`Rules.cs`): imports (relative paths, cycles reported), vars, per-level patches by rule id, rule ids
+  checked like tags, kinds looked up with did-you-mean, every parameter typed through **`ParamSpec`** tables
+  (`Params.cs`), which also generate the schema. A rule with errors is left out; the rest run.
+- **`BevelKind`**: the edges between two matching faces (convex or concave, at `minDeg` or more), bevelled with
+  `MeshOps.BevelEdges` on a clone.
+- **`SweepKind`**: segments per mesh: contact (the matching face's edges lying on an `onto` face of any neighbouring mesh,
+  inside its outline, with the face standing on it; spans over split floors merge), boundary, border, convex, concave.
+  Contact segments drop stretches where the space just off the edge is inside another closed mesh, so walls overlapping at
+  corners end their trims at the corner and mitre into each other. `Build` sweeps the profile with mitred joints (closest
+  approach of each profile point's lines, capped) and end caps, skips faces lying against the wall or floor, and auto-smooths
+  at 50° so round profiles shade smooth.
+- **`Dresser`**: jobs per (rule, mesh). Bevel jobs key on the mesh's revision. Sweep segment jobs also key on the ids and
+  revisions of meshes touching it (a `NeighbourIndex` kept between passes, re-queried only around meshes that changed).
+  Segment ends live in a per-rule `JoinIndex` (tolerance-sized cells) that recomputes joints only near changed ends;
+  sweep outputs rebuild when their segments or joints change. Dirty jobs run in parallel, each in its own try/catch, and
+  keep their diagnostics with their results.
 
-- **Rules**: a position-tracking JSON reader (line, column, path), imports, overrides, vars, per-kind parameter tables that
-  also generate the schema, did-you-mean.
-- **Kinds**: one internal file per kind (`Kinds/Sweep.cs`, `Kinds/Railing.cs`...) behind an internal `IKind`; adding a kind
-  touches nothing else and appears in the schema.
-- **Selection**: face and mesh selectors; edge classification; a `ContactIndex` (spatial hash of matching faces across all
-  meshes, 1 mm); `EdgeChains` (join collinear edges, chain across meshes by welding ends within 1 mm, split at T-junctions,
-  mitre frames). Sweep and repeat share chains.
-- **Jobs**: one job per (rule, target mesh), keyed by the rule's fingerprint, the target's revision, its overrides, and the
-  ids and revisions of meshes within the rule's reach (bounds query). Moving a floor changes the neighbour sets of the walls
-  it left and the walls it reached, so both rebuild. Dirty jobs run in parallel, each in its own try/catch.
-- **Props**: `GltfImporter`, cached by path and stamp. Scatter merges a rule's props into one mesh per source in v1
-  (instancing is a later change to `ForExport` and the renderer).
+Performance (stress level: 2,000 meshes, 100k faces, every upright face tagged, a baseboard and a bevel rule; Release,
+`dotnet run -c Release --project tests/Chip.Bench -- dress`): opening (cold) about 120 ms; a frame with nothing changed
+about 30 µs; a drag frame moving one wall about 1.5 ms.
 
 ### Tags
 
@@ -240,32 +248,41 @@ Built (phase 0):
 
 ### Editor (`src/Chip.Editor/Features/Dressing/`)
 
-- `EditorContext.Scene : IMeshSet` is the dressed level or the blockout, per the view toggle.
-- Renderer: solid faces from `Scene`; wires, selection and overlays from the blockout. `PickCache` takes an `IMeshSet`:
-  vertex/edge/face modes pick the blockout; object mode picks `Scene` and selects `Origin(hit).SourceId`.
-- Export: `GlbExporter.Build(dressed.ForExport(), ...)`; the exporter itself doesn't change, and collision stand-ins reuse
-  `CollisionMode.Only` and the collision bake.
-- Commands: toggle dressed view (`` ` ``, plus a header toggle beside Backfaces), bake, open rules file, new rules file.
-  The tags popup also suggests tags the rules mention. Inspector: a Dressing section (rules touching this mesh, override
-  fields from the parameter tables, diagnostics, Bake). The status bar shows the rules' error count.
-- Proxy overlay: in the blockout view, meshes a proxy rule claims draw a striped overlay tinted by kind, labelled with the
-  rule id on hover; a mesh tagged for a proxy with no matching rule has no overlay, so it reads as undressed.
-- Drags re-dress only dirty jobs each frame. If `--bench` shows that's too slow, slow jobs wait for release and their
-  source shows undressed meanwhile.
+Built (phase 1):
+
+- `DressingFeature` owns a `Dresser` per open level and sets `EditorContext.Dressed`: it re-dresses when the document
+  changes and polls the rules files four times a second, so saving the JSON (by hand or by an agent) updates the viewport.
+  Reloads say so in the status bar; rules with errors show there in red.
+- Renderer: `BeginFrame(..., scene)` draws solid faces from the dressed level when `ShowDressed`; wires, selection and
+  overlays stay on the blockout, so editing reads cleanly. Picking stays on the blockout in every mode for now (clicking a
+  trim selects nothing; phase 2 maps generated meshes back to their source for proxies).
+- Export (GLB and OBJ) writes `EditorContext.ExportDocument()`: the dressed level when there are rules, even with the
+  blockout view showing. The exporter is unchanged; collision stand-ins reuse `CollisionMode.Only` and the collision bake.
+- `` ` `` toggles dressed / blockout (View > Dressed view), and so do the "Dressed" header toggle (only shown for levels
+  with rules) and the inspector's Dressed / Blockout switch.
+- Tools > New dressing rules file writes `<level>.dressing.json` (a starter: baseboards on `wall` faces, a disabled corner
+  bevel) and the schema beside a saved level. Tools > Open dressing rules opens it in the default app. Tools > Open
+  dressing sample writes the sample room to a temp folder and opens it.
+- Inspector Dressing section: the switch, Open rules, which rules touch the selection, what each rule made, and problems
+  with their fixes (the selection's first; a button selects the mesh a problem is about).
+- `Chip --rules-check level.chip [--json]` and `Chip --rules-schema [out.json]` run without a window.
 
 ### Tests (through the interface)
 
-`Dresser` + `MemoryFiles` + small documents: geometry per kind (mitres, contact across meshes, doorway gaps, stair counts);
-`ContentHash` stable across runs and unchanged by edits elsewhere; a rebuild counter proving one wall edit rebuilds only its
-jobs; incremental output equal to a fresh full dress after random edit sequences; golden diagnostics; the tag guard test;
-`--rules-check` exit codes; captures via `--shot`.
+`DressingTests` (core): mitred room of separate overlapping walls, doorway with wrapped jambs, round pipe on concave
+corners, bevels and their export stand-ins, width and conflict warnings, imports/vars/overrides, every diagnostic's fix,
+zero-match hints, live reload, `--rules-check` exit codes, schema and starter, a rebuild count proving one edit reruns four
+jobs, and a randomised test (four seeds, 60 edits each: moves, retags, hide, delete, add) that the incremental result always
+equals a fresh dress, diagnostics included. `DressingFeatureTests` (editor): the sample dresses and exports, the view toggle,
+blockout and rules-file edits redress, New rules file. Captures: `--shot - out.png dressing` (and `dressing-blockout`);
+`CHIP_SHOT_CAMERA` frames close-ups.
 
 ## Phases
 
 | Phase | Ships | Done when |
 |---|---|---|
 | **0. Tags** (built) | `TagSet`, `Face.Derive`, hash/serializer, Ctrl+T popup, Tags section, select by tag | Guard test passes; tags survive every op and undo; useful on its own for selection |
-| **1. Engine, bevel, sweep** | `Dresser`, rules files with imports, `--rules-check`, schema, view toggle, render/pick/export wiring, Dressing inspector, `bevel`, `sweep` | Fixture level: baseboards and bevels follow wall edits; incremental test passes; one-wall drag stays under the frame budget in `--bench` |
+| **1. Engine, bevel, sweep** (built) | `Dresser`, rules files with imports, `--rules-check`, schema, view toggle, render/export wiring, Dressing inspector, `bevel`, `sweep`, the sample | Baseboards and bevels follow wall edits; incremental equals fresh under random edits; a one-wall drag costs 1.5 ms on the stress level |
 | **2. Proxies and props** | `railing`, `stairs`, `repeat`, `scatter`, props, per-object overrides UI, Bake | Railing and stairs fixtures; scatter stable under unrelated edits |
 | **Later** | Export instancing, height bands (chair rails), style library browser, more modifiers | |
 
@@ -273,7 +290,11 @@ jobs; incremental output equal to a fresh full dress after random edit sequences
 
 - Sweeps follow the sharp blockout corner, so a baseboard overlaps a 2 cm bevel. Invisible at trim thickness; a
   `clipToShape` option can come later.
-- Contact chains are the risky part: gaps over 1 mm, split coplanar faces and T-junctions break or double trims. Chains are
-  welded and merged before sweeping, and every gap or junction becomes a warning with its position.
-- Bake is a snapshot: the baked copy stops following the blockout.
+- Contact ends join when exactly two meet within 1 mm. Overlapping walls are handled (hidden stretches are dropped, so ends
+  meet at the corner); three or more ends at one point (a T-junction) stay open with caps. Ends within 5 cm that don't meet
+  are reported (W520) with their position.
+- Only closed meshes hide trim stretches; an open mesh (a single plane) never does.
+- Convex sweeps sit in the outside quadrant of the corner (a bead), not wrapped round it.
+- Picking ignores generated meshes (phase 2). Bake isn't built yet (phase 2); when it is, it's a snapshot that stops following
+  the blockout.
 - Only one Shape rule per mesh, so a mesh can't be both bevelled and a proxy.

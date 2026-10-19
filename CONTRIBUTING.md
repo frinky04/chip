@@ -61,6 +61,7 @@ public sealed class MeshOpsFeature : IEditorFeature
 - **Performance**: `dotnet run -c Release --project tests/Chip.Bench [-- prefix]` times core operations on `StressLevel.Generate()` (2,000 meshes, ~100k faces). Add benches as `tests/Chip.Bench/Benches/<Area>.cs`.
 - **Editor frame performance**: `Chip.exe --bench stress artifacts/frame.json` runs the hidden full-editor scenarios (Release; `CHIP_UI_SCALE` respected); see README for timing and diagnostic flags.
 - **Selection after topology edits**: use `Selection.Remap` or rebuild the selection explicitly; `Session.End` prunes anything invalid.
+- **Dressing rule kinds** (`src/Chip.Core/Dressing/`, design in `docs/dressing.md`): a kind is a `RuleKind` subclass with a `ParamSpec` table (validation, defaults, the schema and docs all come from it), added to `RuleKind.All`, and run from `Dresser` as cached per-(rule, mesh) jobs. Never mutate the document; return meshes. Add cases to `DressingTests` (including the randomised incremental-equals-fresh test) and check a sample with `Chip --rules-check`.
 
 ## Shared files: who may touch them
 
@@ -95,6 +96,6 @@ Scythe's bindings first (`SPEC.md` §4–§9), then Source 2 Hammer. `Chip.Edito
 1. Core logic has unit tests in `tests/Chip.Core.Tests` (topology stays manifold where expected, UVs/materials propagate, undo restores).
 2. Commands/tools register cleanly: `tests/Chip.Editor.Tests` passes (no hotkey conflicts).
 3. Every gesture is one undo step; Esc cancels cleanly.
-4. **Headless proof**: `powershell -File scripts/verify.ps1 -Run "your.command,..."` passes, and you have looked at the captures in `artifacts/verify/` (add a capture state to `EditorApp.Snapshot.cs` only if `--run` can't reach it). To prove a hotkey end to end, set `CHIP_SHOT_KEYS=F1` (or `Ctrl+P`, comma-separated) on a `--shot` run: the keys are pressed inside ImGui, never through the OS. `--run` executes commands directly and skips the keyboard path. `CHIP_SHOT_DRAG=x0,y0,x1,y1[,Ctrl+Alt]` (viewport fractions) sweeps the left button across the viewport over 16 frames, for drag gestures.
+4. **Headless proof**: `powershell -File scripts/verify.ps1 -Run "your.command,..."` passes, and you have looked at the captures in `artifacts/verify/` (add a capture state to `EditorApp.Snapshot.cs` only if `--run` can't reach it). To prove a hotkey end to end, set `CHIP_SHOT_KEYS=F1` (or `Ctrl+P`, comma-separated) on a `--shot` run: the keys are pressed inside ImGui, never through the OS. `--run` executes commands directly and skips the keyboard path. `CHIP_SHOT_DRAG=x0,y0,x1,y1[,Ctrl+Alt]` (viewport fractions) sweeps the left button across the viewport over 16 frames, for drag gestures. `CHIP_SHOT_CAMERA=px,py,pz,tx,ty,tz` (metres) puts the camera at p looking at t, for close-ups.
 5. `SPEC.md` tags updated for what you shipped; no new compiler warnings.
 6. Rebased on `main`, one stream per branch, commits explain why.

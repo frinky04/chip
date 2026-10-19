@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Chip.Core.Dressing;
 using Chip.Core.Geometry;
 using Chip.Core.Picking;
 using Chip.Core.Scene;
@@ -61,6 +62,8 @@ public sealed unsafe class Renderer : IDisposable
     int _builtVersion = -1;
     Document? _builtDoc;
     Session? _builtSession;
+    /// <summary>The dressed level drawn as solid geometry this frame (null: the blockout). Wires and overlays stay on the blockout.</summary>
+    IMeshSet? _scene, _builtScene;
     Overlay _overlay = new();
     bool _edgeMode;
     readonly FrameCache<Overlay> _overlayCache = new();
@@ -126,10 +129,12 @@ public sealed unsafe class Renderer : IDisposable
     /// Once per frame, before any pane renders: syncs mesh buffers with the document and builds the shared overlay.
     /// <paramref name="showNormals"/> adds short corner-normal lines for the selection (View > Show normals).
     /// </summary>
-    public void BeginFrame(Session session, ElementRef? hover, bool showNormals = false)
+    public void BeginFrame(Session session, ElementRef? hover, bool showNormals = false, IMeshSet? scene = null)
     {
         LastRebuildCount = 0;
-        if (!ReferenceEquals(session, _builtSession) || session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc)) SyncScene(session);
+        _scene = scene;
+        if (!ReferenceEquals(session, _builtSession) || session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc) || !ReferenceEquals(scene, _builtScene))
+            SyncScene(session, scene);
         _edgeMode = session.Sel.Mode == SelectMode.Edge;
         if (_overlayCache.IsCurrent(session) && hover == _overlayHover && showNormals == _overlayNormals) return;
         _overlay = BuildOverlay(session, hover, showNormals, _overlay);
@@ -189,7 +194,7 @@ public sealed unsafe class Renderer : IDisposable
             _gl.Uniform1(Loc(_meshProg, "uMode"), (int)s.Mode);
             _gl.ActiveTexture(TextureUnit.Texture0);
             string? boundMaterial = null;
-            foreach (var mesh in doc.Meshes)
+            foreach (var mesh in _scene?.Meshes ?? doc.Meshes)
             {
                 if (mesh.Hidden || !_meshes.TryGetValue(mesh.Id, out var gpu) || gpu.Batches.Count == 0) continue;
                 _gl.BindVertexArray(gpu.Vao);
@@ -351,7 +356,7 @@ public sealed unsafe class Renderer : IDisposable
 
     // ---- Scene buffers (per mesh, dirty-tracked) ----
 
-    void SyncScene(Session session)
+    void SyncScene(Session session, IMeshSet? scene)
     {
         var doc = session.Doc;
         int version = session.Version;
@@ -359,12 +364,15 @@ public sealed unsafe class Renderer : IDisposable
         _builtSession = session;
         _builtDoc = doc;
         _builtVersion = version;
+        _builtScene = scene;
         var dirty = new List<(PolyMesh Mesh, MeshGpu Gpu)>();
         var live = new HashSet<int>();
-        foreach (var mesh in doc.Meshes)
+        // Blockout meshes (always: wires and overlays draw from them), then dressing's generated meshes (negative ids).
+        var meshes = scene == null ? doc.Meshes.Select(m => (m, session.MeshRevision(m)))
+            : doc.Meshes.Select(m => (m, session.MeshRevision(m))).Concat(scene.Meshes.Where(m => m.Id < 0).Select(m => (m, scene.Revision(m))));
+        foreach (var (mesh, revision) in meshes)
         {
             live.Add(mesh.Id);
-            int revision = session.MeshRevision(mesh);
             if (_meshes.TryGetValue(mesh.Id, out var gpu) && sameSession && gpu.Revision == revision) continue;
             if (gpu == null)
             {

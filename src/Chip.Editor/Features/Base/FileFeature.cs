@@ -82,7 +82,7 @@ public sealed class FileFeature : IEditorFeature
         }
         try
         {
-            var r = GlbExporter.Export(_ctx.Doc, _ctx.Materials, path);
+            var r = GlbExporter.Export(_ctx.ExportDocument(), _ctx.Materials, path);
             _ctx.Status($"Exported {Features.Pipeline.PipelineActions.Describe(r.Meshes, r.Entities)} to {Path.GetFileName(path)}{Features.Pipeline.PipelineActions.Report(r)}");
         }
         catch (Exception e) { _ctx.Status($"Export failed: {e.Message} Choose a writable folder and try again.", true); }

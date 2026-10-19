@@ -13,7 +13,7 @@ namespace Chip.Editor;
 /// <summary>
 /// <c>Chip --shot [level.chip|-] out.png [state] [--run cmd.id,cmd.id]</c>: renders the whole editor UI from an invisible
 /// window into an offscreen buffer, after an optional preset <c>state</c> (empty|objects|faces|block|blockpreview|polygonpreview|
-/// backfaces|bevelpending|offsetpending|tags|tags-popup|shortcuts|shortcuts-search|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale|hotspot-editor) and a
+/// backfaces|bevelpending|offsetpending|tags|tags-popup|dressing|dressing-blockout|shortcuts|shortcuts-search|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale|hotspot-editor) and a
 /// comma-separated list of command ids. Every feature can prove its UI headlessly this way.
 /// </summary>
 public sealed partial class EditorApp
@@ -144,6 +144,16 @@ public sealed partial class EditorApp
                 if (state == "tags-popup") ctx.Commands.Execute("tags.edit");
                 break;
             }
+            case "dressing" or "dressing-blockout": // the dressing sample from inside the room, pillar selected
+            {
+                ctx.Commands.Execute("dressing.sample");
+                ctx.Camera.Position = new System.Numerics.Vector3(7.4f, 2.4f, 5.5f);
+                ctx.Camera.LookAt(new System.Numerics.Vector3(3.2f, 0.2f, 1.6f));
+                ctx.SetMode(SelectMode.Object);
+                if (ctx.Doc.Meshes.FirstOrDefault(m => m.Name == "pillar") is { } pillar) ctx.Sel.Add(ElementRef.Object(pillar.Id));
+                if (state == "dressing-blockout") ctx.Commands.Execute("view.dressed");
+                break;
+            }
             case "polygonpreview":
                 ctx.SetTool("polygon");
                 (ctx.ActiveTool as Tools.PolygonTool)?.PreviewForCapture();
@@ -194,6 +204,14 @@ public sealed partial class EditorApp
         {
             if (ctx.Commands.Find(id) == null) { Console.Error.WriteLine($"Unknown command '{id}'"); return 2; }
             ctx.Commands.Execute(id);
+        }
+        // CHIP_SHOT_CAMERA="px,py,pz,tx,ty,tz" (metres): put the camera at p looking at t, for close-ups.
+        var cam = (Environment.GetEnvironmentVariable("CHIP_SHOT_CAMERA") ?? "").Split(',', StringSplitOptions.TrimEntries);
+        if (cam.Length == 6 && cam.All(c => float.TryParse(c, System.Globalization.CultureInfo.InvariantCulture, out _)))
+        {
+            var v = cam.Select(c => float.Parse(c, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            ctx.Camera.Position = new Vector3(v[0], v[1], v[2]);
+            ctx.Camera.LookAt(new Vector3(v[3], v[4], v[5]));
         }
 
         var fb = _window.FramebufferSize;

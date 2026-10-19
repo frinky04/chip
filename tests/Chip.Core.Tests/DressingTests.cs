@@ -117,6 +117,58 @@ public class DressingTests
         Assert.Equal(2, Added(moved, "baseboard").Count(t => t.Positions.Any(p => Vector3.Distance(p, corner) < 1e-4f)));
     }
 
+    [Theory]
+    [InlineData(7)]
+    [InlineData(11)]
+    [InlineData(23)]
+    [InlineData(101)]
+    public void Incremental_dressing_always_matches_a_fresh_dress(int seed)
+    {
+        var doc = Room(door: true);
+        var files = Rules(Baseboard + """, "soft": { "kind": "bevel", "faces": { "tags": ["wall"] }, "width": 0.02 } """);
+        var dresser = new Dresser(files);
+        var rng = new Random(seed);
+        var revisions = new Dictionary<int, int>();
+        int Rev(PolyMesh m) => revisions.TryGetValue(m.Id, out var r) ? r : 0; // like the session: bumped on every edit
+        for (int step = 0; step < 60; step++)
+        {
+            var walls = doc.Meshes.Skip(1).ToList();
+            var m = walls[rng.Next(walls.Count)];
+            int op = rng.Next(5);
+            string what = $"step {step}, op {op} on {m.Name}#{m.Id}";
+            switch (op)
+            {
+                case 0 or 1: // nudge a wall by a grid step
+                    var d = new Vector3(rng.Next(-1, 2), 0, rng.Next(-1, 2)) * 0.25f;
+                    for (int i = 0; i < m.Positions.Count; i++) m.Positions[i] += d;
+                    break;
+                case 2: // retag a face
+                    int f = rng.Next(m.Faces.Count);
+                    m.Faces[f].Tags = m.Faces[f].Tags.Contains("wall") ? TagSet.Empty : TagSet.Of("wall");
+                    break;
+                case 3:
+                    m.Hidden = !m.Hidden;
+                    break;
+                case 4 when walls.Count > 3: // delete or add a wall
+                    if (rng.Next(2) == 0) doc.Meshes.Remove(m);
+                    else
+                    {
+                        var x = rng.Next(1, 7) * 0.5f;
+                        var pillar = doc.Add(Box(new Vector3(x, 0, 1.5f), new Vector3(x + 0.3f, 2, 1.8f)));
+                        foreach (var face in pillar.Faces) face.Tags = TagSet.Of("wall");
+                    }
+                    break;
+            }
+            revisions[m.Id] = Rev(m) + 1;
+            var incremental = dresser.Dress(doc, RulesPath, Rev);
+            var fresh = new Dresser(files).Dress(doc, RulesPath, Rev);
+            string Describe(DressedLevel l) => string.Join("; ", l.Meshes.Where(x => l.Origin(x).Role != DressRole.Passthrough)
+                .Select(x => $"{l.Origin(x).Rule}@{l.Origin(x).SourceId}:{x.Faces.Count}f/{x.Positions.Count}v"));
+            Assert.True(fresh.ContentHash == incremental.ContentHash, $"{what}\nfresh:       {Describe(fresh)}\nincremental: {Describe(incremental)}");
+            Assert.Equal(fresh.Diagnostics.Select(x => x.ToString()).Order(), incremental.Diagnostics.Select(x => x.ToString()).Order());
+        }
+    }
+
     [Fact]
     public void Generated_ids_and_content_are_stable()
     {

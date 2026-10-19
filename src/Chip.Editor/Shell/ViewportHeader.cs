@@ -71,8 +71,9 @@ public sealed partial class EditorApp
         float Btn(string t) => ImGui.CalcTextSize(t).X + style.FramePadding.X * 2;
         float ToggleW(string label) => Theme.Px(8) * 2 + Fonts.IconSize + Theme.Px(6) + ImGui.CalcTextSize(label).X;
         float gap = Theme.Px(6);
+        bool dressing = Ctx.Dressed() != null; // the toggle only exists for levels with a rules file
         float rightW = ImGui.CalcTextSize("Grid").X + gap + Btn("-") + gap + slot + gap + Btn("+") + Theme.Px(12)
-            + ToggleW("Snap") + Theme.Px(2) + ToggleW("Backfaces");
+            + ToggleW("Snap") + Theme.Px(2) + ToggleW("Backfaces") + (dressing ? Theme.Px(2) + ToggleW("Dressed") : 0);
         ImGui.SameLine(MathF.Max(width - style.WindowPadding.X - rightW, ImGui.GetCursorPosX() + Theme.Px(12)));
         ImGui.AlignTextToFramePadding();
         ImGui.TextColored(Theme.TextDim, "Grid");
@@ -90,6 +91,12 @@ public sealed partial class EditorApp
         if (Toggle("snap", Icon.Snap, "Snap", Ctx.Snap ? "Snap to grid is on. Hold Ctrl while dragging to bypass" : "Snap to grid is off", Ctx.Snap)) Ctx.Snap = !Ctx.Snap;
         ImGui.SameLine();
         if (Toggle("backfaces", Icon.Backfaces, "Backfaces", "Select faces that point away from you  (Alt+B)", Ctx.Backfaces)) Ctx.Commands.Execute("view.backfaces");
+        if (dressing)
+        {
+            ImGui.SameLine();
+            if (Toggle("dressed", Icon.Eye, "Dressed", Ctx.ShowDressed ? "Showing the dressed level; you still edit the blockout  (`)" : "Showing the bare blockout. Export still includes the dressing  (`)", Ctx.ShowDressed))
+                Ctx.Commands.Execute("view.dressed");
+        }
 
         ImGui.EndChild();
         ImGui.PopStyleVar(3);

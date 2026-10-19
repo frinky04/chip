@@ -136,6 +136,18 @@ public sealed class EditorContext
     public bool Snap { get; set; } = true;
     /// <summary>Scythe-style backface selection: picking can hit faces pointing away (rendering never changes). On by default.</summary>
     public bool Backfaces { get; set; } = true;
+
+    /// <summary>
+    /// The level dressed by its rules file (docs/dressing.md), re-dressed lazily when the document or the rules change;
+    /// null when the level has no rules file. Export always uses it; the viewport only when <see cref="ShowDressed"/>.
+    /// </summary>
+    public Func<Core.Dressing.DressedLevel?> Dressed { get; set; } = () => null;
+
+    /// <summary>Viewport shows the dressed level (true) or the bare blockout. Editing always works on the blockout.</summary>
+    public bool ShowDressed { get; set; } = true;
+
+    /// <summary>What exports write: the dressed level when the level has rules, else the document itself.</summary>
+    public Document ExportDocument() => Dressed() is { } dressed ? dressed.ForExport() : Doc;
     /// <summary>The active viewport pane's camera. The view layout swaps it when another pane becomes active.</summary>
     public Camera Camera { get; set; } = new();
     public Gizmo Gizmo { get; } = new();

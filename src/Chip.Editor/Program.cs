@@ -2,6 +2,28 @@
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
 
+// Headless dressing tools (no window): docs/dressing.md.
+if (args.Length >= 2 && args[0] == "--rules-check")
+{
+    try
+    {
+        var level = Chip.Core.IO.DocumentSerializer.Load(args[1]);
+        return Chip.Core.Dressing.RulesCheck.Run(level, Path.GetFullPath(args[1]), Chip.Core.Dressing.DiskFiles.Instance, Console.Out, json: args.Contains("--json"));
+    }
+    catch (Exception e) when (e is IOException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine($"can't read {args[1]}: {e.Message}");
+        return 4;
+    }
+}
+if (args.Length >= 1 && args[0] == "--rules-schema")
+{
+    var schema = Chip.Core.Dressing.DressingSchema.Generate();
+    if (args.Length >= 2) File.WriteAllText(args[1], schema);
+    else Console.Out.Write(schema);
+    return 0;
+}
+
 bool bench = args.Length > 0 && args[0] == "--bench";
 bool shot = args.Length >= 3 && args[0] == "--shot";
 var options = WindowOptions.Default with
