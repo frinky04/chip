@@ -23,6 +23,11 @@ public sealed class Document
     public bool ExportCollision = true;
     /// <summary>Further export options (smoothing, hidden, textures, watch mode, material remap). Stream J.</summary>
     public ExportSettings Export = new();
+    /// <summary>
+    /// The dressing rules file, relative to the level file (docs/dressing.md). Null: <c>&lt;level&gt;.dressing.json</c> beside the
+    /// level, if it exists.
+    /// </summary>
+    public string? DressingPath;
 
     public PolyMesh Add(PolyMesh m)
     {
@@ -67,5 +72,6 @@ public sealed class Document
         ExportPath = ExportPath,
         ExportCollision = ExportCollision,
         Export = Export.Clone(),
+        DressingPath = DressingPath,
     };
 }

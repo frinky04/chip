@@ -28,7 +28,8 @@ public static partial class DocumentSerializer
         List<MeshDto> Meshes, List<EntityDto>? Entities,
         ExportDto? Export = null,
         List<GroupDto>? Groups = null, // stream H: outliner groups (optional, no version bump)
-        float? TexelDensity = null);   // px per metre; files without it predate the setting and were built at 512
+        float? TexelDensity = null,    // px per metre; files without it predate the setting and were built at 512
+        string? Dressing = null);      // dressing rules file, relative to the level (optional, no version bump)
 
     sealed record MeshDto(int Id, string Name, bool Hidden, List<float[]> Positions, List<FaceDto> Faces,
         bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null,
@@ -70,7 +71,7 @@ public static partial class DocumentSerializer
             : null,
         ExportToDto(doc.Export),
         doc.Groups.Count > 0 ? doc.Groups.Select(g => new GroupDto(g.Id, g.Name, g.Parent, g.Members.ToArray(), g.Hidden, g.Locked)).ToList() : null,
-        doc.TexelDensity), Options);
+        doc.TexelDensity, doc.DressingPath), Options);
 
     /// <summary>Density of levels saved before <see cref="Document.TexelDensity"/> existed (the old fixed 512 px/m).</summary>
     public const float LegacyTexelDensity = 512f;
@@ -83,6 +84,7 @@ public static partial class DocumentSerializer
         {
             ExportScale = dto.ExportScale <= 0 ? 1 : dto.ExportScale, ExportPath = dto.ExportPath, ExportCollision = dto.ExportCollision, NextId = dto.NextId,
             TexelDensity = dto.TexelDensity is float t && t > 0 ? t : LegacyTexelDensity,
+            DressingPath = dto.Dressing,
         };
         doc.Export = ExportFromDto(dto.Export);
         foreach (var m in dto.Meshes)

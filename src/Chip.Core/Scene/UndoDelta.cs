@@ -24,7 +24,7 @@ sealed class UndoDelta
         _settings = new Document
         {
             NextId = before.NextId, TexelDensity = before.TexelDensity, ExportScale = before.ExportScale, ExportPath = before.ExportPath,
-            ExportCollision = before.ExportCollision, Export = before.Export,
+            ExportCollision = before.ExportCollision, Export = before.Export, DressingPath = before.DressingPath,
         };
     }
 
