@@ -70,6 +70,50 @@ public class OffsetTests
         Assert.Equal(new Vector3(2.5f), max);
     }
 
+    static PolyMesh Plane()
+    {
+        var m = new PolyMesh();
+        m.Positions.AddRange([new(0, 0, 0), new(0, 0, 1), new(1, 0, 1), new(1, 0, 0)]);
+        m.Faces.Add(new Face([0, 1, 2, 3], "dev_a", default));
+        return m;
+    }
+
+    [Fact]
+    public void A_lone_plane_offsets_into_a_closed_slab()
+    {
+        var m = Plane();
+        Assert.True(m.FaceNormal(0).Y > 0.99f);
+        var r = MeshOps.Offset(m, [0]);
+        r.Apply(m, 0.25f);
+        Assert.Single(r.CapFaces);
+        Assert.Equal(6, m.Faces.Count);
+        Assert.True(IsConsistentlyWound(m));
+        Assert.True(m.FaceNormal(r.CapFaces[0]).Y < -0.99f);
+        Assert.Equal(0.25f, m.Bounds().Max.Y, 5);
+    }
+
+    [Fact]
+    public void A_slab_offset_backwards_turns_round_so_it_stays_outward_facing()
+    {
+        var m = Plane();
+        var r = MeshOps.Offset(m, [0]);
+        r.Apply(m, -0.25f);
+        Assert.True(IsConsistentlyWound(m));
+        Assert.True(m.FaceNormal(0).Y < -0.99f); // the moved face is now the bottom
+        Assert.True(m.FaceNormal(r.CapFaces[0]).Y > 0.99f);
+        Assert.All(r.SideFaces, s => Assert.True(Vector3.Dot(m.FaceNormal(s), m.FaceCenter(s) - new Vector3(0.5f, -0.125f, 0.5f)) > 0));
+        r.Apply(m, 0.25f); // and back again
+        Assert.True(m.FaceNormal(0).Y > 0.99f);
+        Assert.True(IsConsistentlyWound(m));
+    }
+
+    [Fact]
+    public void Faces_joined_to_the_rest_of_the_mesh_get_no_cap()
+    {
+        var m = Box(Vector3.Zero, new Vector3(2));
+        Assert.Empty(MeshOps.Offset(m, [3]).CapFaces);
+    }
+
     [Fact]
     public void Apply_can_be_called_repeatedly_from_the_prepared_state()
     {
