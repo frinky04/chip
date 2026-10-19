@@ -92,6 +92,30 @@ public class MeshOpsCommandTests
     }
 
     [Fact]
+    public void Offset_previews_commits_as_one_step_and_esc_restores()
+    {
+        var ctx = WithBoxes(1);
+        SelectFaces(ctx, 1, 5);
+        Assert.True(ctx.Commands.Execute("mesh.offset"));
+        var tool = Assert.IsType<OffsetTool>(ctx.ActiveTool);
+        Assert.True(ctx.Interacting);
+        ctx.Commands.Execute("edit.cancel");
+        Assert.Equal(6, ctx.Doc.Meshes[0].Faces.Count);
+        Assert.Null(ctx.Session.UndoLabel);
+
+        ctx.Commands.Execute("mesh.offset");
+        tool.SetAmount(ctx, 0.125f);
+        tool.Commit(ctx);
+        Assert.Equal("select", ctx.ActiveTool!.Id);
+        Assert.Equal("Offset", ctx.Session.UndoLabel);
+        Assert.Equal(2.125f, ctx.Doc.Meshes[0].Bounds().Max.X, 4);
+        Assert.Equal(2.125f, ctx.Doc.Meshes[0].Bounds().Max.Z, 4);
+        Assert.Contains(ElementRef.Face(ctx.Doc.Meshes[0].Id, 1), ctx.Sel.Items); // the moved faces stay selected
+        ctx.Commands.Execute("edit.undo");
+        Assert.Equal(6, ctx.Doc.Meshes[0].Faces.Count);
+    }
+
+    [Fact]
     public void Merge_meshes_then_detach_and_extract()
     {
         var ctx = WithBoxes(2);

@@ -16,6 +16,7 @@ public sealed class MeshOpsFeature : IEditorFeature
 {
     EditorContext _ctx = null!;
     readonly InsetTool _inset = new();
+    readonly OffsetTool _offset = new();
 
     Selection Sel => _ctx.Sel;
     Document Doc => _ctx.Doc;
@@ -34,6 +35,7 @@ public sealed class MeshOpsFeature : IEditorFeature
 
         c.Add("mesh.inset", "Inset", () => ctx.SetTool(_inset.For(outset: false)), "Mesh", "I", () => Mode(SelectMode.Face), "2-inset", 0);
         c.Add("mesh.outset", "Outset", () => ctx.SetTool(_inset.For(outset: true)), "Mesh", "O", () => Mode(SelectMode.Face), "2-inset", 1);
+        c.Add("mesh.offset", "Offset faces", () => ctx.SetTool(_offset), "Mesh", "Shift+O", () => Mode(SelectMode.Face), "2-inset", 2);
 
         c.Add("mesh.collapse", "Collapse", Collapse, "Mesh", null,
             () => !Sel.IsEmpty && Sel.Mode != SelectMode.Object, "3-weld", 0);

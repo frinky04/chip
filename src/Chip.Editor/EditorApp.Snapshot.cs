@@ -13,7 +13,7 @@ namespace Chip.Editor;
 /// <summary>
 /// <c>Chip --shot [level.chip|-] out.png [state] [--run cmd.id,cmd.id]</c>: renders the whole editor UI from an invisible
 /// window into an offscreen buffer, after an optional preset <c>state</c> (empty|objects|faces|block|blockpreview|polygonpreview|
-/// backfaces|bevelpending|shortcuts|shortcuts-search|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale|hotspot-editor) and a
+/// backfaces|bevelpending|offsetpending|shortcuts|shortcuts-search|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale|hotspot-editor) and a
 /// comma-separated list of command ids. Every feature can prove its UI headlessly this way.
 /// </summary>
 public sealed partial class EditorApp
@@ -117,6 +117,16 @@ public sealed partial class EditorApp
                     if (wall.Positions[e.A].Y > top - 1e-4f && wall.Positions[e.B].Y > top - 1e-4f) ctx.Sel.Add(ElementRef.EdgeOf(wall.Id, e));
                 ctx.SetTool("bevel");
                 if (ctx.ActiveTool is Tools.BevelTool bevel) { bevel.Width = 0.125f; bevel.Segments = 3; bevel.Refresh(ctx); }
+                break;
+            }
+            case "offsetpending" when doc.Meshes.Count > 2: // a wall's upright faces pushed out 25 cm, waiting for Enter
+            {
+                ctx.SetMode(SelectMode.Face);
+                var wall = doc.Meshes[2];
+                for (int f = 0; f < wall.Faces.Count; f++)
+                    if (MathF.Abs(wall.FaceNormal(f).Y) < 0.1f) ctx.Sel.Add(ElementRef.Face(wall.Id, f));
+                ctx.Commands.Execute("mesh.offset");
+                (ctx.ActiveTool as Features.MeshEditing.OffsetTool)?.SetAmount(ctx, 0.25f);
                 break;
             }
             case "polygonpreview":
