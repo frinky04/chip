@@ -1,6 +1,7 @@
 # Dressing
 
-Status: phases 0 (tags) and 1 (engine, `bevel`, `sweep`) built; proxies, `repeat` and `scatter` are design. Name:
+Status: phases 0 (tags), 1 (engine, `bevel`, `sweep`) and 2 (`railing`, `stairs`, `repeat`, `scatter`, props, per-mesh
+overrides, bake) built. Name:
 **Dressing** (as in set dressing). Try it: Tools > Open dressing sample.
 
 You build the blockout. Dressing turns it into the level you ship, following rules written in a JSON file: trims along every
@@ -40,7 +41,8 @@ blockout and the level follows. Swap the rules file and the same blockout become
    dressed and blockout views.
 6. You click a baluster: the railing box is selected. Its inspector lists the rules that apply, with the railing's
    parameters as fields; you set this one's baluster spacing to 10 cm (stored on the mesh, not in the rules file).
-7. One corner looks wrong. You tag that face `skip:baseboard`, or Bake that wall and fix it by hand.
+7. One corner looks wrong. You tag that face `skip:baseboard`, switch the rule off for that mesh in the inspector, or Bake
+   that wall (Tools > Bake dressing) and fix it by hand.
 8. Ctrl+E exports the dressed level. Collision still comes from the blockout (a solid box for the railing, a ramp for the
    stairs), which is usually what you want.
 9. Next level: same style file, different blockout.
@@ -111,16 +113,30 @@ most 64 characters (`wall`, `trim-base`, `wall-bevel`). A face opts out of one r
 `skip:<rule id>`. Typed tags are normalised (`Wall Trim` becomes `wall-trim`); files with invalid tags fail to load with
 the mesh and the reason.
 
-### Vocabulary (v1)
+### Vocabulary
 
 | Kind | Stage | Targets | Key parameters | |
 |---|---|---|---|---|
 | `bevel` | shape | edges between two matching faces | `faces`, `edges` (convex/concave), `minDeg`, `width`, `segments` | built |
 | `sweep` | dress | edges of matching faces, chained across meshes | `faces`, `edges`, `onto`, `minDeg`, `profile` (`rect`, `round` + `sides`, `points`), `offset`, `material` | built |
-| `railing` | shape | meshes | `height`, `balusterEvery`, `postEvery`, `rail` profile, `baluster`/`post` prop or size | phase 2 |
-| `stairs` | shape | meshes | `stepHeight` (fits the nearest whole count to the box) | phase 2 |
-| `repeat` | dress | edge chains | `prop`, `every`, `start`, `align` | phase 2 |
-| `scatter` | dress | faces | `props`, `perM2`, `minGap`, `yawDeg`, `scale`, `seed`, `nearEdges` | phase 2 |
+| `railing` | shape | meshes by mesh tag | `meshes`, `balusterEvery`, `baluster`, `postEvery`, `post`, `rail` (profile), `bottomRail`, `material` | built |
+| `stairs` | shape | meshes by mesh tag | `meshes`, `stepHeight` (rounded to fit), `rise` (`auto` follows the ramp's slope, or `+x` `-x` `+z` `-z`), `material` | built |
+| `repeat` | dress | the edges a sweep would follow | `faces`, `edges`, `onto`, `minDeg`, `prop`, `every` (rounded so a whole number fits, centred), `offset` [out, along], `material` | built |
+| `scatter` | dress | matching faces | `faces`, `props`, `weights`, `perM2`, `minGap`, `scale` [min, max], `yawDeg` [min, max], `align` (`up`/`normal`), `offset`, `seed`, `material` | built |
+
+**Proxies** take whole meshes by mesh tag (`"meshes": { "tags": ["railing"] }`; tag in object mode with Ctrl+T) and replace
+them with what they build from the mesh's bounding box: the run is the longer horizontal side, up is Y. A railing fills the
+box's length and height (posts at both ends and every `postEvery`, handrail centred on the top, bottom rail, balusters
+between). Stairs fill the box, climbing toward the end where the mesh is highest, so a ramp turns into steps up the same
+slope. Export keeps the box or ramp as collision.
+
+**Props** are `{ "box": [w, h, d] }`, `{ "cylinder": [diameter, height], "sides": 12 }`, or a `.glb` / `.gltf` path relative
+to the rules file that names it (materials keep their glTF names, so name them after your textures; explicit UVs are kept).
+A prop stands on its origin: +Y up (along the surface it sits on), +X along the edge, +Z out from the face. Edited prop
+files reload; a missing one warns once (W610).
+
+**Scatter** seeds each face from its own corners (to the millimetre), the rule id and `seed`, so the same level always
+scatters the same way and editing one face never moves props on another. `minGap` applies within a face.
 
 The full, current parameter list with descriptions is the generated schema: `Chip --rules-schema` (Chip also writes
 `dressing-1.schema.json` beside rules files it creates or opens). Sweeps are textured world-aligned with the source face's
@@ -232,7 +248,9 @@ about 30 µs; a drag frame moving one wall about 1.5 ms.
 Built (phase 0):
 
 - `Face.Tags` and `PolyMesh.Tags`: an immutable, interned, sorted `TagSet` (`src/Chip.Core/Geometry/TagSet.cs`) with value
-  equality; `default` is empty. Phase 2 adds `PolyMesh.Dressing` (`Set` overrides, `Skip`).
+  equality; `default` is empty. `PolyMesh.Dressing` (`MeshDressing`, phase 2) holds per-rule overrides (JSON text per rule)
+  and switched-off rules (`*` for all); it is immutable with value equality, saved as the mesh's `dressing` object, and in
+  the change hash and undo comparison.
 - `Face.Derive(int[] verts)` copies material, mapping and tags. Every op that builds a face from a source face uses it, so
   the next surface property costs nothing. It doesn't copy explicit UVs or dominance: a bevel strip or extrude side isn't
   the dominant face. Pieces of the same face (clip, knife, connect) set those themselves.
@@ -254,8 +272,16 @@ Built (phase 1):
   changes and polls the rules files four times a second, so saving the JSON (by hand or by an agent) updates the viewport.
   Reloads say so in the status bar; rules with errors show there in red.
 - Renderer: `BeginFrame(..., scene)` draws solid faces from the dressed level when `ShowDressed`; wires, selection and
-  overlays stay on the blockout, so editing reads cleanly. Picking stays on the blockout in every mode for now (clicking a
-  trim selects nothing; phase 2 maps generated meshes back to their source for proxies).
+  overlays stay on the blockout, so editing reads cleanly. Picking stays on the blockout: clicking a railing hits its box,
+  which is what you edit (clicking a trim selects the wall behind or nothing).
+- Blockout view: meshes a proxy rule replaces get diagonal stripes tinted by kind (railing teal, stairs violet), and
+  hovering one names its rule.
+- Per-mesh controls (phase 2): with one mesh selected, the Dressing section lists every rule that takes it, with a switch
+  to turn the rule off for that mesh and its simple parameters as fields. A value set there overrides the rules file for
+  that mesh only (orange, with a reset); drags commit on release. Tools > Bake dressing (also a button in the section)
+  turns the selection's dressing into ordinary meshes in one undo step (`DressingBake`): a bevelled mesh takes its bevelled
+  shape, a proxy's build becomes a new mesh (the box stays as collision only, or goes if it didn't collide), added trims
+  and props become new meshes, and the source switches every rule off.
 - Export (GLB and OBJ) writes `EditorContext.ExportDocument()`: the dressed level when there are rules, even with the
   blockout view showing. The exporter is unchanged; collision stand-ins reuse `CollisionMode.Only` and the collision bake.
 - `` ` `` toggles dressed / blockout (View > Dressed view), and so do the "Dressed" header toggle (only shown for levels
@@ -283,7 +309,7 @@ blockout and rules-file edits redress, New rules file. Captures: `--shot - out.p
 |---|---|---|
 | **0. Tags** (built) | `TagSet`, `Face.Derive`, hash/serializer, Ctrl+T popup, Tags section, select by tag | Guard test passes; tags survive every op and undo; useful on its own for selection |
 | **1. Engine, bevel, sweep** (built) | `Dresser`, rules files with imports, `--rules-check`, schema, view toggle, render/export wiring, Dressing inspector, `bevel`, `sweep`, the sample | Baseboards and bevels follow wall edits; incremental equals fresh under random edits; a one-wall drag costs 1.5 ms on the stress level |
-| **2. Proxies and props** | `railing`, `stairs`, `repeat`, `scatter`, props, per-object overrides UI, Bake | Railing and stairs fixtures; scatter stable under unrelated edits |
+| **2. Proxies and props** (built) | `railing`, `stairs`, `repeat`, `scatter`, props, per-mesh overrides and switches, Bake, proxy stripes | Railing and stairs fixtures; scatter stable under unrelated edits; incremental equals fresh with every kind and changing overrides |
 | **Later** | Export instancing, height bands (chair rails), style library browser, more modifiers | |
 
 ## Known limits
@@ -295,6 +321,10 @@ blockout and rules-file edits redress, New rules file. Captures: `--shot - out.p
   are reported (W520) with their position.
 - Only closed meshes hide trim stretches; an open mesh (a single plane) never does.
 - Convex sweeps sit in the outside quadrant of the corner (a bead), not wrapped round it.
-- Picking ignores generated meshes (phase 2). Bake isn't built yet (phase 2); when it is, it's a snapshot that stops following
-  the blockout.
+- Bake is a snapshot: the baked meshes stop following the blockout (undo brings the rules back).
+- Scatter doesn't know what stands on a face: props can land under walls or platforms sitting on a big floor face. Tag the
+  open floor, or split the face. Props are merged into one mesh per source (no instancing in export yet).
+- Two railing boxes meeting at a corner each get an end post there.
+- Per-mesh overrides edit simple values (numbers, choices, on/off, text, pairs); selectors, profiles and props are edited in
+  the rules file.
 - Only one Shape rule per mesh, so a mesh can't be both bevelled and a proxy.

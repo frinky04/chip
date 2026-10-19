@@ -15,9 +15,10 @@ namespace Chip.Editor.Features.Dressing;
 public sealed class DressingSection(DressingFeature feature) : IInspectorSection
 {
     const int MaxProblems = 6;
+    readonly DressingOverrides _overrides = new();
 
     public string Id => "dressing";
-    public int Order => 880;
+    public int Order => 160; // right after Tags: what the rules select by, then what they do
     public bool Visible(EditorContext ctx) => ctx.Dressed() != null;
 
     public void Draw(EditorContext ctx)
@@ -41,6 +42,11 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
         {
             var touching = meshes.SelectMany(level.RulesFor).Select(t => t.Rule).Distinct().ToList();
             Line("Selection", touching.Count == 0 ? "no rules apply" : string.Join(", ", touching), Theme.TextDim, "Rules that change or add to the selected meshes");
+            if (ctx.Commands.Find("dressing.bake") is { Enabled: true })
+            {
+                if (ImGui.Button("Bake dressing", new Vector2(-1, 0))) ctx.Commands.Execute("dressing.bake");
+                Tip("Turn the selection's dressing into ordinary meshes you can edit by hand. They stop following the rules.");
+            }
         }
 
         // What each rule made.
@@ -49,6 +55,9 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
                     : $"{s.Outputs} mesh{(s.Outputs == 1 ? "" : "es")} from {s.Targets} {s.TargetNoun}{(s.Targets == 1 ? "" : s.TargetNoun == "mesh" ? "es" : "s")}",
                 Theme.TextDim, $"{s.Rule}: {s.Kind} ({s.Stage.ToString().ToLowerInvariant()}){(s.Enabled ? $", {s.Ms:0.0} ms" : "")}", dim: !s.Enabled);
         foreach (var id in level.Rules.Broken) Line(id, "not run: errors below", Theme.Error, null);
+
+        // One mesh selected: its per-mesh switches and overrides.
+        if (meshes.Count == 1 && ctx.Doc.Find(meshes.First()) is { } single) _overrides.Draw(ctx, level, single);
 
         // Problems: the selection's first, then the level's.
         var problems = level.Diagnostics

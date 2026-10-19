@@ -69,6 +69,15 @@ public sealed unsafe class Renderer : IDisposable
     readonly FrameCache<Overlay> _overlayCache = new();
     ElementRef? _overlayHover;
     bool _overlayNormals;
+    IReadOnlyList<(int SourceId, string Rule, string Kind)>? _overlayProxies;
+
+    /// <summary>Stripe tint for a proxy kind in the blockout view (unknown kinds get a neutral one).</summary>
+    static Vector4 ProxyTint(string kind) => kind switch
+    {
+        "railing" => Theme.Rgb(0x3EC6C0, 0.45f),
+        "stairs" => Theme.Rgb(0xA77BFF, 0.45f),
+        _ => Theme.Rgb(0xC8C8C8, 0.4f),
+    };
 
     /// <summary>Meshes re-uploaded by the last scene sync (diagnostics and tests of the dirty tracking).</summary>
     public int LastRebuildCount { get; private set; }
@@ -129,18 +138,21 @@ public sealed unsafe class Renderer : IDisposable
     /// Once per frame, before any pane renders: syncs mesh buffers with the document and builds the shared overlay.
     /// <paramref name="showNormals"/> adds short corner-normal lines for the selection (View > Show normals).
     /// </summary>
-    public void BeginFrame(Session session, ElementRef? hover, bool showNormals = false, IMeshSet? scene = null)
+    /// <param name="proxies">In the blockout view, meshes a dressing proxy rule replaces (striped, tinted by kind).</param>
+    public void BeginFrame(Session session, ElementRef? hover, bool showNormals = false, IMeshSet? scene = null,
+        IReadOnlyList<(int SourceId, string Rule, string Kind)>? proxies = null)
     {
         LastRebuildCount = 0;
         _scene = scene;
         if (!ReferenceEquals(session, _builtSession) || session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc) || !ReferenceEquals(scene, _builtScene))
             SyncScene(session, scene);
         _edgeMode = session.Sel.Mode == SelectMode.Edge;
-        if (_overlayCache.IsCurrent(session) && hover == _overlayHover && showNormals == _overlayNormals) return;
-        _overlay = BuildOverlay(session, hover, showNormals, _overlay);
+        if (_overlayCache.IsCurrent(session) && hover == _overlayHover && showNormals == _overlayNormals && ReferenceEquals(proxies, _overlayProxies)) return;
+        _overlay = BuildOverlay(session, hover, showNormals, proxies, _overlay);
         _overlayCache.Store(session, _overlay);
         _overlayHover = hover;
         _overlayNormals = showNormals;
+        _overlayProxies = proxies;
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _overlayVbo);
         _gl.BufferData<float>(BufferTargetARB.ArrayBuffer, CollectionsMarshal.AsSpan(_overlay.Data), BufferUsageARB.StreamDraw);
     }
@@ -459,7 +471,7 @@ public sealed unsafe class Renderer : IDisposable
         public int VertexCount => Data.Count / 7;
     }
 
-    static Overlay BuildOverlay(Session session, ElementRef? hover, bool showNormals, Overlay o)
+    static Overlay BuildOverlay(Session session, ElementRef? hover, bool showNormals, IReadOnlyList<(int SourceId, string Rule, string Kind)>? proxies, Overlay o)
     {
         o.Data.Clear(); o.Lines.Clear(); o.Points.Clear();
         var doc = session.Doc;
@@ -482,6 +494,13 @@ public sealed unsafe class Renderer : IDisposable
         }
         if (hover is { } h && sel.Mode == SelectMode.Face && doc.Find(h.Mesh) is { } hm && h.A < hm.Faces.Count)
             Tint(hm, h.A, HoverCol with { W = 0.18f });
+        if (proxies != null)
+            foreach (var (id, _, kind) in proxies)
+                if (doc.Find(id) is { Hidden: false } pm)
+                {
+                    var tint = ProxyTint(kind);
+                    for (int f = 0; f < pm.Faces.Count; f++) Tint(pm, f, tint with { W = -tint.W }); // negative alpha: striped
+                }
         o.TriCount = o.VertexCount;
 
         void Lines(IEnumerable<(Vector3, Vector3)> segs, Vector4 c, float width)

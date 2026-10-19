@@ -45,7 +45,7 @@ public class DressingFeatureTests : IDisposable
         Assert.NotNull(level);
         Assert.Equal(0, level!.ErrorCount);
         Assert.Equal(0, level.WarningCount);
-        Assert.Equal(["baseboard", "pillar-bevel", "pipe"], level.Stats.Select(s => s.Rule));
+        Assert.Equal(["baseboard", "pillar-bevel", "pipe", "railings", "stairs", "wall-lights", "rubble"], level.Stats.Select(s => s.Rule));
         Assert.All(level.Stats, s => Assert.True(s.Outputs > 0, s.Rule));
         Assert.Same(level, ctx.Dressed()); // nothing changed: the same result, no work
 
@@ -81,6 +81,39 @@ public class DressingFeatureTests : IDisposable
         var reloaded = ctx.Dressed()!;
         Assert.False(reloaded.Stats.First(s => s.Rule == "baseboard").Enabled);
         Assert.Contains("Reloaded", ctx.StatusMessage);
+    }
+
+    [Fact]
+    public void Bake_makes_editable_meshes_in_one_undo_step()
+    {
+        var ctx = Sample();
+        var rail = ctx.Doc.Meshes.First(m => m.Name == "rail-north");
+        ctx.SetMode(SelectMode.Object);
+        ctx.Sel.Add(ElementRef.Object(rail.Id));
+        Assert.True(ctx.Commands.Find("dressing.bake")!.Enabled);
+        int before = ctx.Doc.Meshes.Count;
+        Assert.True(ctx.Commands.Execute("dressing.bake"));
+        Assert.Equal(before + 1, ctx.Doc.Meshes.Count);
+        Assert.Equal(Core.Geometry.CollisionMode.Only, ctx.Doc.Find(rail.Id)!.Collision);
+        Assert.Equal("Bake dressing", ctx.Session.UndoLabel);
+        var level = ctx.Dressed()!;
+        Assert.DoesNotContain(level.Proxies, p => p.SourceId == rail.Id); // no longer a proxy
+        ctx.Commands.Execute("edit.undo");
+        Assert.Equal(before, ctx.Doc.Meshes.Count);
+        Assert.Contains(ctx.Dressed()!.Proxies, p => p.SourceId == rail.Id);
+    }
+
+    [Fact]
+    public void Per_mesh_overrides_redress_just_that_mesh()
+    {
+        var ctx = Sample();
+        var rail = ctx.Doc.Meshes.First(m => m.Name == "rail-north");
+        int Faces() => ctx.Dressed()!.Meshes.Where(m => ctx.Dressed()!.Origin(m).SourceId == rail.Id).Sum(m => m.Faces.Count);
+        int before = Faces();
+        ctx.Session.Do("Override", [rail.Id], () => rail.Dressing = rail.Dressing.WithParam("railings", "balusterEvery", System.Text.Json.Nodes.JsonValue.Create(0.4)));
+        Assert.True(Faces() < before);
+        ctx.Commands.Execute("edit.undo");
+        Assert.Equal(before, Faces());
     }
 
     [Fact]

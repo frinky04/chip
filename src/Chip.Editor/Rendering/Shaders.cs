@@ -119,12 +119,20 @@ static class Shaders
         }
         """;
 
+    // A negative alpha asks for diagonal screen-space stripes (dressing proxies in the blockout view).
     public const string ColorFs = """
         #version 330 core
         in vec4 vCol;
         uniform float uAlpha;
         out vec4 frag;
-        void main() { frag = vec4(vCol.rgb, vCol.a * uAlpha); }
+        void main() {
+            float a = vCol.a;
+            if (a < 0.0) {
+                if (mod(gl_FragCoord.x + gl_FragCoord.y, 14.0) > 6.0) discard;
+                a = -a;
+            }
+            frag = vec4(vCol.rgb, a * uAlpha);
+        }
         """;
 
     // A quad in any plane (spanned by uU, uV around uCenter). Grid coordinates are measured from uOrigin along uU/uV.

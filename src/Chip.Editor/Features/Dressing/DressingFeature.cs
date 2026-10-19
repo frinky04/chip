@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Chip.Core.Dressing;
 using Chip.Core.Scene;
 using Chip.Editor.Framework;
+using ImGuiNET;
 
 namespace Chip.Editor.Features.Dressing;
 
@@ -36,7 +37,39 @@ public sealed class DressingFeature : IEditorFeature
             () => ctx.Session.Path != null && Current() == null, "8-dressing", 0);
         c.Add("dressing.open", "Open dressing rules", Open, "Tools", null, () => Current() != null, "8-dressing", 1);
         c.Add("dressing.sample", "Open dressing sample", OpenSample, "Tools", null, group: "8-dressing", order: 2);
+        c.Add("dressing.bake", "Bake dressing", Bake, "Tools", null,
+            () => Current() is { } level && DressingBake.CanBake(level, ctx.Sel.MeshIds()), "8-dressing", 3);
         ctx.AddSection(new DressingSection(this));
+        ctx.AddPanel(ProxyHoverTip);
+    }
+
+    /// <summary>
+    /// Turns the selected meshes' dressing into ordinary editable meshes (one undo step); the meshes stop following the
+    /// rules. For hand work on one spot without leaving the rules behind everywhere else.
+    /// </summary>
+    void Bake()
+    {
+        if (Current() is not { } level) return;
+        var ids = _ctx.Sel.MeshIds();
+        DressingBake.Result? result = null;
+        _ctx.Session.Do("Bake dressing", () => result = DressingBake.Bake(_ctx.Doc, level, ids));
+        if (result == null || result.Baked.Count == 0) return;
+        _ctx.SetMode(SelectMode.Object);
+        _ctx.Sel.Clear();
+        foreach (var id in result.Added.Concat(result.Baked.Except(result.Removed))) _ctx.Sel.Add(ElementRef.Object(id));
+        _ctx.Status($"Baked {result.Baked.Count} mesh{(result.Baked.Count == 1 ? "" : "es")} into {result.Added.Count} new: they no longer follow the rules (Ctrl+Z to undo)");
+    }
+
+    /// <summary>In the blockout view, hovering a proxy's box names the rule that replaces it.</summary>
+    void ProxyHoverTip(EditorContext ctx)
+    {
+        if (ctx.ShowDressed || !ctx.ViewportHovered || ctx.Hover is not { } hover || Current() is not { } level) return;
+        foreach (var (id, rule, kind) in level.Proxies)
+            if (id == hover.Mesh)
+            {
+                ImGui.SetTooltip($"Becomes a {kind} (rule \"{rule}\"). Press ` to see it dressed.");
+                return;
+            }
     }
 
     /// <summary>The dressed level, or null when the level has no rules file. Cheap when nothing changed.</summary>

@@ -1,6 +1,7 @@
 using System.Numerics;
 using Chip.Core.Dressing;
 using Chip.Core.Geometry;
+using Chip.Core.Geometry.Primitives;
 using Chip.Core.IO;
 using Chip.Core.Scene;
 using Chip.Core.Texturing;
@@ -9,8 +10,9 @@ namespace Chip.Editor.Features.Dressing;
 
 /// <summary>
 /// A small tagged level with a rules file, to try dressing (Tools > Open dressing sample) and for captures: an 8 × 6 m room
-/// of separate wall boxes overlapping at the corners, a doorway, a pillar and a plinth. Rules: a baseboard round every wall
-/// and the pillar, bevelled pillar corners, and a pipe round the foot of the plinth's raised block.
+/// of separate wall boxes overlapping at the corners, a doorway, a pillar, a plinth, and a platform with a ramp and two
+/// railing boxes. Rules: baseboards, bevelled pillar corners, a pipe round the plinth, railings, stairs, wall lights and
+/// floor rubble: every kind.
 /// </summary>
 public static class DressingSample
 {
@@ -41,6 +43,36 @@ public static class DressingSample
               "edges": "concave",
               "profile": { "round": 0.08 },
               "material": "dev_measurecrate02"
+            },
+            "railings": {
+              "kind": "railing",
+              "note": "Boxes tagged railing (object mode, Ctrl+T) become railings their size. Select one to override it.",
+              "meshes": { "tags": ["railing"] },
+              "material": "$trim"
+            },
+            "stairs": {
+              "kind": "stairs",
+              "note": "Ramps tagged ramp become stairs; collision stays the smooth ramp.",
+              "meshes": { "tags": ["ramp"] },
+              "stepHeight": 0.2
+            },
+            "wall-lights": {
+              "kind": "repeat",
+              "faces": { "tags": ["wall"], "notTags": ["platform"] },
+              "prop": { "box": [0.3, 0.12, 0.08] },
+              "every": 2.5,
+              "offset": [0.04, 2.1],
+              "material": "$trim"
+            },
+            "rubble": {
+              "kind": "scatter",
+              "faces": { "tags": ["floor"] },
+              "props": [{ "box": [0.25, 0.15, 0.2] }, { "box": [0.12, 0.1, 0.12] }, { "cylinder": [0.18, 0.3] }],
+              "weights": [2, 3, 1],
+              "perM2": 0.25,
+              "minGap": 0.5,
+              "scale": [0.7, 1.4],
+              "material": "$trim"
             }
           }
         }
@@ -85,7 +117,18 @@ public static class DressingSample
         foreach (var v in lift) plinth.Positions[v] += new Vector3(0, 0.75f, 0);
         MeshOps.AlignToGrid(plinth, Enumerable.Range(0, plinth.Faces.Count));
 
+        // A platform in the south-east corner, a ramp up to it (stairs) and two railing boxes along its open edges.
+        var platform = Add("platform", new Vector3(5.5f, 0, t), new Vector3(8 - t, 1, 2.25f), "dev_measurecrate02");
+        var rampFrame = PrimitiveFrame.FromBox(new Vector3(4, 0, t), new Vector3(5.5f, 1, 1.25f), Vector3.UnitY, Vector3.UnitX);
+        var ramp = doc.Add(Primitive.Build(PrimitiveShape.Wedge, new PrimitiveOptions(), rampFrame, "dev_measurecrate02", TextureMapping.Default));
+        ramp.Name = "ramp";
+        ramp.Tags = TagSet.Of("ramp");
+        Add("rail-north", new Vector3(5.5f, 1, 2.15f), new Vector3(8 - t, 2, 2.25f), "dev_measurewall01a").Tags = TagSet.Of("railing");
+        Add("rail-west", new Vector3(5.5f, 1, 1.25f), new Vector3(5.6f, 2, 2.15f), "dev_measurewall01a").Tags = TagSet.Of("railing");
+
         var centre = new Vector3(4, 1.5f, 3);
+        for (int f = 0; f < platform.Faces.Count; f++)
+            if (MathF.Abs(platform.FaceNormal(f).Y) < 0.1f) platform.Faces[f].Tags = TagSet.Of("platform", "wall");
         foreach (var w in walls)
             for (int f = 0; f < w.Faces.Count; f++)
                 if (MathF.Abs(w.FaceNormal(f).Y) < 0.1f && Vector3.Dot(w.FaceNormal(f), centre - w.FaceCenter(f)) > 0)
