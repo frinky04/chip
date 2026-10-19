@@ -84,10 +84,12 @@ public sealed class PolyMesh
     public HashSet<Edge> SoftEdges = new();
     /// <summary>Tags on the whole mesh, for dressing rules that work per object (a box tagged <c>railing</c> becomes a railing).</summary>
     public TagSet Tags;
+    /// <summary>This mesh's dressing overrides and rules switched off for it (immutable; replace to edit).</summary>
+    public MeshDressing Dressing = MeshDressing.Empty;
 
     public PolyMesh Clone() => new()
     {
-        Id = Id, Name = Name, Hidden = Hidden, Locked = Locked, Collision = Collision, Tags = Tags,
+        Id = Id, Name = Name, Hidden = Hidden, Locked = Locked, Collision = Collision, Tags = Tags, Dressing = Dressing,
         Positions = new List<Vector3>(Positions),
         Faces = Faces.Select(f => f.Clone()).ToList(),
         SoftEdges = new HashSet<Edge>(SoftEdges),

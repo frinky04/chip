@@ -19,7 +19,8 @@ public abstract class RuleKind
     public abstract IReadOnlyList<ParamSpec> Params { get; }
 
     /// <summary>Every kind, in the order the schema and docs list them.</summary>
-    public static IReadOnlyList<RuleKind> All { get; } = [new BevelKind(), new SweepKind()];
+    public static IReadOnlyList<RuleKind> All { get; } =
+        [new BevelKind(), new RailingKind(), new StairsKind(), new SweepKind(), new RepeatKind(), new ScatterKind()];
 
     public static RuleKind? Find(string name) => All.FirstOrDefault(k => k.Name == name);
 
@@ -37,10 +38,16 @@ public sealed class Rule
 {
     readonly Dictionary<string, object?> _values;
 
-    internal Rule(string id, RuleKind kind, bool enabled, string? note, SourcePos pos, Dictionary<string, object?> values, ulong fingerprint)
+    internal Rule(string id, RuleKind kind, bool enabled, string? note, SourcePos pos, Dictionary<string, object?> values, ulong fingerprint, JObject def)
     {
-        Id = id; Kind = kind; Enabled = enabled; Note = note; Pos = pos; _values = values; Fingerprint = fingerprint;
+        Id = id; Kind = kind; Enabled = enabled; Note = note; Pos = pos; _values = values; Fingerprint = fingerprint; Def = def;
     }
+
+    /// <summary>The rule as written, imports merged and variables substituted: what per-mesh overrides are laid over.</summary>
+    internal JObject Def { get; }
+
+    /// <summary>Whether <paramref name="name"/> was written in the rule (rather than defaulted).</summary>
+    public bool IsSet(string name) => Def.Has(name);
 
     public string Id { get; }
     public RuleKind Kind { get; }
@@ -73,10 +80,14 @@ public sealed class RuleSet
 
     public static readonly RuleSet Empty = new(null, null, [], [], [], [], 0);
 
-    RuleSet(string? path, string? name, List<Rule> rules, List<string> broken, List<Diagnostic> diagnostics, List<string> files, int imports)
+    RuleSet(string? path, string? name, List<Rule> rules, List<string> broken, List<Diagnostic> diagnostics, List<string> files, int imports,
+        Dictionary<string, JNode>? vars = null)
     {
         Path = path; Name = name; Rules = rules; Broken = broken; Diagnostics = diagnostics; Files = files; ImportCount = imports;
+        _vars = vars ?? new();
     }
+
+    readonly Dictionary<string, JNode> _vars;
 
     public string? Path { get; }
     public string? Name { get; }
@@ -108,7 +119,7 @@ public sealed class RuleSet
                 if (rule != null && diags.Skip(before).All(d => !d.IsError)) rules.Add(rule);
                 else broken.Add(id);
             }
-        return new RuleSet(path, name, rules, broken, diags, read, Math.Max(0, read.Count - 1));
+        return new RuleSet(path, name, rules, broken, diags, read, Math.Max(0, read.Count - 1), layer?.Vars);
     }
 
     sealed class Layer
@@ -257,12 +268,41 @@ public sealed class RuleSet
                 diags.Add(new(Severity.Error, "E204", $"{kind.Name} needs \"{spec.Name}\": {spec.Description}", Example(spec), obj.Pos, path, Rule: id));
             else values[spec.Name] = spec.Default;
         }
-        return new Rule(id, kind, enabled, note, obj.Pos, values, Hash(Canonical(obj)));
+        return new Rule(id, kind, enabled, note, obj.Pos, values, Hash(Canonical(obj)), obj);
+    }
+
+    /// <summary>
+    /// <paramref name="rule"/> with one mesh's overriding parameters (<see cref="MeshDressing.Set"/>) laid over it. Problems
+    /// in the overrides come back in <paramref name="problems"/> tagged with the mesh, and the plain rule is returned.
+    /// </summary>
+    public Rule WithOverrides(Rule rule, string overridesJson, int meshId, string meshName, List<Diagnostic> problems)
+    {
+        string where = $"\"{meshName}\" overrides";
+        int before = problems.Count;
+        var node = JNode.Parse(overridesJson, where, out var error);
+        if (node is not JObject patch)
+        {
+            problems.Add(new(Severity.Error, "E205", $"{where} for {rule.Id} aren't a JSON object{(error is { } e ? $": {e.Message}" : "")}",
+                "reset this mesh's overrides in the inspector", MeshId: meshId, Rule: rule.Id));
+            return rule;
+        }
+        if (patch.Has("kind"))
+        {
+            problems.Add(new(Severity.Error, "E205", $"{where} can't change the kind of {rule.Id}", "remove \"kind\" from the overrides",
+                MeshId: meshId, Rule: rule.Id));
+            return rule;
+        }
+        var bound = Bind(rule.Id, rule.Def.MergedWith(patch), _vars, problems);
+        for (int i = before; i < problems.Count; i++) problems[i] = problems[i] with { MeshId = meshId };
+        return bound != null && problems.Skip(before).All(d => !d.IsError) ? bound : rule;
     }
 
     static string? Example(ParamSpec spec) => spec.Type switch
     {
         ParamType.Faces => $"add \"{spec.Name}\": {{ \"tags\": [\"wall\"] }}",
+        ParamType.Meshes => $"add \"{spec.Name}\": {{ \"tags\": [\"railing\"] }} and tag the meshes in object mode (Ctrl+T)",
+        ParamType.Prop => $"add \"{spec.Name}\": {{ \"box\": [0.1, 1, 0.1] }} or \"props/thing.glb\"",
+        ParamType.Props => $"add \"{spec.Name}\": [{{ \"box\": [0.3, 0.2, 0.3] }}, \"props/rubble.glb\"]",
         _ => null,
     };
 

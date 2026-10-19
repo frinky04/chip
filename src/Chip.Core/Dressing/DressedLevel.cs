@@ -22,7 +22,11 @@ public sealed class Blockout(Session session) : IMeshSet
     public int Revision(PolyMesh mesh) => session.MeshRevision(mesh);
 }
 
-public enum DressRole { Passthrough, Modified, Added }
+/// <summary>
+/// Passthrough: the blockout mesh as is. Modified: a changed copy replaces it (bevel). Proxy: something built from it
+/// replaces it (railing, stairs). Added: extra geometry a dress rule made from it.
+/// </summary>
+public enum DressRole { Passthrough, Modified, Proxy, Added }
 
 /// <summary>Which blockout mesh an output came from, and the rule that made it (null for an unchanged blockout mesh).</summary>
 public readonly record struct MeshOrigin(int SourceId, string? Rule, DressRole Role);
@@ -69,6 +73,28 @@ public sealed class DressedLevel : IMeshSet
             .Select(i => (i.Origin.Rule!, i.Origin.Role)).Distinct()
             .OrderBy(r => Rules.Rules.ToList().FindIndex(x => x.Id == r.Item1)).ToList();
 
+    /// <summary>Blockout meshes a proxy rule replaced, with the rule and its kind (the blockout view marks them).</summary>
+    public IReadOnlyList<(int SourceId, string Rule, string Kind)> Proxies =>
+        _proxies ??= _info.Values.Where(i => i.Origin.Role == DressRole.Proxy)
+            .Select(i => (i.Origin.SourceId, i.Origin.Rule!, Rules.Rules.First(r => r.Id == i.Origin.Rule).Kind.Name)).ToList();
+    List<(int, string, string)>? _proxies;
+
+    /// <summary>
+    /// The enabled rules whose selector takes <paramref name="mesh"/> (its faces, or the mesh for proxies), with whether the
+    /// mesh switched each off. For the inspector: what can be overridden here. Computed on demand.
+    /// </summary>
+    public IReadOnlyList<(Rule Rule, bool Skipped)> Applicable(PolyMesh mesh)
+    {
+        var result = new List<(Rule, bool)>();
+        foreach (var rule in Rules.Rules.Where(r => r.Enabled))
+        {
+            bool takes = rule.Find<MeshSelector>("meshes") is { } ms ? ms.Matches(mesh)
+                : rule.Find<FaceSelector>("faces") is { } fs && Enumerable.Range(0, mesh.Faces.Count).Any(f => fs.Matches(mesh, f, mesh.FaceNormal(f)));
+            if (takes) result.Add((rule, mesh.Dressing.Skips(rule.Id)));
+        }
+        return result;
+    }
+
     /// <summary>A stable hash of everything dressing generated: equal across runs and machines for the same level and rules.</summary>
     public string ContentHash => _contentHash ??= ComputeContentHash();
 
@@ -112,7 +138,7 @@ public sealed class DressedLevel : IMeshSet
             copy.Collision = CollisionMode.None;
             copy.Locked = false;
             doc.Meshes.Add(copy);
-            if (o.Role == DressRole.Modified && source != null && Collides(source))
+            if (o.Role is DressRole.Modified or DressRole.Proxy && source != null && Collides(source))
             {
                 var standIn = source.Clone();
                 standIn.Id = doc.NextId++;

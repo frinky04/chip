@@ -30,17 +30,33 @@ public sealed class Dresser(IDressingFiles files)
     readonly Dictionary<(string Rule, int Mesh), OutputJob> _outputs = new();
     readonly Dictionary<int, (int Revision, Vector3 Min, Vector3 Max)> _bounds = new();
     (ulong Key, List<string> Tags) _tagSummary = (0, []);
+    readonly PropLibrary _props = new(files);
+    long _propStamp;
+    /// <summary>Rules with one mesh's overrides laid over them, by (rule, rule fingerprint, override JSON).</summary>
+    readonly Dictionary<(string Rule, ulong Fingerprint, string Json), (Rule Rule, List<Diagnostic> Problems)> _overridden = new();
 
     // Jobs keep their problem with their result, so a cached job keeps reporting it until its inputs change.
     sealed record ShapeJob(ulong Key, PolyMesh? Result, int Matched, int Edges, Diagnostic? Problem, int Revision);
     sealed record SegmentJob(ulong Key, List<SweepKind.Segment> Segments, int Matched, ulong Hash, Diagnostic? Problem);
-    sealed record OutputJob(ulong Key, PolyMesh? Mesh, int Revision, Diagnostic? Problem);
+    sealed record OutputJob(ulong Key, PolyMesh? Mesh, int Revision, Diagnostic? Problem)
+    {
+        /// <summary>Scatter: how many faces matched (for stats and the zero-match warning).</summary>
+        public int Faces { get; init; }
+    }
 
     /// <summary>The rules last loaded.</summary>
     public RuleSet Rules => _rules;
 
-    /// <summary>Whether <see cref="Dress"/> would load different rules: another path, or a rules file changed on disk.</summary>
-    public bool RulesChanged(string? rulesPath) => rulesPath != _rulesPath || StampsChanged();
+    /// <summary>Whether <see cref="Dress"/> would load different rules or props: another path, or a rules or prop file changed.</summary>
+    public bool RulesChanged(string? rulesPath) => rulesPath != _rulesPath || StampsChanged() || PropStamp() != _propStamp;
+
+    /// <summary>Every prop file the rules name, stamped (an edited .glb re-dresses).</summary>
+    long PropStamp() => _props.Stamp(_rules.Rules.SelectMany(r => r.Values.Values).SelectMany(v => v switch
+    {
+        PropSpec p => [p],
+        PropSpec[] ps => ps,
+        _ => Array.Empty<PropSpec>(),
+    }));
 
     /// <summary>How many jobs the last <see cref="Dress"/> ran (rather than reused). For tests and the frame benchmark.</summary>
     public int LastRebuilds { get; private set; }
@@ -54,11 +70,12 @@ public sealed class Dresser(IDressingFiles files)
     public DressedLevel Dress(Document doc, string? rulesPath, Func<PolyMesh, int>? revision = null, bool checkFiles = true)
     {
         if (rulesPath != _rulesPath || (checkFiles && StampsChanged())) Reload(rulesPath);
+        if (checkFiles || _last == null) _propStamp = PropStamp();
         Func<PolyMesh, int> rev = revision ?? (m => unchecked((int)MeshHash.Of(m)));
         LastRebuilds = 0;
 
-        // Nothing changed since the last pass (same rules, same mesh objects at the same revisions): same result.
-        ulong state = Key(Key(1, (ulong)RuntimeHelpers.GetHashCode(_rules)), (ulong)RuntimeHelpers.GetHashCode(doc));
+        // Nothing changed since the last pass (same rules and props, same mesh objects at the same revisions): same result.
+        ulong state = Key(Key(Key(1, (ulong)RuntimeHelpers.GetHashCode(_rules)), (ulong)RuntimeHelpers.GetHashCode(doc)), (ulong)_propStamp);
         foreach (var m in doc.Meshes)
             state = Key(Key(state, ((ulong)(uint)m.Id << 32) | (uint)rev(m)),
                 ((ulong)(uint)RuntimeHelpers.GetHashCode(m) << 2) | (m.Hidden ? 1UL : 0) | ((ulong)m.Collision << 1));
@@ -76,8 +93,9 @@ public sealed class Dresser(IDressingFiles files)
             }
             switch (rule.Kind)
             {
-                case BevelKind: RunBevel(rule, run, clock); break;
-                case SweepKind: RunSweep(rule, run, clock); break;
+                case BevelKind or ProxyKind: RunShape(rule, run, clock); break;
+                case SweepKind or RepeatKind: RunEdges(rule, run, clock); break;
+                case ScatterKind: RunScatter(rule, run, clock); break;
             }
         }
         foreach (var id in run.Conflicts) run.Replaced.Remove(id);
@@ -89,7 +107,7 @@ public sealed class Dresser(IDressingFiles files)
             if (run.Replaced.TryGetValue(m.Id, out var r))
             {
                 meshes.Add(r.Mesh);
-                info[r.Mesh] = (new MeshOrigin(m.Id, r.Rule, DressRole.Modified), r.Revision);
+                info[r.Mesh] = (new MeshOrigin(m.Id, r.Rule, r.Role), r.Revision);
             }
             else
             {
@@ -118,7 +136,7 @@ public sealed class Dresser(IDressingFiles files)
         public readonly Dictionary<int, int> Revisions = live.ToDictionary(m => m.Id, rev);
         public readonly List<Diagnostic> Diagnostics = new();
         public readonly List<RuleStats> Stats = new();
-        public readonly Dictionary<int, (PolyMesh Mesh, string Rule, int Revision)> Replaced = new();
+        public readonly Dictionary<int, (PolyMesh Mesh, string Rule, int Revision, DressRole Role)> Replaced = new();
         public readonly Dictionary<int, string> ClaimedBy = new();
         public readonly HashSet<int> Conflicts = new();
         public readonly List<(PolyMesh Mesh, string Rule, int Source, int Revision)> Added = new();
@@ -189,23 +207,60 @@ public sealed class Dresser(IDressingFiles files)
     /// <summary>Meshes dressing reads: visible and rendered (collision-only meshes are neither dressed nor stood on).</summary>
     static bool Dressable(PolyMesh m) => !m.Hidden && m.Collision is not (CollisionMode.Only or CollisionMode.ConvexOnly) && m.Faces.Count > 0;
 
-    void RunBevel(Rule rule, Run run, Stopwatch clock)
+    /// <summary>
+    /// <paramref name="rule"/> as it applies to <paramref name="m"/>: with the mesh's overrides laid over it (cached), and
+    /// any problems in those overrides added to the pass. Null when the mesh switched the rule off.
+    /// </summary>
+    Rule? Effective(Rule rule, PolyMesh m, Run run)
+    {
+        if (m.Dressing.Skips(rule.Id)) return null;
+        if (m.Dressing.OverridesFor(rule.Id) is not { } json) return rule;
+        var key = (rule.Id, rule.Fingerprint, json);
+        (Rule Rule, List<Diagnostic> Problems) entry;
+        lock (_overridden)
+            if (!_overridden.TryGetValue(key, out entry))
+            {
+                var problems = new List<Diagnostic>();
+                entry = _overridden[key] = (_rules.WithOverrides(rule, json, m.Id, m.Name, problems), problems);
+            }
+        lock (run.Diagnostics) run.Diagnostics.AddRange(entry.Problems.Select(p => p with { MeshId = m.Id }));
+        return entry.Rule;
+    }
+
+    /// <summary>Shape rules (bevel, proxies): each mesh either keeps its blockout form or is replaced by what the rule builds.</summary>
+    void RunShape(Rule rule, Run run, Stopwatch clock)
     {
         var live = run.Live;
         var jobs = new ShapeJob[live.Count];
+        var effective = new Rule?[live.Count];
         var dirty = new List<int>();
         for (int i = 0; i < live.Count; i++)
         {
-            ulong key = Key(rule.Fingerprint, (ulong)run.Revisions[live[i].Id]);
+            if ((effective[i] = Effective(rule, live[i], run)) is not { } eff) { jobs[i] = new ShapeJob(0, null, 0, 0, null, 0); continue; }
+            ulong key = Key(eff.Fingerprint, (ulong)run.Revisions[live[i].Id]);
             if (_shape.TryGetValue((rule.Id, live[i].Id), out var job) && job.Key == key) jobs[i] = job;
             else { dirty.Add(i); jobs[i] = new ShapeJob(key, null, 0, 0, null, 0); }
         }
         Parallel.ForEach(dirty, i =>
         {
             var m = live[i];
+            var eff = effective[i]!;
             try
             {
-                var (result, matched, edges, problem) = BevelKind.Apply(m, rule);
+                if (rule.Kind is ProxyKind proxy)
+                {
+                    if (!eff.Get<MeshSelector>("meshes").Matches(m)) return;
+                    var (built, why) = proxy.Build(m, eff);
+                    if (built != null) Generated(built, rule.Id, m.Id);
+                    jobs[i] = jobs[i] with
+                    {
+                        Result = built, Matched = 1, Edges = 1,
+                        Problem = why == null ? null : new Diagnostic(Severity.Warning, "W320", $"{rule.Id}: {why}; left as a box",
+                            "make the box bigger, or remove its tag", MeshId: m.Id, Rule: rule.Id),
+                    };
+                    return;
+                }
+                var (result, matched, edges, problem) = BevelKind.Apply(m, eff);
                 if (result != null) Generated(result, rule.Id, m.Id);
                 jobs[i] = jobs[i] with { Result = result, Matched = matched, Edges = edges, Problem = problem };
             }
@@ -228,33 +283,37 @@ public sealed class Dresser(IDressingFiles files)
             {
                 if (run.Conflicts.Add(id))
                     run.Diagnostics.Add(new Diagnostic(Severity.Error, "E330", $"rules \"{other}\" and \"{rule.Id}\" both reshape \"{live[i].Name}\"; neither applies",
-                        $"a mesh takes one shape rule: narrow one rule's faces, or tag the faces \"{rule.SkipTag}\"", MeshId: id, Rule: rule.Id));
+                        $"a mesh takes one shape rule: narrow one rule's selector, or switch one off for this mesh in the inspector", MeshId: id, Rule: rule.Id));
                 continue;
             }
             run.ClaimedBy[id] = rule.Id;
-            run.Replaced[id] = (job.Result, rule.Id, job.Revision);
+            run.Replaced[id] = (job.Result, rule.Id, job.Revision, rule.Kind is ProxyKind ? DressRole.Proxy : DressRole.Modified);
         }
         if (targets == 0 && skipped == 0)
-            run.Diagnostics.Add(NothingMatched(rule, run, matchedFaces == 0 ? null :
+            run.Diagnostics.Add(rule.Kind is ProxyKind ? NoMeshMatched(rule, run) : NothingMatched(rule, run, matchedFaces == 0 ? null :
                 $"{matchedFaces} faces match, but no edge between two of them is {rule.Text("edges")} at {rule.Number("minDeg"):0}° or more"));
         run.Stats.Add(new RuleStats(rule.Id, rule.Kind.Name, Stage.Shape, true, targets, "mesh", outputs, skipped, clock.Elapsed.TotalMilliseconds));
     }
 
-    void RunSweep(Rule rule, Run run, Stopwatch clock)
+    /// <summary>Edge rules (sweep, repeat): segments per mesh from the edges they follow, then a mesh built along them.</summary>
+    void RunEdges(Rule rule, Run run, Stopwatch clock)
     {
         var live = run.Live;
         bool contact = rule.Text("edges") == "contact";
+        bool sweep = rule.Kind is SweepKind;
         if (contact && !run.NeighboursCurrent)
         {
             _neighbours.Update(run, Bounds);
             run.NeighboursCurrent = true;
         }
         var segs = new SegmentJob[live.Count];
+        var effective = new Rule?[live.Count];
         var dirty = new List<int>();
         for (int i = 0; i < live.Count; i++)
         {
             var m = live[i];
-            ulong key = Key(rule.Fingerprint, (ulong)run.Revisions[m.Id]);
+            if ((effective[i] = Effective(rule, m, run)) is not { } eff) { segs[i] = new SegmentJob(0, [], 0, 0, null); continue; }
+            ulong key = Key(eff.Fingerprint, (ulong)run.Revisions[m.Id]);
             if (contact)
                 foreach (var n in _neighbours.Of(m.Id)) key = Key(key, ((ulong)(uint)n << 32) | (uint)run.Revisions[n]);
             if (_segments.TryGetValue((rule.Id, m.Id), out var job) && job.Key == key) segs[i] = job;
@@ -265,7 +324,7 @@ public sealed class Dresser(IDressingFiles files)
             try
             {
                 var near = contact ? _neighbours.Of(live[i].Id).Select(id => run.ById[id]).ToList() : [live[i]];
-                var (list, matched) = SweepKind.Segments(live[i], rule, near);
+                var (list, matched) = SweepKind.Segments(live[i], effective[i]!, near);
                 segs[i] = segs[i] with { Segments = list, Matched = matched, Hash = HashSegments(list) };
             }
             catch (Exception e) { segs[i] = segs[i] with { Problem = Failed(rule, live[i], e) }; }
@@ -273,14 +332,19 @@ public sealed class Dresser(IDressingFiles files)
         foreach (var i in dirty) _segments[(rule.Id, live[i].Id)] = segs[i];
         LastRebuilds += dirty.Count;
 
-        // Join segment ends across meshes (incrementally: only near segments that changed), then rebuild a mesh's sweep
-        // only if its segments or their joints changed.
-        if (!_joins.TryGetValue(rule.Id, out var join) || join.Fingerprint != rule.Fingerprint) _joins[rule.Id] = join = new JoinIndex(rule.Fingerprint);
-        var changes = new Dictionary<int, List<SweepKind.Segment>>();
-        for (int i = 0; i < live.Count; i++)
-            if (!join.Holds(live[i].Id, segs[i].Segments)) changes[live[i].Id] = segs[i].Segments;
-        foreach (var id in join.Meshes) if (!run.ById.ContainsKey(id)) changes[id] = [];
-        join.Update(changes);
+        // Sweeps join segment ends across meshes (incrementally: only near segments that changed), then rebuild a mesh's
+        // sweep only if its segments or their joints changed. Repeats don't join; they rebuild when segments or props change.
+        JoinIndex? join = null;
+        if (sweep)
+        {
+            if (!_joins.TryGetValue(rule.Id, out join) || join.Fingerprint != rule.Fingerprint) _joins[rule.Id] = join = new JoinIndex(rule.Fingerprint);
+            var changes = new Dictionary<int, List<SweepKind.Segment>>();
+            for (int i = 0; i < live.Count; i++)
+                if (!join.Holds(live[i].Id, segs[i].Segments)) changes[live[i].Id] = segs[i].Segments;
+            foreach (var id in join.Meshes) if (!run.ById.ContainsKey(id)) changes[id] = [];
+            join.Update(changes);
+        }
+        long propStamp = sweep ? 0 : _props.Stamp([rule.Get<PropSpec>("prop")]);
 
         int matchedFaces = 0, segmentCount = 0, before = run.Added.Count;
         var build = new List<(int Index, ulong Key, (SweepKind.Joint?, SweepKind.Joint?)[] Joints)>();
@@ -292,8 +356,8 @@ public sealed class Dresser(IDressingFiles files)
             int n = segs[i].Segments.Count;
             segmentCount += n;
             if (n == 0) continue;
-            var (mine, jointHash) = join.JointsOf(live[i].Id);
-            ulong key = Key(Key(rule.Fingerprint, segs[i].Hash), jointHash);
+            var (mine, jointHash) = sweep ? join!.JointsOf(live[i].Id) : (new (SweepKind.Joint?, SweepKind.Joint?)[n], (ulong)propStamp);
+            ulong key = Key(Key(effective[i]!.Fingerprint, segs[i].Hash), jointHash);
             if (_outputs.TryGetValue((rule.Id, live[i].Id), out var job) && job.Key == key) results[i] = job;
             else build.Add((i, key, mine));
         }
@@ -301,22 +365,26 @@ public sealed class Dresser(IDressingFiles files)
         Parallel.For(0, build.Count, b =>
         {
             var (i, key, js) = build[b];
+            var eff = effective[i]!;
             try
             {
-                var mesh = SweepKind.Build(rule, segs[i].Segments, js, $"{rule.Id}_{live[i].Name}");
-                Generated(mesh, rule.Id, live[i].Id);
-                built[b] = new OutputJob(key, mesh, 0, null);
+                string name = $"{rule.Id}_{live[i].Name}";
+                string? why = null;
+                var mesh = sweep ? SweepKind.Build(eff, segs[i].Segments, js, name) : RepeatKind.Build(eff, segs[i].Segments, _props, name, out why);
+                if (mesh.Faces.Count > 0) Generated(mesh, rule.Id, live[i].Id);
+                built[b] = new OutputJob(key, mesh.Faces.Count > 0 ? mesh : null, 0, why == null ? null : PropProblem(rule, why));
             }
             catch (Exception e) { built[b] = new OutputJob(key, null, 0, Failed(rule, live[i], e)); }
         });
         for (int b = 0; b < build.Count; b++)
             results[build[b].Index] = _outputs[(rule.Id, live[build[b].Index].Id)] = built[b] with { Revision = NextRevision() };
         LastRebuilds += build.Count;
+        var reported = new HashSet<string>();
         for (int i = 0; i < live.Count; i++)
         {
             if (results[i] is not { } job) continue;
             if (job.Mesh != null) run.Added.Add((job.Mesh, rule.Id, live[i].Id, job.Revision));
-            if (job.Problem != null) run.Diagnostics.Add(job.Problem);
+            if (job.Problem != null && reported.Add(job.Problem.Message)) run.Diagnostics.Add(job.Problem); // a missing prop once, not per mesh
         }
 
         if (segmentCount == 0)
@@ -325,11 +393,72 @@ public sealed class Dresser(IDressingFiles files)
                 "contact" => $"{matchedFaces} faces match, but none has an edge lying on a face matching \"onto\" ({Describe(rule.Get<FaceSelector>("onto"))})",
                 var k => $"{matchedFaces} faces match, but none has a {k} edge",
             }));
-        if (join.Changed || !_gaps.ContainsKey(rule.Id))
-            _gaps[rule.Id] = Gaps(join.OpenEnds().OrderBy(e => e.Mesh).ThenBy(e => e.P.X).ThenBy(e => e.P.Y).ThenBy(e => e.P.Z).ToList(), run)
-                .Take(10).Select(g => g with { Rule = rule.Id, Path = $"rules.{rule.Id}" }).ToList();
-        run.Diagnostics.AddRange(_gaps[rule.Id]);
+        if (join != null)
+        {
+            if (join.Changed || !_gaps.ContainsKey(rule.Id))
+                _gaps[rule.Id] = Gaps(join.OpenEnds().OrderBy(e => e.Mesh).ThenBy(e => e.P.X).ThenBy(e => e.P.Y).ThenBy(e => e.P.Z).ToList(), run)
+                    .Take(10).Select(g => g with { Rule = rule.Id, Path = $"rules.{rule.Id}" }).ToList();
+            run.Diagnostics.AddRange(_gaps[rule.Id]);
+        }
         run.Stats.Add(new RuleStats(rule.Id, rule.Kind.Name, Stage.Dress, true, segmentCount, "edge", run.Added.Count - before, 0, clock.Elapsed.TotalMilliseconds));
+    }
+
+    /// <summary>Scatter: per mesh, props over its matching faces, rebuilt when the mesh, the rule or the props change.</summary>
+    void RunScatter(Rule rule, Run run, Stopwatch clock)
+    {
+        var live = run.Live;
+        long propStamp = _props.Stamp(rule.Get<PropSpec[]>("props"));
+        var results = new OutputJob?[live.Count];
+        var faces = new int[live.Count];
+        var effective = new Rule?[live.Count];
+        var dirty = new List<int>();
+        for (int i = 0; i < live.Count; i++)
+        {
+            if ((effective[i] = Effective(rule, live[i], run)) is not { } eff) continue;
+            ulong key = Key(Key(eff.Fingerprint, (ulong)run.Revisions[live[i].Id]), (ulong)propStamp);
+            if (_outputs.TryGetValue((rule.Id, live[i].Id), out var job) && job.Key == key) { results[i] = job; faces[i] = job.Faces; }
+            else dirty.Add(i);
+        }
+        Parallel.ForEach(dirty, i =>
+        {
+            var m = live[i];
+            ulong key = Key(Key(effective[i]!.Fingerprint, (ulong)run.Revisions[m.Id]), (ulong)propStamp);
+            try
+            {
+                var mesh = ScatterKind.Build(m, effective[i]!, _props, $"{rule.Id}_{m.Name}", out faces[i], out var why);
+                if (mesh.Faces.Count > 0) Generated(mesh, rule.Id, m.Id);
+                results[i] = new OutputJob(key, mesh.Faces.Count > 0 ? mesh : null, 0, why == null ? null : PropProblem(rule, why)) { Faces = faces[i] };
+            }
+            catch (Exception e) { results[i] = new OutputJob(key, null, 0, Failed(rule, m, e)); }
+        });
+        foreach (var i in dirty) results[i] = _outputs[(rule.Id, live[i].Id)] = results[i]! with { Revision = NextRevision() };
+        LastRebuilds += dirty.Count;
+
+        int before = run.Added.Count;
+        var reported = new HashSet<string>();
+        for (int i = 0; i < live.Count; i++)
+        {
+            if (results[i] is not { } job) continue;
+            if (job.Mesh != null) run.Added.Add((job.Mesh, rule.Id, live[i].Id, job.Revision));
+            if (job.Problem != null && reported.Add(job.Problem.Message)) run.Diagnostics.Add(job.Problem);
+        }
+        int matched = faces.Sum();
+        if (matched == 0) run.Diagnostics.Add(NothingMatched(rule, run, null));
+        run.Stats.Add(new RuleStats(rule.Id, rule.Kind.Name, Stage.Dress, true, matched, "face", run.Added.Count - before, 0, clock.Elapsed.TotalMilliseconds));
+    }
+
+    static Diagnostic PropProblem(Rule rule, string why) =>
+        new(Severity.Warning, "W610", why, "check the path: props are relative to the rules file that names them", rule.Pos, $"rules.{rule.Id}", Rule: rule.Id);
+
+    /// <summary>A proxy rule whose mesh selector took no mesh: say which mesh tags exist.</summary>
+    Diagnostic NoMeshMatched(Rule rule, Run run)
+    {
+        var wanted = rule.Get<MeshSelector>("meshes").Tags;
+        var tags = run.Live.SelectMany(m => m.Tags).GroupBy(t => t).OrderByDescending(g => g.Count()).Take(8).Select(g => $"{g.Key} ×{g.Count()}").ToList();
+        string fix = wanted.Length > 0 && Suggest.Closest(wanted[0], tags.Select(t => t[..t.IndexOf(' ')])) is { } g && g != wanted[0]
+            ? $"did you mean the mesh tag \"{g}\"?"
+            : $"tag the meshes in object mode (Ctrl+T){(tags.Count > 0 ? $"; mesh tags in the level: {string.Join(", ", tags)}" : "; no mesh has a tag yet")}";
+        return new Diagnostic(Severity.Warning, "W402", $"{rule.Id} matched nothing: no mesh has the tags {string.Join(" + ", wanted)}", fix, rule.Pos, $"rules.{rule.Id}", Rule: rule.Id);
     }
 
     readonly Dictionary<string, JoinIndex> _joins = new();

@@ -33,7 +33,23 @@ public static partial class DocumentSerializer
 
     sealed record MeshDto(int Id, string Name, bool Hidden, List<float[]> Positions, List<FaceDto> Faces,
         bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null,
-        string[]? Tags = null); // dressing tags (optional, no version bump)
+        string[]? Tags = null,  // dressing tags (optional, no version bump)
+        DressingDto? Dressing = null);
+
+    /// <summary>A mesh's dressing overrides: <c>{ "set": { "railing": { "balusterEvery": 0.1 } }, "skip": ["debris"] }</c>.</summary>
+    sealed record DressingDto(Dictionary<string, JsonElement>? Set = null, string[]? Skip = null);
+
+    static DressingDto? DressingToDto(MeshDressing d) => d.IsEmpty ? null : new DressingDto(
+        d.Set.Count > 0 ? d.Set.ToDictionary(kv => kv.Key, kv => JsonDocument.Parse(kv.Value).RootElement.Clone()) : null,
+        d.Skip.Count > 0 ? d.Skip.ToArray() : null);
+
+    static MeshDressing DressingFromDto(DressingDto? d, int meshId)
+    {
+        if (d == null) return MeshDressing.Empty;
+        if (d.Set?.FirstOrDefault(kv => kv.Value.ValueKind != JsonValueKind.Object) is { Key: not null } bad)
+            throw new InvalidDataException($"Mesh {meshId}: dressing overrides for \"{bad.Key}\" must be an object of parameters");
+        return MeshDressing.Of(d.Set?.Select(kv => KeyValuePair.Create(kv.Key, kv.Value.GetRawText())) ?? [], d.Skip ?? []);
+    }
 
     sealed record FaceDto(int[] Verts, string Material, float[] U, float[] V, float[] Shift, float[] Scale, float Rotation,
         List<float[]>? Uvs = null, bool? Dominant = null, string[]? Tags = null);
@@ -63,7 +79,7 @@ public static partial class DocumentSerializer
                 f.UVs?.Select(uv => new[] { uv.X, uv.Y }).ToList(), f.Dominant ? true : null, TagsDto(f.Tags))).ToList(),
             m.Locked, m.Collision,
             m.SoftEdges.Count > 0 ? m.SoftEdges.OrderBy(e => e.A).ThenBy(e => e.B).Select(e => new[] { e.A, e.B }).ToList() : null,
-            TagsDto(m.Tags))).ToList(),
+            TagsDto(m.Tags), DressingToDto(m.Dressing))).ToList(),
         doc.Entities.Count > 0
             ? doc.Entities.Select(e => new EntityDto(e.Id, e.ClassName, e.Name, Arr(e.Position), Arr(e.Rotation), e.Hidden,
                 e.Properties.Count > 0 ? e.Properties : null,
@@ -93,6 +109,7 @@ public static partial class DocumentSerializer
             {
                 Id = m.Id, Name = m.Name, Hidden = m.Hidden, Locked = m.Locked, Collision = m.Collision,
                 Positions = m.Positions.Select(Vec).ToList(), Tags = TagsFromDto(m.Tags, $"Mesh {m.Id}"),
+                Dressing = DressingFromDto(m.Dressing, m.Id),
             };
             foreach (var f in m.Faces)
             {

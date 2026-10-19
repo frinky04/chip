@@ -4,7 +4,30 @@ using Chip.Core.Geometry;
 
 namespace Chip.Core.Dressing;
 
-public enum ParamType { Number, Int, Text, Bool, Choice, Pair, Faces, Profile }
+public enum ParamType { Number, Int, Text, Bool, Choice, Pair, Faces, Profile, Meshes, Prop, Props, Numbers }
+
+/// <summary>Which meshes a proxy rule takes, by the mesh's own tags (Ctrl+T in object mode).</summary>
+public sealed record MeshSelector(string[] Tags, string[] NotTags)
+{
+    public bool Matches(PolyMesh m) => Tags.All(m.Tags.Contains) && !NotTags.Any(m.Tags.Contains);
+}
+
+public enum PropShape { File, Box, Cylinder }
+
+/// <summary>
+/// Something to place: a built-in shape sized in metres (<c>{ "box": [w, h, d] }</c>, <c>{ "cylinder": [diameter, height] }</c>),
+/// or a <c>.glb</c> / <c>.gltf</c> file relative to the rules file that names it. Props stand on their local origin: +Y up,
+/// +X along the edge they follow, +Z out from the face.
+/// </summary>
+public sealed record PropSpec(PropShape Shape, string? File, Vector3 Size, int Sides)
+{
+    public string Describe() => Shape switch
+    {
+        PropShape.File => File!,
+        PropShape.Box => $"box {Size.X}×{Size.Y}×{Size.Z}",
+        _ => $"cylinder {Size.X}×{Size.Y}",
+    };
+}
 
 /// <summary>
 /// One parameter a rule kind accepts: its type, default, range and description. The tables drive validation, defaults,
@@ -131,7 +154,80 @@ static class ParamReader
                 return ReadFaces(node, path, diags, rule);
             case ParamType.Profile:
                 return ReadProfile(node, path, diags, rule);
+            case ParamType.Meshes:
+                return ReadMeshes(node, path, diags, rule);
+            case ParamType.Prop:
+                return ReadProp(node, path, diags, rule);
+            case ParamType.Props:
+            {
+                var items = node is JArray list ? list.Items : [node];
+                var props = items.Select(i => ReadProp(i, path, diags, rule)).ToList();
+                if (props.Count == 0) diags.Add(Bad("expected at least one prop"));
+                return props.Count > 0 && props.All(p => p != null) ? props.Cast<PropSpec>().ToArray() : null;
+            }
+            case ParamType.Numbers:
+                if (node is JArray { Items.Count: > 0 } na && na.Items.All(i => i is JNumber { Value: >= 0 }))
+                    return na.Items.Cast<JNumber>().Select(n => (float)n.Value).ToArray();
+                diags.Add(Bad($"expected a list of numbers (0 or more) like [3, 1], got {node.TypeName}"));
+                return null;
         }
+        return null;
+    }
+
+    static readonly string[] MeshSelectorKeys = ["tags", "notTags"];
+
+    static MeshSelector? ReadMeshes(JNode node, string path, List<Diagnostic> diags, string rule)
+    {
+        if (node is not JObject o)
+        {
+            diags.Add(new(Severity.Error, "E201", $"expected a mesh selector like {{ \"tags\": [\"railing\"] }}, got {node.TypeName}", null, node.Pos, path, Rule: rule));
+            return null;
+        }
+        int before = diags.Count;
+        foreach (var key in o.Keys.Where(k => !MeshSelectorKeys.Contains(k)))
+            diags.Add(UnknownKey(key, MeshSelectorKeys, o.KeyPos(key), $"{path}.{key}", rule, "mesh selector"));
+        string[] Names(string key)
+        {
+            if (o[key] is not { } v) return [];
+            if (v is JArray arr && arr.Items.All(i => i is JString s && TagSet.IsValid(s.Value, out _)))
+                return arr.Items.Cast<JString>().Select(s => s.Value).ToArray();
+            diags.Add(new(Severity.Error, "E203", $"{key} is a list of mesh tags like [\"railing\"] (lowercase letters, digits, - and _)", null, v.Pos, $"{path}.{key}", Rule: rule));
+            return [];
+        }
+        var sel = new MeshSelector(Names("tags"), Names("notTags"));
+        if (sel.Tags.Length == 0 && diags.Count == before)
+            diags.Add(new(Severity.Error, "E204", "a mesh selector needs \"tags\" (a proxy replaces the meshes it takes)", "add \"tags\": [\"railing\"] and tag the meshes in object mode (Ctrl+T)", o.Pos, path, Rule: rule));
+        return diags.Count == before ? sel : null;
+    }
+
+    static PropSpec? ReadProp(JNode node, string path, List<Diagnostic> diags, string rule)
+    {
+        Diagnostic Bad(string m, JNode at) => new(Severity.Error, "E201", m,
+            "use \"props/thing.glb\", { \"box\": [width, height, depth] } or { \"cylinder\": [diameter, height] }", at.Pos, path, Rule: rule);
+        if (node is JString s)
+        {
+            var ext = Path.GetExtension(s.Value).ToLowerInvariant();
+            if (ext is ".glb" or ".gltf") return new PropSpec(PropShape.File, RulePaths.Resolve(s.Pos.File, s.Value), Vector3.One, 0);
+            diags.Add(Bad($"\"{s.Value}\" isn't a .glb or .gltf file", s));
+            return null;
+        }
+        if (node is not JObject o) { diags.Add(Bad($"expected a prop, got {node.TypeName}", node)); return null; }
+        float[]? Nums(JNode? n, int count) =>
+            n is JArray arr && arr.Items.Count == count && arr.Items.All(i => i is JNumber { Value: > 0 }) ? arr.Items.Cast<JNumber>().Select(x => (float)x.Value).ToArray() : null;
+        if (o["box"] is { } b)
+        {
+            if (Nums(b, 3) is { } v) return new PropSpec(PropShape.Box, null, new Vector3(v[0], v[1], v[2]), 0);
+            diags.Add(Bad("box is [width, height, depth], all above 0 (metres)", b));
+            return null;
+        }
+        if (o["cylinder"] is { } c)
+        {
+            int sides = o["sides"] is JNumber { Value: >= 3 and <= 64 } sn ? (int)sn.Value : 12;
+            if (Nums(c, 2) is { } v) return new PropSpec(PropShape.Cylinder, null, new Vector3(v[0], v[1], v[0]), sides);
+            diags.Add(Bad("cylinder is [diameter, height], both above 0 (metres)", c));
+            return null;
+        }
+        diags.Add(Bad("a prop object needs \"box\" or \"cylinder\"", o));
         return null;
     }
 

@@ -48,6 +48,7 @@ public static class MeshHash
             AddTags(f.Tags); // dressing rules select by tags, so a tag edit is a content change
         }
         AddTags(m.Tags);
+        if (!m.Dressing.IsEmpty) Add((uint)m.Dressing.GetHashCode()); // per-mesh dressing overrides rebuild its dressing
         // Order-independent: a cloned HashSet may enumerate differently.
         ulong soft = 0;
         foreach (var e in m.SoftEdges) soft += (ulong)(uint)e.A * 2654435761UL ^ (ulong)(uint)e.B * 40503UL + 0x9E3779B97F4A7C15UL;

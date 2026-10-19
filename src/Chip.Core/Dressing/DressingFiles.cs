@@ -9,6 +9,9 @@ public interface IDressingFiles
     /// <summary>The file's text, or null if it doesn't exist or can't be read.</summary>
     string? ReadText(string path);
 
+    /// <summary>The file's bytes (props: <c>.glb</c> / <c>.gltf</c>), or null if it doesn't exist or can't be read.</summary>
+    byte[]? ReadBytes(string path);
+
     /// <summary>A number that changes when the file changes (0 when it doesn't exist).</summary>
     long Stamp(string path);
 }
@@ -25,6 +28,13 @@ public sealed class DiskFiles : IDressingFiles
         catch (UnauthorizedAccessException) { return null; }
     }
 
+    public byte[]? ReadBytes(string path)
+    {
+        try { return File.Exists(path) ? File.ReadAllBytes(path) : null; }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
     public long Stamp(string path)
     {
         try { return File.Exists(path) ? File.GetLastWriteTimeUtc(path).Ticks ^ new FileInfo(path).Length : 0; }
@@ -36,6 +46,7 @@ public sealed class DiskFiles : IDressingFiles
 public sealed class MemoryFiles : IDressingFiles
 {
     readonly Dictionary<string, (string Text, long Stamp)> _files = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, byte[]> _bytes = new(StringComparer.OrdinalIgnoreCase);
     long _next;
 
     public string? this[string path]
@@ -48,7 +59,16 @@ public sealed class MemoryFiles : IDressingFiles
         }
     }
 
+    /// <summary>Stores a binary file (a prop); its stamp changes like a text file's.</summary>
+    public void SetBytes(string path, byte[] data)
+    {
+        _bytes[Key(path)] = data;
+        _files[Key(path)] = ("", ++_next);
+    }
+
     public string? ReadText(string path) => _files.TryGetValue(Key(path), out var f) ? f.Text : null;
+    public byte[]? ReadBytes(string path) =>
+        _bytes.TryGetValue(Key(path), out var b) ? b : ReadText(path) is { } t ? System.Text.Encoding.UTF8.GetBytes(t) : null;
     public long Stamp(string path) => _files.TryGetValue(Key(path), out var f) ? f.Stamp : 0;
 
     static string Key(string path) => RulePaths.Normalize(path);

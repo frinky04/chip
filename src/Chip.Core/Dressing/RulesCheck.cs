@@ -120,6 +120,10 @@ public static class DressingSchema
                 ParamType.Choice => new() { ["enum"] = new JsonArray(p.Choices!.Select(c => (JsonNode)c!).ToArray()) },
                 ParamType.Pair => new() { ["type"] = "array", ["items"] = new JsonObject { ["anyOf"] = new JsonArray(new JsonObject { ["type"] = "number" }, Var()) }, ["minItems"] = 2, ["maxItems"] = 2 },
                 ParamType.Faces => new() { ["$ref"] = "#/$defs/faces" },
+                ParamType.Meshes => new() { ["$ref"] = "#/$defs/meshes" },
+                ParamType.Prop => new() { ["$ref"] = "#/$defs/prop" },
+                ParamType.Props => new() { ["anyOf"] = new JsonArray(new JsonObject { ["$ref"] = "#/$defs/prop" }, new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["$ref"] = "#/$defs/prop" }, ["minItems"] = 1 }) },
+                ParamType.Numbers => new() { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "number", ["minimum"] = 0 }, ["minItems"] = 1 },
                 _ => new() { ["$ref"] = "#/$defs/profile" },
             };
             if (!double.IsInfinity(p.Min)) t["minimum"] = p.Min;
@@ -140,6 +144,24 @@ public static class DressingSchema
                     ["materials"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["description"] = "Material name globs (* and ?), any of." },
                     ["facing"] = new JsonObject { ["enum"] = new JsonArray(FaceSelector.Facings.Select(f => (JsonNode)f!).ToArray()), ["description"] = "up (floors), down (ceilings), upright (walls)." },
                 },
+            },
+            ["meshes"] = new JsonObject
+            {
+                ["type"] = "object", ["additionalProperties"] = false, ["required"] = new JsonArray("tags"),
+                ["description"] = "Which meshes, by their mesh tags (Ctrl+T in object mode).",
+                ["properties"] = new JsonObject
+                {
+                    ["tags"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["description"] = "Meshes with all of these tags." },
+                    ["notTags"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["description"] = "Meshes with none of these tags." },
+                },
+            },
+            ["prop"] = new JsonObject
+            {
+                ["description"] = "A .glb/.gltf file relative to this rules file, or a built-in shape in metres. Props stand on their origin: +Y up, +X along, +Z out.",
+                ["anyOf"] = new JsonArray(
+                    new JsonObject { ["type"] = "string", ["pattern"] = "\\.(glb|gltf)$" },
+                    new JsonObject { ["type"] = "object", ["additionalProperties"] = false, ["required"] = new JsonArray("box"), ["properties"] = new JsonObject { ["box"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "number" }, ["minItems"] = 3, ["maxItems"] = 3, ["description"] = "[width, height, depth]" } } },
+                    new JsonObject { ["type"] = "object", ["additionalProperties"] = false, ["required"] = new JsonArray("cylinder"), ["properties"] = new JsonObject { ["cylinder"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "number" }, ["minItems"] = 2, ["maxItems"] = 2, ["description"] = "[diameter, height]" }, ["sides"] = new JsonObject { ["type"] = "integer", ["minimum"] = 3, ["maximum"] = 64 } } }),
             },
             ["profile"] = new JsonObject
             {
