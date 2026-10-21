@@ -17,6 +17,16 @@ public static partial class MeshOps
 
     public static Vector3 Snap(Vector3 p, float grid) => new(Snap(p.X, grid), Snap(p.Y, grid), Snap(p.Z, grid));
 
+    /// <summary>Loop entries from index <paramref name="from"/> forward to <paramref name="to"/>, inclusive, wrapping.</summary>
+    internal static IEnumerable<int> Cycle(List<int> loop, int from, int to)
+    {
+        for (int i = from; ; i = (i + 1) % loop.Count)
+        {
+            yield return loop[i];
+            if (i == to) yield break;
+        }
+    }
+
     /// <summary>
     /// Applies an old→new vertex map (-1 = removed) to faces and soft edges, then replaces the position list.
     /// Faces must not reference removed vertices.

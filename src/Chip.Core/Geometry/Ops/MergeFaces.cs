@@ -112,10 +112,12 @@ public static partial class MeshOps
     /// <summary>
     /// Removes each candidate vertex that sits straight-through on an edge in every face using it, with the same two
     /// neighbours in all of them (left behind when the edges it split were dissolved). Faces stay at three corners or more.
+    /// Returns how many went.
     /// </summary>
-    static void DissolveStraightVertices(PolyMesh m, IReadOnlySet<int> candidates)
+    static int DissolveStraightVertices(PolyMesh m, IReadOnlySet<int> candidates)
     {
         var vertexFaces = Topology.VertexFaces(m);
+        int dissolved = 0;
         foreach (var v in candidates)
         {
             var uses = vertexFaces[v];
@@ -145,6 +147,8 @@ public static partial class MeshOps
             var soft = m.SoftEdges.Where(e => e.A == v || e.B == v).ToList();
             if (soft.Count == 2) m.SoftEdges.Add(new Edge(pair!.Value.Prev, pair.Value.Next));
             m.SoftEdges.ExceptWith(soft);
+            dissolved++;
         }
+        return dissolved;
     }
 }
