@@ -17,6 +17,7 @@ public sealed class MeshOpsFeature : IEditorFeature
     EditorContext _ctx = null!;
     readonly InsetTool _inset = new();
     readonly OffsetTool _offset = new();
+    readonly ArcExtrudeTool _arc = new();
 
     Selection Sel => _ctx.Sel;
     Document Doc => _ctx.Doc;
@@ -36,6 +37,8 @@ public sealed class MeshOpsFeature : IEditorFeature
         c.Add("mesh.inset", "Inset", () => ctx.SetTool(_inset.For(outset: false)), "Mesh", "I", () => Mode(SelectMode.Face), "2-inset", 0);
         c.Add("mesh.outset", "Outset", () => ctx.SetTool(_inset.For(outset: true)), "Mesh", "O", () => Mode(SelectMode.Face), "2-inset", 1);
         c.Add("mesh.offset", "Offset faces", () => ctx.SetTool(_offset), "Mesh", "Shift+O", () => Mode(SelectMode.Face), "2-inset", 2);
+        c.Add("mesh.arcExtrude", "Arc extrude", () => ctx.SetTool(_arc), "Mesh", "Shift+A",
+            () => Mode(SelectMode.Face) || Mode(SelectMode.Edge), "2-inset", 3);
 
         c.Add("mesh.collapse", "Collapse", Collapse, "Mesh", null,
             () => !Sel.IsEmpty && Sel.Mode != SelectMode.Object, "3-weld", 0);
@@ -49,6 +52,7 @@ public sealed class MeshOpsFeature : IEditorFeature
 
         c.AddReference("Mesh", "Ctrl+Shift + drag", "push/pull faces");
         c.AddReference("Mesh", "Shift + drag edges", "extrude open edges");
+        c.AddReference("Mesh", "Shift + drag rotate gizmo", "extrude round the pivot (MMB-drag the gizmo to move it)");
     }
 
     /// <summary>

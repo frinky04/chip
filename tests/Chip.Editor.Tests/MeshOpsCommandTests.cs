@@ -116,6 +116,81 @@ public class MeshOpsCommandTests
     }
 
     [Fact]
+    public void Arc_extrude_previews_commits_as_one_step_and_esc_restores()
+    {
+        var ctx = WithBoxes(1);
+        int id = ctx.Doc.Meshes[0].Id;
+        SelectFaces(ctx, 3); // top
+        Assert.True(ctx.Commands.Execute("mesh.arcExtrude"));
+        var tool = Assert.IsType<ArcExtrudeTool>(ctx.ActiveTool);
+        Assert.True(ctx.Interacting);
+        Assert.True(ctx.Doc.Meshes[0].Faces.Count > 6); // live from the start
+        ctx.Commands.Execute("edit.cancel");
+        Assert.Equal(6, ctx.Doc.Meshes[0].Faces.Count);
+        Assert.Null(ctx.Session.UndoLabel);
+        Assert.Contains(ElementRef.Face(id, 3), ctx.Sel.Items);
+
+        ctx.Commands.Execute("mesh.arcExtrude");
+        tool.BendDirection = Vector3.UnitX;
+        tool.Radius = 2;
+        tool.AngleDegrees = 90;
+        tool.Segments = 3;
+        tool.Smooth = false;
+        tool.Commit(ctx);
+        Assert.Equal("select", ctx.ActiveTool!.Id);
+        Assert.Equal("Arc Extrude", ctx.Session.UndoLabel);
+        var m = ctx.Doc.Meshes[0];
+        Assert.Equal(18, m.Faces.Count);
+        Assert.True(Vector3.Distance(Vector3.UnitX, m.FaceNormal(3)) < 1e-4f);
+        Assert.Equal([ElementRef.Face(id, 3)], ctx.Sel.Items); // the cap stays selected to keep going
+        ctx.Commands.Execute("edit.undo");
+        Assert.Equal(6, ctx.Doc.Meshes[0].Faces.Count);
+    }
+
+    [Fact]
+    public void Arc_extrude_leaves_a_corridor_end_forward_even_when_the_end_faces_inward()
+    {
+        var doc = new Document();
+        var corridor = MeshOps.CreateBox(Vector3.Zero, new Vector3(2, 2, 10), "dev_a", TextureMapping.Default);
+        MeshOps.FlipFaces(corridor, [5]); // the +Z end now faces back into the corridor
+        doc.Add(corridor);
+        var ctx = RegistryTests.Headless(doc);
+        SelectFaces(ctx, 5);
+
+        ctx.Commands.Execute("mesh.arcExtrude");
+        var tool = Assert.IsType<ArcExtrudeTool>(ctx.ActiveTool);
+        tool.BendDirection = Vector3.UnitX;
+        tool.InnerRadius = 2; // measured from the corridor's +X wall, a metre out from its centre
+        Assert.Equal(3, tool.Radius, 4);
+        tool.Refresh(ctx);
+        var m = ctx.Doc.Meshes[0];
+        Assert.True(m.Bounds().Max.Z > 12, $"swept backward: {m.Bounds()}");
+        Assert.True(m.Bounds().Min.Z >= -1e-4f);
+
+        tool.Reverse = true; // Tab: back into the corridor
+        tool.Refresh(ctx);
+        Assert.True(m.Bounds().Max.Z <= 10 + 1e-4f);
+        ctx.Commands.Execute("edit.cancel");
+        Assert.Equal(6, ctx.Doc.Meshes[0].Faces.Count);
+    }
+
+    [Fact]
+    public void Arc_extrude_needs_faces_or_open_edges()
+    {
+        var ctx = WithBoxes(1);
+        ctx.Commands.Execute("select.modeVertex");
+        ctx.Sel.Add(ElementRef.Vertex(ctx.Doc.Meshes[0].Id, 0));
+        Assert.False(ctx.Commands.Find("mesh.arcExtrude")!.Enabled);
+        ctx.Commands.Execute("select.modeEdge");
+        ctx.Sel.Clear();
+        ctx.Sel.Add(ElementRef.EdgeOf(ctx.Doc.Meshes[0].Id, new Edge(0, 1))); // a box has no open edges
+        ctx.Commands.Execute("mesh.arcExtrude");
+        Assert.False(ctx.Interacting);
+        Assert.Equal("select", ctx.ActiveTool!.Id);
+        Assert.Null(ctx.Session.UndoLabel);
+    }
+
+    [Fact]
     public void Tags_popup_is_ctrl_t_and_only_for_faces_or_objects()
     {
         var ctx = WithBoxes(1);

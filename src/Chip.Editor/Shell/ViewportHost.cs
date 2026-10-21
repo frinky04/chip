@@ -155,7 +155,9 @@ public sealed partial class EditorApp
         if (sig != _selSignature)
         {
             _selSignature = sig;
-            if (!gizmo.PivotDragging) Ctx.PivotOverride = null;
+            // A gizmo drag that changes the selection itself (edge extrude) keeps the pivot, so repeated
+            // Shift+rotate drags can sweep an arc around it.
+            if (!gizmo.PivotDragging && !gizmo.Dragging) Ctx.PivotOverride = null;
         }
     }
 
@@ -204,6 +206,8 @@ public sealed partial class EditorApp
         {
             Ctx.PivotOverride = p + (end - start);
         }
+        // Remaps made when the drag committed (merged vertices) aren't a new selection either.
+        if (!gizmo.Dragging && _wasGizmoDragging) _selSignature = SelectionSignature();
         _wasGizmoDragging = gizmo.Dragging;
     }
 

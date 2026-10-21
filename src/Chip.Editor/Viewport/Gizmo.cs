@@ -161,7 +161,7 @@ public sealed class Gizmo
         _pivot = PivotHook?.Invoke() ?? pivot;
         _startMouse = mouse;
         _angle = 0;
-        _pushPullStart = CtrlHeld && ShiftHeld;
+        _pushPullStart = CtrlHeld && ShiftHeld && Mode == GizmoMode.Translate;
         AlignTarget = null;
         _prevScreenAngle = ScreenAngle(v, mouse);
         var ray = v.ScreenRay(mouse);

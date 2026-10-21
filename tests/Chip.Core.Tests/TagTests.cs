@@ -85,6 +85,7 @@ public class TagTests
         }
 
         Run("extrude", m => MeshOps.ExtrudeFaces(m, [3]));
+        Run("arc extrude", m => MeshOps.ArcExtrudeFaces(m, [3], ArcSweep.Bend(new(0.5f, 1, 0.5f), Vector3.UnitY, Vector3.UnitX, 1, 1.5f, 3), true));
         Run("push/pull", m => MeshOps.PushPullFaces(m, [3, 1], Vector3.UnitY));
         Run("inset", m => MeshOps.Inset(m, [3]).Apply(m, 0.25f, outset: false));
         Run("outset", m => MeshOps.Inset(m, [3]).Apply(m, 0.25f, outset: true));
@@ -120,6 +121,8 @@ public class TagTests
         plane.Faces.Add(new Face([0, 1, 2, 3], "dev_a", default) { Tags = Surface });
         MeshOps.ExtrudeEdges(plane, [new Edge(0, 1)]);
         AllTagged(plane, "extrude edges");
+        MeshOps.ArcExtrudeEdges(plane, [new Edge(2, 3)], ArcSweep.Bend(new(1, 0, 0.5f), Vector3.UnitX, Vector3.UnitY, 1, 1.5f, 3), true);
+        AllTagged(plane, "arc extrude edges");
     }
 
     [Fact]

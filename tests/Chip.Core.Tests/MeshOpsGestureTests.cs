@@ -57,6 +57,27 @@ public class MeshOpsGestureTests
     }
 
     [Fact]
+    public void Repeated_rotate_extrudes_round_an_outside_pivot_sweep_an_arc()
+    {
+        var s = SessionWith(Box(Vector3.Zero, new Vector3(2, 2, 2)));
+        var id = s.Doc.Meshes[0].Id;
+        s.Sel.ConvertTo(SelectMode.Face, s.Doc);
+        s.Sel.Add(ElementRef.Face(id, 3)); // top
+        var pivot = new Vector3(3, 2, 1);  // a temporary pivot a metre off the box's +X side
+        for (int i = 0; i < 3; i++)
+        {
+            var g = TransformGesture.Start(s, "Extrude", GestureKind.Extrude)!;
+            g.Apply(TransformGesture.About(pivot, Matrix4x4.CreateRotationZ(-MathF.PI / 6)), rigid: true);
+            g.Commit();
+        }
+        var m = s.Doc.Meshes[0];
+        Assert.Equal(6 + 3 * 4, m.Faces.Count);
+        Assert.True(IsClosedManifold(m));
+        Assert.True(Vector3.Distance(Vector3.UnitX, m.FaceNormal(3)) < 1e-4f);
+        Assert.True(Vector3.Distance(new Vector3(3, 4, 1), m.FaceCenter(3)) < 1e-4f);
+    }
+
+    [Fact]
     public void Unmoved_or_cancelled_push_pull_leaves_no_trace()
     {
         var s = SessionWith(UnitBox());

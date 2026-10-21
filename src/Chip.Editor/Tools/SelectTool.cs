@@ -12,7 +12,7 @@ namespace Chip.Editor.Tools;
 /// <summary>
 /// The default tool: click / Shift-add / Ctrl-toggle, Scythe-style paint select on drag (everything the cursor sweeps
 /// over; Shift adds, Ctrl removes), Ctrl+Alt+drag box select (Unreal's marquee; Shift adds), plus the transform gizmo
-/// (mode from <see cref="EditorContext.Gizmo"/>). Shift-dragging the move gizmo in face mode extrudes.
+/// (mode from <see cref="EditorContext.Gizmo"/>). Shift-dragging any gizmo extrudes faces or open edges first.
 /// Double-click floods (connected faces, edge loop, connected vertices; with CapsLock/Mouse4/Mouse5 held, faces on the plane),
 /// and Ctrl+Shift+click adds the shortest path from the active element.
 /// <para>Active element: a click, double-click or path click makes the clicked element active. A box select keeps the
@@ -111,9 +111,11 @@ public sealed class SelectTool : IViewportTool
         bool overGizmo = pivot != null && gizmo.Hover != Handle.None;
         if (ctx.ViewportHovered && overGizmo && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
         {
-            var kind = io.KeyShift && gizmo.Mode == GizmoMode.Translate
-                ? (io.KeyCtrl ? GestureKind.PushPull : GestureKind.Extrude)
-                : GestureKind.Transform;
+            // Shift extrudes with any gizmo: rotating around a temporary pivot (MMB) sweeps an arc, one segment per drag.
+            // Push/pull moves along a normal, so it only exists on the move gizmo.
+            var kind = !io.KeyShift ? GestureKind.Transform
+                : io.KeyCtrl && gizmo.Mode == GizmoMode.Translate ? GestureKind.PushPull
+                : GestureKind.Extrude;
             string label = kind switch
             {
                 GestureKind.Extrude => "Extrude",
