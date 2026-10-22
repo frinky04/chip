@@ -170,8 +170,11 @@ public static class DressingSchema
                 ["properties"] = new JsonObject
                 {
                     ["rect"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["anyOf"] = new JsonArray(new JsonObject { ["type"] = "number" }, Var()) }, ["minItems"] = 2, ["maxItems"] = 2, ["description"] = "[depth, height]" },
+                    ["wedge"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["anyOf"] = new JsonArray(new JsonObject { ["type"] = "number" }, Var()) }, ["minItems"] = 2, ["maxItems"] = 2, ["description"] = "A triangle filling the corner: [depth, height]." },
                     ["round"] = new JsonObject { ["anyOf"] = new JsonArray(new JsonObject { ["type"] = "number" }, Var()), ["description"] = "Diameter." },
-                    ["sides"] = new JsonObject { ["type"] = "integer", ["minimum"] = 3, ["maximum"] = 64, ["description"] = "Sides of a round profile (default 8)." },
+                    ["quarter"] = new JsonObject { ["anyOf"] = new JsonArray(new JsonObject { ["type"] = "number" }, Var()), ["description"] = "Quarter-round moulding: radius." },
+                    ["cove"] = new JsonObject { ["anyOf"] = new JsonArray(new JsonObject { ["type"] = "number" }, Var()), ["description"] = "Cove moulding (a square with a quarter circle cut out): radius." },
+                    ["sides"] = new JsonObject { ["type"] = "integer", ["minimum"] = 2, ["maximum"] = 64, ["description"] = "Sides of a round profile (default 8), or segments of a quarter or cove (default 6)." },
                     ["points"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "array", ["minItems"] = 2, ["maxItems"] = 2 }, ["minItems"] = 3, ["description"] = "Polygon [[x, y], ...]." },
                 },
             },
@@ -230,29 +233,20 @@ public static class DressingSchema
         return schema.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 
-    /// <summary>A starter rules file: a baseboard round every wall standing on a floor, and softened outside corners.</summary>
-    public static string Starter(string? levelName) => $$"""
-        {
-          "$schema": "./{{FileName}}",
-          "chipDressing": {{RuleSet.FormatVersion}},
-          "name": "{{levelName ?? "Level"}} dressing",
-          "vars": { "trim": "dev_measurewall01d" },
-          "rules": {
-            "baseboard": {
-              "kind": "sweep",
-              "note": "Runs along the foot of every face tagged wall that stands on a floor. Tag walls with Ctrl+T.",
-              "faces": { "tags": ["wall"] },
-              "profile": { "rect": [0.02, 0.12] },
-              "material": "$trim"
-            },
-            "wall-bevel": {
-              "kind": "bevel",
-              "enabled": false,
-              "note": "Softens outside corners between wall faces. Set enabled to true to try it.",
-              "faces": { "tags": ["wall"] },
-              "width": 0.03
-            }
-          }
-        }
-        """;
+    /// <summary>
+    /// A starter rules file, from the recipes: a baseboard round every wall standing on a floor, and (switched off) softened
+    /// outside corners.
+    /// </summary>
+    public static string Starter(string? levelName)
+    {
+        var doc = RulesDocument.New("starter.dressing.json", $"{levelName ?? "Level"} dressing");
+        var baseboard = Recipes.Find("baseboard")!.Rule();
+        baseboard["note"] = "Runs along the foot of every face tagged wall that stands on a floor. Tag walls with Ctrl+T, or select them and use Dress with.";
+        doc.SetRule("baseboard", baseboard);
+        var bevel = Recipes.Find("corner-bevel")!.Rule();
+        bevel["enabled"] = false;
+        bevel["note"] = "Softens outside corners between wall faces. Switch it on in the Dressing rules window to try it.";
+        doc.SetRule("corner-bevel", bevel);
+        return doc.Write();
+    }
 }

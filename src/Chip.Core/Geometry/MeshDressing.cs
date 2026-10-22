@@ -54,6 +54,27 @@ public sealed class MeshDressing : IEquatable<MeshDressing>
     /// <summary>With <paramref name="rule"/> switched off (<paramref name="skip"/>) or back on.</summary>
     public MeshDressing WithSkip(string rule, bool skip) => new(Set, skip ? Skip.Add(rule) : Skip.Remove(rule));
 
+    /// <summary>With every mention of rule <paramref name="from"/> moved to <paramref name="to"/> (null drops them).</summary>
+    public MeshDressing Renamed(string from, string? to)
+    {
+        var set = Set;
+        if (set.TryGetValue(from, out var json))
+        {
+            set = set.Remove(from);
+            if (to != null) set = set.SetItem(to, json);
+        }
+        var skip = Skip;
+        if (skip.Contains(from))
+        {
+            skip = skip.Remove(from);
+            if (to != null) skip = skip.Add(to);
+        }
+        return ReferenceEquals(set, Set) && ReferenceEquals(skip, Skip) ? this : new(set, skip);
+    }
+
+    /// <summary>Whether the mesh's overrides or switches mention <paramref name="rule"/>.</summary>
+    public bool Mentions(string rule) => Set.ContainsKey(rule) || Skip.Contains(rule);
+
     static string Compact(string json) => JsonNode.Parse(json)?.ToJsonString() ?? "{}";
 
     public bool Equals(MeshDressing? other) =>

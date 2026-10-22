@@ -14,6 +14,8 @@ public enum Stage { Shape, Dress }
 public abstract class RuleKind
 {
     public abstract string Name { get; }
+    /// <summary>What the editor calls the kind ("Trim" for sweep).</summary>
+    public virtual string DisplayName => Name;
     public abstract Stage Stage { get; }
     public abstract string Summary { get; }
     public abstract IReadOnlyList<ParamSpec> Params { get; }

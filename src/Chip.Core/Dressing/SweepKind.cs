@@ -15,20 +15,23 @@ public sealed class SweepKind : RuleKind
     public const float Tolerance = 0.001f;
 
     public override string Name => "sweep";
+    public override string DisplayName => "Trim";
     public override Stage Stage => Stage.Dress;
     public override string Summary => "Run a profile along edges of matching faces: baseboards, crown moulding, pipes.";
 
     public static readonly string[] EdgeKinds = ["contact", "boundary", "convex", "concave", "border"];
+    public static readonly string[] EdgeLabels = ["Where they touch", "Open edges", "Outside corners", "Inside corners", "Outline"];
 
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        new("faces", ParamType.Faces, null, "Faces whose edges get the profile (the profile stands out from these faces).", Required: true),
-        new("edges", ParamType.Choice, "contact", "contact: where the faces sit on an \"onto\" face of any mesh (wall on floor). boundary: open edges. convex / concave: outside / inside corners. border: the outline of the matching faces.", Choices: EdgeKinds),
-        new("onto", ParamType.Faces, FaceSelector.Up, "For contact: the faces they sit on. Default: up-facing faces (floors).", Required: false),
-        new("minDeg", ParamType.Number, 30f, "For convex / concave: only corners at this angle or more (degrees).", 0, 180),
-        new("profile", ParamType.Profile, Profile.Default, "Cross-section: { \"rect\": [depth, height] }, { \"round\": diameter } or { \"points\": [[x, y], ...] }; x out of the face, y along the surface it sits on (metres)."),
-        new("offset", ParamType.Pair, Vector2.Zero, "Moves the profile [out, along] from the corner (metres)."),
-        new("material", ParamType.Text, null, "Material for the sweep. Default: the material of the face it runs along."),
+        new("faces", ParamType.Faces, null, "Faces whose edges get the profile (the profile stands out from these faces).", Required: true, Label: "Faces"),
+        new("edges", ParamType.Choice, "contact", "contact: where the faces sit on an \"onto\" face of any mesh (wall on floor). boundary: open edges. convex / concave: outside / inside corners. border: the outline of the matching faces.", Choices: EdgeKinds,
+            Label: "Edges", ChoiceLabels: EdgeLabels),
+        new("onto", ParamType.Faces, FaceSelector.Up, "For contact: the faces they sit on. Default: up-facing faces (floors).", Required: false, Label: "Touching"),
+        new("minDeg", ParamType.Number, 30f, "For convex / concave: only corners at this angle or more (degrees).", 0, 180, Label: "Sharper than", Unit: ParamUnit.Degrees),
+        new("profile", ParamType.Profile, Profile.Default, "Cross-section: { \"rect\": [depth, height] }, { \"wedge\": [depth, height] }, { \"round\": diameter }, { \"quarter\": radius }, { \"cove\": radius } or { \"points\": [[x, y], ...] }; x out of the face, y along the surface it sits on (metres).", Label: "Profile"),
+        new("offset", ParamType.Pair, Vector2.Zero, "Moves the profile [out, along] from the corner (metres).", Label: "Offset", Unit: ParamUnit.Length),
+        new("material", ParamType.Text, null, "Material for the sweep. Default: the material of the face it runs along.", Label: "Material"),
     ];
 
     /// <summary>One straight run of an edge to sweep along, with the frame the profile sits in.</summary>

@@ -17,7 +17,7 @@ public class DressingTests
     /// real blockout (south and north run the full width; west and east fit between them). Faces looking into the room
     /// are tagged "wall".
     /// </summary>
-    static Document Room(bool door = false)
+    internal static Document Room(bool door = false)
     {
         var doc = new Document();
         doc.Add(Named(Box(new Vector3(0, -0.2f, 0), new Vector3(4, 0, 4)), "floor"));

@@ -11,19 +11,21 @@ namespace Chip.Core.Dressing;
 public sealed class RepeatKind : RuleKind
 {
     public override string Name => "repeat";
+    public override string DisplayName => "Props along edges";
     public override Stage Stage => Stage.Dress;
     public override string Summary => "Place a prop at even spacing along edges of matching faces: posts, lights, brackets.";
 
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        new("faces", ParamType.Faces, null, "Faces whose edges get the props.", Required: true),
-        new("edges", ParamType.Choice, "contact", "Which edges, as for sweep: contact, boundary, convex, concave or border.", Choices: SweepKind.EdgeKinds),
-        new("onto", ParamType.Faces, FaceSelector.Up, "For contact: the faces they sit on. Default: up-facing faces (floors)."),
-        new("minDeg", ParamType.Number, 30f, "For convex / concave: only corners at this angle or more (degrees).", 0, 180),
-        new("prop", ParamType.Prop, null, "What to place: \"props/lamp.glb\", { \"box\": [w, h, d] } or { \"cylinder\": [diameter, height] }.", Required: true),
-        new("every", ParamType.Number, 1f, "Spacing along each run; rounded so a whole number fits (metres).", 0.05, 1000),
-        new("offset", ParamType.Pair, Vector2.Zero, "Moves each prop [out, along] from the edge (metres): [0, 1.8] puts wall lights at head height."),
-        new("material", ParamType.Text, null, "Material for every prop face. Default: the prop's own."),
+        new("faces", ParamType.Faces, null, "Faces whose edges get the props.", Required: true, Label: "Faces"),
+        new("edges", ParamType.Choice, "contact", "Which edges, as for sweep: contact, boundary, convex, concave or border.", Choices: SweepKind.EdgeKinds,
+            Label: "Edges", ChoiceLabels: SweepKind.EdgeLabels),
+        new("onto", ParamType.Faces, FaceSelector.Up, "For contact: the faces they sit on. Default: up-facing faces (floors).", Label: "Touching"),
+        new("minDeg", ParamType.Number, 30f, "For convex / concave: only corners at this angle or more (degrees).", 0, 180, Label: "Sharper than", Unit: ParamUnit.Degrees),
+        new("prop", ParamType.Prop, null, "What to place: \"props/lamp.glb\", { \"box\": [w, h, d] } or { \"cylinder\": [diameter, height] }.", Required: true, Label: "Prop"),
+        new("every", ParamType.Number, 1f, "Spacing along each run; rounded so a whole number fits (metres).", 0.05, 1000, Label: "Every", Unit: ParamUnit.Length),
+        new("offset", ParamType.Pair, Vector2.Zero, "Moves each prop [out, along] from the edge (metres): [0, 1.8] puts wall lights at head height.", Label: "Offset", Unit: ParamUnit.Length),
+        new("material", ParamType.Text, null, "Material for every prop face. Default: the prop's own.", Label: "Material"),
     ];
 
     internal static PolyMesh Build(Rule rule, List<SweepKind.Segment> segments, PropLibrary props, string name, out string? problem)
@@ -58,22 +60,24 @@ public sealed class RepeatKind : RuleKind
 public sealed class ScatterKind : RuleKind
 {
     public override string Name => "scatter";
+    public override string DisplayName => "Scatter props";
     public override Stage Stage => Stage.Dress;
     public override string Summary => "Sprinkle props over matching faces, seeded by each face so edits elsewhere never reshuffle them.";
 
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        new("faces", ParamType.Faces, null, "Faces to scatter over.", Required: true),
-        new("props", ParamType.Props, null, "Props to choose from (a list, or one prop).", Required: true),
-        new("weights", ParamType.Numbers, null, "How often each prop is chosen, in the same order (default: equally)."),
-        new("perM2", ParamType.Number, 0.5f, "Props per square metre (on average).", 0, 100),
-        new("minGap", ParamType.Number, 0.25f, "No two props on a face closer than this (metres).", 0, 100),
-        new("scale", ParamType.Pair, Vector2.One, "Random uniform scale range [min, max]."),
-        new("yawDeg", ParamType.Pair, new Vector2(0, 360), "Random turn range [min, max] (degrees)."),
-        new("align", ParamType.Choice, "up", "up: props stand upright (floors). normal: props follow the face (walls, slopes).", Choices: ["up", "normal"]),
-        new("offset", ParamType.Number, 0f, "Raise each prop off the face (metres; negative sinks it).", -100, 100),
-        new("seed", ParamType.Int, 0, "Change for a different arrangement.", int.MinValue, int.MaxValue),
-        new("material", ParamType.Text, null, "Material for every prop face. Default: the props' own."),
+        new("faces", ParamType.Faces, null, "Faces to scatter over.", Required: true, Label: "Faces"),
+        new("props", ParamType.Props, null, "Props to choose from (a list, or one prop).", Required: true, Label: "Props"),
+        new("weights", ParamType.Numbers, null, "How often each prop is chosen, in the same order (default: equally).", Label: "Weights"),
+        new("perM2", ParamType.Number, 0.5f, "Props per square metre (on average).", 0, 100, Label: "Density", Unit: ParamUnit.PerM2),
+        new("minGap", ParamType.Number, 0.25f, "No two props on a face closer than this (metres).", 0, 100, Label: "Min gap", Unit: ParamUnit.Length),
+        new("scale", ParamType.Pair, Vector2.One, "Random uniform scale range [min, max].", Label: "Scale", Unit: ParamUnit.Scale),
+        new("yawDeg", ParamType.Pair, new Vector2(0, 360), "Random turn range [min, max] (degrees).", Label: "Turn", Unit: ParamUnit.Degrees),
+        new("align", ParamType.Choice, "up", "up: props stand upright (floors). normal: props follow the face (walls, slopes).", Choices: ["up", "normal"],
+            Label: "Stand", ChoiceLabels: ["Upright", "On the surface"]),
+        new("offset", ParamType.Number, 0f, "Raise each prop off the face (metres; negative sinks it).", -100, 100, Label: "Raise", Unit: ParamUnit.Length),
+        new("seed", ParamType.Int, 0, "Change for a different arrangement.", int.MinValue, int.MaxValue, Label: "Seed"),
+        new("material", ParamType.Text, null, "Material for every prop face. Default: the props' own.", Label: "Material"),
     ];
 
     /// <summary>Most props one face may get, so a typo in perM2 can't hang the editor.</summary>

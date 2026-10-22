@@ -30,11 +30,26 @@ public sealed record PropSpec(PropShape Shape, string? File, Vector3 Size, int S
 }
 
 /// <summary>
-/// One parameter a rule kind accepts: its type, default, range and description. The tables drive validation, defaults,
-/// the JSON Schema and the inspector, so adding a parameter is one line.
+/// What a number means, for display: lengths are stored in metres and shown in centimetres; the rest show as stored.
+/// </summary>
+public enum ParamUnit { None, Length, Degrees, PerM2, Scale }
+
+/// <summary>
+/// One parameter a rule kind accepts: its type, default, range and description, plus how the editor shows it (a label,
+/// a unit, and labels for choices). The tables drive validation, defaults, the JSON Schema, the Dressing rules window and
+/// the inspector, so adding a parameter is one line.
 /// </summary>
 public sealed record ParamSpec(string Name, ParamType Type, object? Default, string Description,
-    double Min = double.NegativeInfinity, double Max = double.PositiveInfinity, string[]? Choices = null, bool Required = false);
+    double Min = double.NegativeInfinity, double Max = double.PositiveInfinity, string[]? Choices = null, bool Required = false,
+    string? Label = null, ParamUnit Unit = ParamUnit.None, string[]? ChoiceLabels = null)
+{
+    /// <summary>The label the editor shows (the key when the table gives none).</summary>
+    public string DisplayLabel => Label ?? Name;
+
+    /// <summary>The editor's label for <paramref name="choice"/>.</summary>
+    public string ChoiceLabel(string choice) =>
+        Choices != null && ChoiceLabels != null && Array.IndexOf(Choices, choice) is var i and >= 0 && i < ChoiceLabels.Length ? ChoiceLabels[i] : choice;
+}
 
 /// <summary>Which faces a rule looks at. Every key that is set must hold; an empty selector matches every face.</summary>
 public sealed record FaceSelector(string[] Tags, string[] NotTags, string[] Materials, string? Facing)
@@ -84,7 +99,27 @@ public sealed record Profile(Vector2[] Points)
 {
     public static readonly Profile Default = Rect(0.015f, 0.12f);
 
-    public static Profile Rect(float depth, float height) => new([new(0, 0), new(0, height), new(depth, height), new(depth, 0)]);
+    /// <summary>How the profile is written in a rules file (compact JSON), when it came from one of the shapes below.</summary>
+    public string? Json { get; init; }
+
+    public static Profile Rect(float depth, float height) =>
+        new([new(0, 0), new(0, height), new(depth, height), new(depth, 0)]) { Json = $"{{\"rect\":[{F(depth)},{F(height)}]}}" };
+
+    /// <summary>A right triangle filling the corner: <paramref name="depth"/> out of the face, <paramref name="height"/> along the surface.</summary>
+    public static Profile Wedge(float depth, float height) =>
+        new([new(0, 0), new(depth, 0), new(0, height)]) { Json = $"{{\"wedge\":[{F(depth)},{F(height)}]}}" };
+
+    /// <summary>A quarter circle filling the corner (quarter-round moulding).</summary>
+    public static Profile Quarter(float radius, int segments) =>
+        new([new(0, 0), .. Enumerable.Range(0, segments + 1).Select(i => Arc(Vector2.Zero, radius, MathF.PI * 0.5f * i / segments))]) { Json = $"{{\"quarter\":{F(radius)}}}" };
+
+    /// <summary>A square in the corner with a quarter circle cut from its outer side (cove moulding).</summary>
+    public static Profile Cove(float radius, int segments) =>
+        new([new(0, 0), .. Enumerable.Range(0, segments + 1).Select(i => Arc(new Vector2(radius), radius, MathF.PI * (1.5f - 0.5f * i / segments)))]) { Json = $"{{\"cove\":{F(radius)}}}" };
+
+    static Vector2 Arc(Vector2 centre, float r, float a) => centre + r * new Vector2(MathF.Cos(a), MathF.Sin(a));
+
+    static string F(float v) => Math.Round(v, 6).ToString(CultureInfo.InvariantCulture);
 
     public static Profile Round(float diameter, int sides)
     {
@@ -95,7 +130,7 @@ public sealed record Profile(Vector2[] Points)
             float a = MathF.Tau * i / sides;
             pts[i] = new Vector2(r + r * MathF.Cos(a), r + r * MathF.Sin(a));
         }
-        return new Profile(pts);
+        return new Profile(pts) { Json = $"{{\"round\":{F(diameter)}}}" };
     }
 
     /// <summary>Furthest any point is from the corner: how far a sweep reaches, for neighbour queries.</summary>
@@ -274,9 +309,9 @@ static class ParamReader
     static Profile? ReadProfile(JNode node, string path, List<Diagnostic> diags, string rule)
     {
         Diagnostic Bad(string m, JNode at) => new(Severity.Error, "E201", m,
-            "use { \"rect\": [depth, height] }, { \"round\": diameter } or { \"points\": [[x, y], ...] }", at.Pos, path, Rule: rule);
+            "use { \"rect\": [depth, height] }, { \"wedge\": [depth, height] }, { \"round\": diameter }, { \"quarter\": radius }, { \"cove\": radius } or { \"points\": [[x, y], ...] }", at.Pos, path, Rule: rule);
         if (node is not JObject o || o.Entries.Count == 0) { diags.Add(Bad($"expected a profile, got {node.TypeName}", node)); return null; }
-        string[] known = ["rect", "round", "sides", "points"];
+        string[] known = ["rect", "wedge", "round", "quarter", "cove", "sides", "points"];
         foreach (var key in o.Keys.Where(k => !known.Contains(k)))
         {
             diags.Add(UnknownKey(key, known, o.KeyPos(key), $"{path}.{key}", rule, "profile"));
@@ -289,6 +324,13 @@ static class ParamReader
             diags.Add(Bad("rect is [depth, height], both above 0 (metres)", r));
             return null;
         }
+        if (o["wedge"] is { } w)
+        {
+            if (w is JArray { Items.Count: 2 } wa && wa.Items.All(i => i is JNumber { Value: > 0 }))
+                return Profile.Wedge((float)((JNumber)wa.Items[0]).Value, (float)((JNumber)wa.Items[1]).Value);
+            diags.Add(Bad("wedge is [depth, height], both above 0 (metres)", w));
+            return null;
+        }
         if (o["round"] is { } d)
         {
             int sides = o["sides"] is JNumber { Value: >= 3 and <= 64 } sn ? (int)sn.Value : 8;
@@ -296,6 +338,14 @@ static class ParamReader
             diags.Add(Bad("round is a diameter above 0 (metres)", d));
             return null;
         }
+        foreach (var curve in new[] { "quarter", "cove" })
+            if (o[curve] is { } q)
+            {
+                int sides = o["sides"] is JNumber { Value: >= 2 and <= 32 } sn ? (int)sn.Value : 6;
+                if (q is JNumber { Value: > 0 } qn) return curve == "quarter" ? Profile.Quarter((float)qn.Value, sides) : Profile.Cove((float)qn.Value, sides);
+                diags.Add(Bad($"{curve} is a radius above 0 (metres)", q));
+                return null;
+            }
         if (o["points"] is JArray { Items.Count: >= 3 } pa && pa.Items.All(i => i is JArray { Items.Count: 2 } p && p.Items.All(n => n is JNumber)))
             return new Profile(pa.Items.Cast<JArray>().Select(p => new Vector2((float)((JNumber)p.Items[0]).Value, (float)((JNumber)p.Items[1]).Value)).ToArray());
         diags.Add(Bad("points is a list of at least three [x, y] pairs", o["points"] ?? node));

@@ -42,9 +42,15 @@ public sealed class DiskFiles : IDressingFiles
     }
 }
 
-/// <summary>Rules files in memory, for tests and headless tools. Setting a file bumps its stamp.</summary>
-public sealed class MemoryFiles : IDressingFiles
+/// <summary>
+/// Rules files in memory, for tests and headless tools. Setting a file bumps its stamp. Also a session's file store, so
+/// undoable rules edits in tests land where the dresser reads.
+/// </summary>
+public sealed class MemoryFiles : IDressingFiles, Scene.ISessionFiles
 {
+    string? Scene.ISessionFiles.Read(string path) => ReadText(path);
+    void Scene.ISessionFiles.Write(string path, string? text) => this[path] = text;
+
     readonly Dictionary<string, (string Text, long Stamp)> _files = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, byte[]> _bytes = new(StringComparer.OrdinalIgnoreCase);
     long _next;
