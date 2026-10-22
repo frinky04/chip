@@ -42,8 +42,11 @@ sealed class DressingOverrides(DressingFeature feature)
             if (!skipped)
             {
                 var over = mesh.Dressing.OverridesFor(rule.Id) is { } json ? JsonNode.Parse(json)?.AsObject() : null;
+                // As in the rules window: an angle only matters for corner edges.
+                string edges = over?["edges"]?.GetValue<string>() ?? rule.Text("edges") ?? "";
                 foreach (var spec in rule.Kind.Params.Where(p => Editable(p.Type)))
-                    Field(ctx, mesh, rule, spec, over?[spec.Name]);
+                    if (spec.Name != "minDeg" || edges is "convex" or "concave")
+                        Field(ctx, mesh, rule, spec, over?[spec.Name]);
             }
             ImGui.PopID();
             ImGui.Dummy(Theme.Px(0, 3));
@@ -58,22 +61,27 @@ sealed class DressingOverrides(DressingFeature feature)
         ImGui.TextColored(Theme.TextDim, rule.Kind.DisplayName);
         var overrides = mesh.Dressing.OverridesFor(rule.Id);
         bool overridden = overrides != null;
-        string toggle = skipped ? "Switch on" : "Switch off";
-        float Width(string s) => ImGui.CalcTextSize(s).X + ImGui.GetStyle().FramePadding.X * 2 + ImGui.GetStyle().ItemSpacing.X;
-        float w = Width(toggle) - ImGui.GetStyle().ItemSpacing.X;
-        float extraW = overridden ? Width("Reset") + Width("Apply to rule") : 0;
-        ImGui.SameLine(ImGui.GetContentRegionMax().X - w - extraW);
-        if (overridden)
+
+        // The rule's name and kind, then a switch for this mesh and a way to the rule itself.
+        float w = ImGui.GetFrameHeight();
+        ImGui.SameLine(ImGui.GetContentRegionMax().X - w * 2 - ImGui.GetStyle().ItemSpacing.X);
+        bool on = !skipped;
+        if (ImGui.Checkbox("##on", ref on)) Edit(ctx, mesh.Id, on ? "Switch dressing rule on" : "Switch dressing rule off", d => d.WithSkip(rule.Id, !on));
+        Tip(skipped ? $"Off for this mesh: let {rule.Id} dress it again" : $"On: untick to stop {rule.Id} dressing this mesh (other meshes keep it)");
+        ImGui.SameLine();
+        if (IconButton("edit", Icon.ChevronRight, $"Open {rule.Id} in Dressing rules, to change it for every mesh", w)) feature.Window.ShowRule(rule.Id);
+
+        // Values set for this mesh: put them into the rule for everyone, or drop them.
+        if (overridden && !skipped)
         {
-            if (ImGui.Button("Apply to rule")) ApplyToRule(ctx, mesh, rule, overrides!);
+            ImGui.TextColored(Theme.Accent, "This mesh differs");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Use for all")) ApplyToRule(ctx, mesh, rule, overrides!);
             Tip($"Put this mesh's values into {rule.Id} itself, so every mesh it dresses gets them");
             ImGui.SameLine();
-            if (ImGui.Button("Reset")) Edit(ctx, mesh.Id, "Reset dressing overrides", d => d.WithoutOverrides(rule.Id));
-            Tip($"Go back to the rules file's values for {rule.Id} on this mesh");
-            ImGui.SameLine();
+            if (ImGui.SmallButton("Reset")) Edit(ctx, mesh.Id, "Reset dressing overrides", d => d.WithoutOverrides(rule.Id));
+            Tip($"Go back to the rule's values for {rule.Id} on this mesh");
         }
-        if (ImGui.Button(toggle)) Edit(ctx, mesh.Id, skipped ? "Switch dressing rule on" : "Switch dressing rule off", d => d.WithSkip(rule.Id, !skipped));
-        Tip(skipped ? $"Let {rule.Id} dress this mesh again" : $"Stop {rule.Id} dressing this mesh (other meshes keep it)");
     }
 
     void Field(EditorContext ctx, PolyMesh mesh, Rule rule, ParamSpec spec, JsonNode? over)

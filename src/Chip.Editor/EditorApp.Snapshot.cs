@@ -19,6 +19,7 @@ namespace Chip.Editor;
 public sealed partial class EditorApp
 {
     uint _captureFbo;
+    Features.Dressing.DressingFeature _dressing = null!;
     string? _snapshotPaletteQuery;
     Action? _snapshotAfterPrefsOpen;
     Vector2? _shotDragMouse;
@@ -182,6 +183,14 @@ public sealed partial class EditorApp
                 string pick = state == "dressing-railing" ? "rail-north" : state == "dressing-dresswith" ? "plinth" : "pillar"; // railing: its per-mesh overrides show
                 if (ctx.Doc.Meshes.FirstOrDefault(m => m.Name == pick) is { } picked) ctx.Sel.Add(ElementRef.Object(picked.Id));
                 if (state == "dressing-blockout") ctx.Commands.Execute("view.dressed");
+                // CHIP_SHOT_RULE=<id> (or "vars") picks what the Dressing rules window shows.
+                if (Environment.GetEnvironmentVariable("CHIP_SHOT_RULE") is { Length: > 0 } shotRule)
+                {
+                    if (shotRule == "vars") _dressing.Window.ShowSharedValues(); else _dressing.Window.ShowRule(shotRule);
+                }
+                if (state == "dressing-railing" && Environment.GetEnvironmentVariable("CHIP_SHOT_OVERRIDE") == "1"
+                    && ctx.Doc.Meshes.FirstOrDefault(m => m.Name == "rail-north") is { } rail)
+                    rail.Dressing = rail.Dressing.WithParam("railings", "balusterEvery", System.Text.Json.Nodes.JsonValue.Create(0.3));
                 if (state == "dressing-dresswith") ctx.Commands.Execute("dressing.dressWith");
                 if (state == "dressing-tags") ctx.Commands.Execute("view.tagColours");
                 break;

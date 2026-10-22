@@ -347,14 +347,26 @@ public class DressingEditingTests
         var sel = new Selection();
         SelectionOps.Replace(sel, SelectMode.Object, [ElementRef.Object(box.Id)], null);
         var upright = new FaceSelector(["wall"], [], [], "upright");
-        Assert.Equal((0, 4), DressingOps.DressCoverage(doc, sel, "wall", false, upright));
-        Assert.Equal(4, DressingOps.Dress(doc, sel, "wall", false, upright, on: true)); // the four sides, not top and bottom
+        Assert.Equal((0, 4), DressingOps.DressCoverage(doc, sel, "baseboard", "wall", false, upright));
+        Assert.Equal(4, DressingOps.Dress(doc, sel, "baseboard", "wall", false, upright, on: true)); // the four sides, not top and bottom
         Assert.Equal(4, box.Faces.Count(f => f.Tags.Contains("wall")));
-        Assert.Equal(1, DressingOps.Dress(doc, sel, "railing", true, FaceSelector.Any, on: true));
+        Assert.Equal(1, DressingOps.Dress(doc, sel, "rail", "railing", true, FaceSelector.Any, on: true));
         Assert.True(box.Tags.Contains("railing"));
 
+        // Taking the box out of one rule leaves the tag for the others (a skip, not a removed tag), and dressing again undoes it.
+        Assert.Equal(4, DressingOps.Dress(doc, sel, "baseboard", "wall", false, upright, on: false));
+        Assert.Equal(4, box.Faces.Count(f => f.Tags.Contains("wall") && f.Tags.Contains("skip:baseboard")));
+        Assert.Equal((0, 4), DressingOps.DressCoverage(doc, sel, "baseboard", "wall", false, upright));
+        Assert.Equal((4, 4), DressingOps.DressCoverage(doc, sel, "wall-lights", "wall", false, upright));
+        Assert.Equal(1, DressingOps.Dress(doc, sel, "rail", "railing", true, FaceSelector.Any, on: false));
+        Assert.True(box.Tags.Contains("railing") && box.Dressing.Skips("rail"));
+        Assert.Equal(4, DressingOps.Dress(doc, sel, "baseboard", "wall", false, upright, on: true));
+        Assert.DoesNotContain(box.Faces, f => f.Tags.Contains("skip:baseboard"));
+        Assert.Equal(1, DressingOps.Dress(doc, sel, "rail", "railing", true, FaceSelector.Any, on: true));
+        Assert.False(box.Dressing.Skips("rail"));
+
         SelectionOps.Replace(sel, SelectMode.Face, [ElementRef.Face(box.Id, 0)], null);
-        Assert.Equal(1, DressingOps.Dress(doc, sel, "frame", false, FaceSelector.Any, on: true));
+        Assert.Equal(1, DressingOps.Dress(doc, sel, "frame", "frame", false, FaceSelector.Any, on: true));
         Assert.Equal(1, box.Faces.Count(f => f.Tags.Contains("frame")));
     }
 

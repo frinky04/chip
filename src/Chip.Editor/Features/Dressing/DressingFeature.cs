@@ -133,8 +133,14 @@ public sealed class DressingFeature : IEditorFeature
         }
         if (!ws.Exists) WriteSchema(path);
         Recheck();
+        LastSaved = (_ctx.Now, string.Join(", ", changes.Select(c => Path.GetFileName(c.Path))));
         return true;
     }
+
+    /// <summary>When the last rule edit was written and to which files, for the rules window's "Saved" note.</summary>
+    public (double At, string Files)? LastSaved { get; private set; }
+
+    public double Now => _ctx.Now;
 
     /// <summary>Checks the rules files on the next frame instead of within a quarter second (after Chip wrote them).</summary>
     void Recheck()

@@ -96,6 +96,14 @@ public sealed class RulesWorkspace
     public JsonNode? Resolve(JsonNode? value) =>
         value is JsonValue v && v.TryGetValue<string>(out var s) && s.StartsWith('$') && Vars.TryGetValue(s[1..], out var var) ? var.Value : value;
 
+    /// <summary>A value with every <c>"$name"</c> inside it resolved too (lists and objects), for display.</summary>
+    public JsonNode? ResolveDeep(JsonNode? value) => Resolve(value) switch
+    {
+        JsonArray a => new JsonArray(a.Select(i => ResolveDeep(i)?.DeepClone()).ToArray()),
+        JsonObject o => new JsonObject(o.Select(kv => KeyValuePair.Create(kv.Key, ResolveDeep(kv.Value)?.DeepClone()))),
+        var v => v,
+    };
+
     /// <summary>The variable a value refers to (<c>"$trim"</c> → trim), or null.</summary>
     public static string? VarName(JsonNode? value) =>
         value is JsonValue v && v.TryGetValue<string>(out var s) && s.StartsWith('$') && s.Length > 1 ? s[1..] : null;

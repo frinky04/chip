@@ -46,7 +46,7 @@ write the same rules, and Chip reloads the file whenever it changes on disk.
 6. You drag a wall out 2 m. Its bevel, its baseboard and the baseboards of the two walls it touches rebuild; nothing
    else does. Wireframe and selection stay on the blockout, so editing reads cleanly.
 7. You click a baluster: the railing box is selected. The inspector's Dressing section lists the rules that take it, with
-   their settings; set this one's baluster spacing to 10 cm (stored on the mesh, not in the rules). **Apply to rule** puts
+   their settings; set this one's baluster spacing to 10 cm (stored on the mesh, not in the rules). **Use for all** puts
    that value into the rule for every railing.
 8. One corner looks wrong. Switch the rule off for that mesh in the inspector, tag the face `skip:baseboard`, or Bake
    that wall (Tools > Bake dressing) and fix it by hand. A face that should be dressed and isn't? Select it: the inspector
@@ -60,31 +60,42 @@ write the same rules, and Chip reloads the file whenever it changes on disk.
 
 ### Dressing rules window (Tools > Dressing rules, Ctrl+Shift+D)
 
-- **List**: every rule with a switch, its name, what kind it is and how many meshes it made (`error`, `off`, `nothing`
-  otherwise). Rules from a style are listed first; `•` marks one this level changes. Hover a rule to tint what it takes.
-  **+ Add rule** offers the recipes (below).
-- **Settings** of the selected rule, in words and units: lengths in centimetres, angles in degrees, density per m².
-  Rename it (its per-mesh overrides and `skip:` tags follow), write a note, and set every parameter of its kind:
+- **List**: every rule with a switch, its name over its kind, and how many meshes it made (`error`, `off` or
+  `no matches` otherwise). Rules are grouped under *From <style>* and *This level*; "changed here" marks a style's rule
+  this level changes. Hover a rule to tint what it takes. A filter appears once there are more than six rules; drag the
+  divider to widen the list. **+ Add rule** (pinned at the bottom) offers the recipes (below), and **Shared values**
+  sits above it.
+- **Settings** of the selected rule, in words and units: lengths in centimetres, angles in degrees, density per m². The
+  header says what the kind does and which file changes save to; problems with the rule come first, with their fixes.
+  Rename it (its per-mesh overrides and `skip:` tags follow), write a note, and set every parameter of its kind. Fields
+  side by side are labelled inside (`depth`, `height`, `out`, `up`, `min`, `max`, `W` `H` `D`). Every row keeps a column at
+  the right for × (put the style's value back) or $ (the field uses a shared value: click to edit it).
   - *Faces*: tags as chips (+ offers the level's tags or a new one), which way they face, and under *More filters* tags
     to leave out and material globs. *Meshes* (proxies): mesh tags.
   - *Where* (trim, props along edges): *Along the floor*, *Along the ceiling*, *Outside corners*, *Inside corners*,
     *Outline*, *Open edges*, or *Custom* (touching faces you pick by tag, material or facing).
-  - *Profile*: *Flat strip*, *Wedge*, *Quarter round*, *Cove*, *Round* or a custom shape, with a preview of the
+  - *Profile*: *Flat strip*, *Wedge*, *Quarter round*, *Cove*, *Round* (with segment or side counts) or *Custom points*
+    (a row per corner, out and up in cm; picking it starts from the current outline), with a preview of the
     cross-section against the face and the surface it runs along.
-  - *Prop*: a box or cylinder sized in cm, or a `.glb` / `.gltf` file. Scatter takes a list, each with a weight.
+  - *Prop*: a box (W H D) or cylinder (Ø H, sides) sized in cm, or a model file (Browse..., with a warning when the file
+    is missing). Scatter takes a list, each with a weight (×2 is picked twice as often as ×1).
   - *Material*: type one, or pick from the library or the active material. Empty means the default (the face's own).
-- **Actions**: *Dress selection* (as Dress with, for this rule), *Select what it takes*, *Duplicate*, *Delete*. Problems
-  with the rule show above them with their fixes.
-- **Styles** (top): the rules files this level builds on. **+** picks one from the level's folder, a `styles` folder
-  beside it or above it, or anywhere (Browse). With a style in use, **Edit the style** sends changes to the style file
-  (every level using it changes) instead of this level. A value this level changes from its style shows orange with ×
-  to put the style's back; in style mode it is locked, since the level's value would still win.
-- **Shared values**: the variables rules use by name (`"$trim"`); change one and every rule using it follows.
+  Edits keep shared values where they can: changing one side of a pair, or one corner, leaves a `"$name"` on the other.
+- **Actions**: *Dress selection* (as Dress with, for this rule), *Select matches*, *Duplicate*, *Delete*.
+- **Styles** (top): the rules files this level builds on, each a button that opens its file and a separate remove
+  button. **+** picks one from the level's folder, a `styles` folder beside it or above it, or anywhere (Browse). A rule
+  from a style shows *Changes to: This level | Shared style*: the shared choice sends changes to the style file (every
+  level using it changes). A value this level changes from its style shows orange with × to put the style's back; with
+  *Shared style* it is locked, since the level's value would still win.
+- **Shared values**: the variables rules use by name (`"$trim"`), with which rules use each; change one and every rule
+  using it follows. Lengths show and are typed in cm ("12 cm"; "0.12 m" works too).
 - **Save as style...** (bottom): moves the level's own rules and shared values into a new style file and imports it.
+  The footer also counts rules and problems (click to jump to the first) and says "Saved <file>" after each change.
 - **Open JSON**: the file in your text editor.
 
 Every change is one undo step that rewrites the rules file; Ctrl+Z puts the old file back. Drags commit on release, so
-dragging a value redresses once.
+dragging a value redresses once. With no rules yet the window lists the recipes with what each selects; for an unsaved
+level it offers **Save level...**.
 
 ### Recipes
 
@@ -105,9 +116,12 @@ Recipes are a starting point: the rule they add is an ordinary rule you can chan
 
 ### Dress with (Edit > Dress with, Ctrl+Shift+T)
 
-A popup at the mouse lists the level's rules (with a box showing whether the selection is all, partly or not dressed with
-each) and the recipes the level doesn't have yet. Picking a rule tags the selection so the rule takes it; picking it
-again takes the tag away; picking a recipe adds its rule first. One undo step either way.
+A popup at the mouse lists *Rules in this level* (with a box showing whether the selection is all, partly or not
+dressed with each) and then *Add from a recipe* (the recipes the level doesn't have yet). Picking a rule dresses the
+selection with it: tags it, and clears any `skip:` tag or per-mesh switch that kept that rule off. Picking a rule the
+whole selection already has takes it out of **that rule only**: faces get `skip:<rule>`, meshes switch the rule off, and
+the tag stays, so Wall lights keep a wall you took out of Baseboard. Picking a recipe adds its rule first. One undo step
+each. A tooltip names the other rules a tag also feeds; rows nothing selected can take are dimmed.
 
 What gets tagged: in face mode, the selected faces. In object mode, the faces of each selected mesh the rule could use if
 they carried its tag: for an "upright `wall` faces" rule, a box's four sides but not its top and bottom. Proxies tag the
@@ -115,10 +129,12 @@ meshes themselves. A rule that picks faces only by facing or material has no tag
 
 ### Elsewhere
 
-- **Inspector, Dressing section**: the Dressed / Blockout switch, **Rules...**, which rules touch the selection, Bake.
-  With one mesh selected: each rule that takes it, with a switch to turn it off for this mesh and its simple parameters as
-  per-mesh overrides (orange, with Reset and **Apply to rule**), and *Why don't N rules take this mesh?* (or face, with
-  one face selected) listing each rule that skips it and why. Click a reason to open the rule.
+- **Inspector, Dressing section**: the Dressed / Blockout switch, **Dress with...**, **Rules...**, which rules touch the
+  selection, Bake. A saved level without rules shows a small version (Dress with, Rules) while something is selected.
+  With one mesh selected: each rule that takes it, with a tick to turn it off for this mesh, › to open the rule, and its
+  simple parameters as per-mesh overrides (orange; "This mesh differs" with **Use for all** and **Reset**), and *Why
+  don't N rules take this mesh?* (or face, with one face selected): a row per rule that skips it, with why; click one to
+  open the rule.
 - **View > Tag colours**: every tagged face tinted by its first tag (mesh tags striped), so untagged surfaces stand out.
   The rules window's tag chips use the same colours.
 - **Tags** (Ctrl+T, inspector Tags section) still work as before: Dress with is a shortcut for the common case.
@@ -434,14 +450,15 @@ about 30 µs; a drag frame moving one wall about 1.5 ms.
 - `DressWithPopup` (Ctrl+Shift+T): rules and recipes for the selection; `Apply` and `ApplyRecipe` are what the window's
   *Dress selection* and the tests use.
 - `DressingSection` and `DressingOverrides`: the inspector block (view switch, Rules..., selection, per-mesh overrides with
-  Apply to rule, why rules skip the selection, problems), and Tools > Bake dressing (`DressingBake`).
+  Use for all, why rules skip the selection, problems), and Tools > Bake dressing (`DressingBake`).
 - Renderer: `BeginFrame(..., scene, tints)` draws solid faces from the dressed level when `ShowDressed`; wires, selection
   and overlays stay on the blockout. Picking stays on the blockout: clicking a railing hits its box, which is what you edit.
 - Export (GLB and OBJ) writes `EditorContext.ExportDocument()`: the dressed level when there are rules, even with the
   blockout view showing. Collision stand-ins reuse `CollisionMode.Only` and the collision bake.
 - `Chip --rules-check level.chip [--json]` and `Chip --rules-schema [out.json]` run without a window. Captures:
   `--shot - out.png dressing` (and `dressing-blockout`, `dressing-railing`, `dressing-rules`, `dressing-dresswith`,
-  `dressing-tags`); `CHIP_SHOT_CAMERA` frames close-ups.
+  `dressing-tags`); `CHIP_SHOT_CAMERA` frames close-ups, `CHIP_SHOT_RULE=<id>` (or `vars`) picks what the rules window
+  shows, and `CHIP_SHOT_OVERRIDE=1` gives the `dressing-railing` railing a per-mesh override.
 
 ### Tests (through the interface)
 
@@ -455,12 +472,12 @@ style mode, rename / delete / duplicate / save as style, recipes load clean, new
 as JSON, undoable file writes, rename carrying overrides and skip tags, Dress with, Explain and Targets.
 `DressingFeatureTests` (editor): the sample dresses and exports, the view toggle, blockout and rules-file edits redress,
 rule edits write the file and undo, rename in one step with overrides, Dress with and recipes, the first rule creates the
-file, viewport tints.
+file, taking a face out of one rule leaves the rules sharing its tag, viewport tints.
 
 ## Later
 
-Export instancing, height bands (chair rails), more modifiers, a texture running along trims (`uv: along`), editing
-custom profile points in the window.
+Export instancing, height bands (chair rails), more modifiers, a texture running along trims (`uv: along`), prop
+thumbnails in the rules window.
 
 ## Known limits
 
@@ -479,5 +496,5 @@ custom profile points in the window.
   in the rules window, for the whole rule.
 - Only one Shape rule per mesh, so a mesh can't be both bevelled and a proxy.
 - The window rewrites the rules file canonically: comments in a hand-written file are lost on its first edit there.
-- Renaming or deleting a style's rule (Edit the style) updates this level's overrides and `skip:` tags, not other levels'.
-- Custom profile points are shown, not edited, in the window (Open JSON).
+- Renaming or deleting a style's rule (Shared style) updates this level's overrides and `skip:` tags, not other levels'.
+- Shared values are edited as text (lengths in cm); a value used both as a length and as something else shows plainly.

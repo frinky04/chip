@@ -55,36 +55,55 @@ public static class DressingOps
         }
     }
 
-    /// <summary>How many of the targets carry the tag already, out of how many.</summary>
-    public static (int With, int Total) DressCoverage(Document doc, Selection sel, string tag, bool meshTag, FaceSelector faces)
+    /// <summary>
+    /// How many of the targets <paramref name="rule"/> dresses already (they carry the tag, and neither the face's
+    /// <c>skip:</c> tag nor the mesh's switch turns the rule off), out of how many.
+    /// </summary>
+    public static (int With, int Total) DressCoverage(Document doc, Selection sel, string rule, string tag, bool meshTag, FaceSelector faces)
     {
         int with = 0, total = 0;
+        string skip = TagSet.SkipPrefix + rule;
         foreach (var (mesh, list) in DressTargets(doc, sel, meshTag, faces))
         {
-            if (list == null) { total++; if (mesh.Tags.Contains(tag)) with++; continue; }
-            foreach (var f in list) { total++; if (mesh.Faces[f].Tags.Contains(tag)) with++; }
+            bool meshOff = mesh.Dressing.Skips(rule);
+            if (list == null) { total++; if (mesh.Tags.Contains(tag) && !meshOff) with++; continue; }
+            foreach (var f in list)
+            {
+                total++;
+                var t = mesh.Faces[f].Tags;
+                if (t.Contains(tag) && !t.Contains(skip) && !meshOff) with++;
+            }
         }
         return (with, total);
     }
 
-    /// <summary>Adds (or removes) the tag on the targets; returns how many changed.</summary>
-    public static int Dress(Document doc, Selection sel, string tag, bool meshTag, FaceSelector faces, bool on)
+    /// <summary>
+    /// Dresses the targets with <paramref name="rule"/> (adds its tag and clears the rule's <c>skip:</c> tags and mesh
+    /// switch), or with <paramref name="on"/> false takes them out of just that rule: faces get <c>skip:rule</c>, meshes
+    /// switch the rule off. The tag stays, so other rules selecting by it keep the selection. Returns how many changed.
+    /// </summary>
+    public static int Dress(Document doc, Selection sel, string rule, string tag, bool meshTag, FaceSelector faces, bool on)
     {
         int changed = 0;
+        string skip = TagSet.SkipPrefix + rule;
         foreach (var (mesh, list) in DressTargets(doc, sel, meshTag, faces).ToList())
         {
+            bool touched = false;
+            if (on && mesh.Dressing.Skip.Contains(rule)) { mesh.Dressing = mesh.Dressing.WithSkip(rule, false); touched = true; }
             if (list == null)
             {
-                var next = on ? mesh.Tags.Add(tag) : mesh.Tags.Remove(tag);
-                if (next != mesh.Tags) { mesh.Tags = next; changed++; }
+                if (on && !mesh.Tags.Contains(tag)) { mesh.Tags = mesh.Tags.Add(tag); touched = true; }
+                if (!on && mesh.Tags.Contains(tag) && !mesh.Dressing.Skips(rule)) { mesh.Dressing = mesh.Dressing.WithSkip(rule, true); touched = true; }
+                if (touched) changed++;
                 continue;
             }
             foreach (var f in list)
             {
                 var face = mesh.Faces[f];
-                var next = on ? face.Tags.Add(tag) : face.Tags.Remove(tag);
+                var next = on ? face.Tags.Add(tag).Remove(skip) : face.Tags.Contains(tag) ? face.Tags.Add(skip) : face.Tags;
                 if (next != face.Tags) { face.Tags = next; changed++; }
             }
+            if (touched && list.Count == 0) changed++;
         }
         return changed;
     }

@@ -85,27 +85,40 @@ sealed class RuleFields(DressingFeature feature)
         bool changed = _rule.LevelKeys.Contains(key);
         ImGui.AlignTextToFramePadding();
         ImGui.TextColored(changed ? Theme.Accent : Theme.TextDim, spec.DisplayLabel);
-        var var = RulesWorkspace.VarName(_rule.Raw[key]);
-        string tip = spec.Description + (spec.Required ? "\nRequired." : "")
-            + (changed ? "\nChanged in this level (the style says otherwise)." : "")
-            + (var != null ? $"\nUses the shared value \"{var}\". Changing it here gives this rule its own value." : "");
-        Tip(tip);
+        Tip(spec.Description + (spec.Required ? "\nRequired." : "") + (changed ? "\nChanged in this level (orange): × puts the style's value back." : ""));
         ImGui.SameLine(LabelW);
     }
 
-    /// <summary>Reserves the reset button's room at the right of a row, returning the width left for the widget.</summary>
-    float Avail(string key) => ImGui.GetContentRegionAvail().X - (Resettable(key) ? Theme.Px(24) + ImGui.GetStyle().ItemSpacing.X : 0);
+    static float SideW => Theme.Px(24);
+
+    /// <summary>The width left for a row's widget: every row keeps a side column at the right, so fields never change width.</summary>
+    static float Avail() => ImGui.GetContentRegionAvail().X - SideW - ImGui.GetStyle().ItemSpacing.X;
 
     bool Resettable(string key) => _rule.LevelKeys.Contains(key) && !_style;
 
-    void ResetButton(string key)
+    /// <summary>
+    /// The side column: × puts the style's value back when this level changes it; $ opens the shared value the field uses.
+    /// </summary>
+    void Side(params string[] keys)
     {
-        if (!Resettable(key)) return;
-        ImGui.SameLine();
-        if (ImGui.Button("×##reset", new Vector2(Theme.Px(24), 0)))
-            feature.EditRules($"Dressing: reset {_rule.Id} {key}", w => { w.Reset(_rule.Id, key); return true; });
-        Tip("Back to the style's value");
+        ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - SideW);
+        if (keys.FirstOrDefault(Resettable) is { } key)
+        {
+            var old = _rule.Base[key];
+            if (ImGui.Button("×##reset", new Vector2(SideW, 0)))
+                feature.EditRules($"Dressing: reset {_rule.Id} {key}", w => { foreach (var k in keys) w.Reset(_rule.Id, k); return true; });
+            Tip($"Back to the style's value{(old == null ? " (the default)" : $": {Describe(old)}")}");
+        }
+        else if (keys.Select(k => RulesWorkspace.VarName(_rule.Raw[k])).FirstOrDefault(v => v != null) is { } var)
+        {
+            if (ImGui.Button("$##var", new Vector2(SideW, 0))) feature.Window.ShowSharedValues();
+            Tip($"Uses the shared value \"{var}\" ({Describe(_ws.Resolve(_rule.Raw[keys[0]]))}). Click to edit it for every rule using it; changing the field here gives this rule its own value.");
+        }
+        else ImGui.Dummy(new Vector2(SideW, ImGui.GetFrameHeight()));
     }
+
+    static string Describe(JsonNode? value) =>
+        ParamJson.Text(value) ?? value?.ToJsonString().Replace(",", ", ").Replace(":", ": ") ?? "nothing";
 
     /// <summary>In style mode a value this level overrides can't be edited (the level's value would still win).</summary>
     bool Locked(string key) => _style && _rule.LevelKeys.Contains(key);
@@ -115,7 +128,7 @@ sealed class RuleFields(DressingFeature feature)
         Label(spec);
         bool locked = Locked(spec.Name);
         if (locked) ImGui.BeginDisabled();
-        float w = Avail(spec.Name);
+        float w = Avail();
         var value = ValueOrDefault(spec);
         switch (spec.Type)
         {
@@ -158,7 +171,7 @@ sealed class RuleFields(DressingFeature feature)
                 }
                 break;
             case ParamType.Pair:
-                PairField(spec, ParamJson.Pair(value) ?? Vector2.Zero, w);
+                PairField(spec, ParamJson.Pair(_ws.ResolveDeep(value)) ?? Vector2.Zero, w);
                 break;
             case ParamType.Faces:
                 FacesField(spec, Value(spec.Name) as JsonObject ?? (ParamJson.Default(spec) as JsonObject) ?? new JsonObject());
@@ -179,9 +192,9 @@ sealed class RuleFields(DressingFeature feature)
         if (locked)
         {
             ImGui.EndDisabled();
-            Tip("This level changes this value, so editing the style here wouldn't show. Turn off \"Edit the style\" and reset it first.");
+            Tip("This level changes this value, so editing the shared style here wouldn't show. Switch to \"This level\" and reset it first.");
         }
-        ResetButton(spec.Name);
+        Side(spec.Name);
     }
 
     // ---- Numbers ----
@@ -195,10 +208,14 @@ sealed class RuleFields(DressingFeature feature)
         _ => (1, "%.3g", 0.01f),
     };
 
-    /// <summary>A number shown in its unit (metres as cm), committed when the drag or typing ends.</summary>
-    bool NumberField(string id, double value, ParamUnit unit, double min, double max, out double result)
+    /// <summary>
+    /// A number shown in its unit (metres as cm), committed when the drag or typing ends. <paramref name="label"/> is shown
+    /// inside the field ("depth 1.5 cm"), for fields that sit side by side.
+    /// </summary>
+    bool NumberField(string id, double value, ParamUnit unit, double min, double max, out double result, string? label = null)
     {
         var (scale, fmt, speed) = Display(unit);
+        if (label != null) fmt = $"{label} {fmt}";
         float lo = (float)Math.Max(min * scale, -1e6), hi = (float)Math.Min(max * scale, 1e6);
         bool done = Drag(id, (float)(value * scale), out var shown, speed, lo, hi, fmt);
         result = shown / scale;
@@ -231,21 +248,24 @@ sealed class RuleFields(DressingFeature feature)
 
     void PairField(ParamSpec spec, Vector2 v, float w)
     {
-        var (a, b) = spec.Name switch
+        var (a, b, tipA, tipB) = spec.Name switch
         {
-            "offset" => _rule.KindInfo is ScatterKind ? ("", "") : ("out", "up"),
-            "scale" or "yawDeg" => ("min", "max"),
-            _ => ("", ""),
+            "offset" => ("out", "up", "Out from the face (negative: into it)", "Along the surface it sits on: up from a floor, down from a ceiling"),
+            _ => ("min", "max", "Smallest (each prop picks a random value in the range)", "Largest"),
         };
         float half = (w - ImGui.GetStyle().ItemSpacing.X) * 0.5f;
+        // Replace only the side that changed, so the other keeps a shared value if it uses one.
+        var raw = Value(spec.Name) as JsonArray;
+        void SetSide(int i, double n) => Set(spec.Name, new JsonArray(
+            i == 0 ? ParamJson.Num(n) : raw?[0]?.DeepClone() ?? ParamJson.Num(v.X),
+            i == 1 ? ParamJson.Num(n) : raw?[1]?.DeepClone() ?? ParamJson.Num(v.Y)), spec.DisplayLabel);
         ImGui.SetNextItemWidth(half);
-        bool changed = NumberField("##a", v.X, spec.Unit, double.NegativeInfinity, double.PositiveInfinity, out var x);
-        Tip(a.Length > 0 ? a : spec.Description);
+        if (NumberField("##a", v.X, spec.Unit, double.NegativeInfinity, double.PositiveInfinity, out var x, a)) SetSide(0, x);
+        Tip(tipA);
         ImGui.SameLine();
         ImGui.SetNextItemWidth(half);
-        changed |= NumberField("##b", v.Y, spec.Unit, double.NegativeInfinity, double.PositiveInfinity, out var y);
-        Tip(b.Length > 0 ? b : spec.Description);
-        if (changed) Set(spec.Name, ParamJson.Pair(new Vector2((float)x, (float)y)), spec.DisplayLabel);
+        if (NumberField("##b", v.Y, spec.Unit, double.NegativeInfinity, double.PositiveInfinity, out var y, b)) SetSide(1, y);
+        Tip(tipB);
     }
 
     void MaterialField(ParamSpec spec, string? current, float w)
@@ -285,7 +305,7 @@ sealed class RuleFields(DressingFeature feature)
         ImGui.SameLine(LabelW);
         bool locked = Locked("edges") || Locked("onto");
         if (locked) ImGui.BeginDisabled();
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (changed && !_style ? Theme.Px(24) + ImGui.GetStyle().ItemSpacing.X : 0));
+        ImGui.SetNextItemWidth(Avail());
         if (ImGui.BeginCombo("##where", place?.Label ?? "Custom"))
         {
             foreach (var p in EdgePlaces.All)
@@ -303,13 +323,7 @@ sealed class RuleFields(DressingFeature feature)
             ImGui.EndCombo();
         }
         if (locked) ImGui.EndDisabled();
-        if (changed && !_style)
-        {
-            ImGui.SameLine();
-            if (ImGui.Button("×##resetWhere", new Vector2(Theme.Px(24), 0)))
-                feature.EditRules($"Dressing: reset {_rule.Id} where", w => { w.Reset(_rule.Id, "edges"); w.Reset(_rule.Id, "onto"); return true; });
-            Tip("Back to the style's value");
-        }
+        Side("edges", "onto");
         if (place == null && ParamJson.Text(Value("edges")) is { } custom && custom != "contact")
         {
             ImGui.PushID("edgesRaw");
@@ -320,7 +334,7 @@ sealed class RuleFields(DressingFeature feature)
 
     // ---- Selectors ----
 
-    static readonly (string? Value, string Label)[] Facings = [(null, "Any way"), ("upright", "Walls (upright)"), ("up", "Floors (facing up)"), ("down", "Ceilings (facing down)")];
+    static readonly (string? Value, string Label)[] Facings = [(null, "Any orientation"), ("upright", "Walls (upright)"), ("up", "Floors (facing up)"), ("down", "Ceilings (facing down)")];
 
     void FacesField(ParamSpec spec, JsonObject sel)
     {
@@ -330,7 +344,7 @@ sealed class RuleFields(DressingFeature feature)
 
         ImGui.SetCursorPosX(x);
         string? facing = ParamJson.Text(_ws.Resolve(sel["facing"]));
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (Resettable(spec.Name) ? Theme.Px(24) + ImGui.GetStyle().ItemSpacing.X : 0));
+        ImGui.SetNextItemWidth(Avail());
         if (ImGui.BeginCombo("##facing", Facings.FirstOrDefault(f => f.Value == facing).Label ?? facing))
         {
             foreach (var (value, label) in Facings)
@@ -350,7 +364,7 @@ sealed class RuleFields(DressingFeature feature)
             ImGui.SameLine();
             if (TagChips("notTags", not, mesh: false, out var newNot)) SetSelector(spec, sel, "notTags", newNot.Length == 0 ? null : ParamJson.List(newNot));
             ImGui.SetCursorPosX(x);
-            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
+            ImGui.SetNextItemWidth(Avail());
             if (TextField("##materials", string.Join(", ", materials), "any material (e.g. concrete*, metal_?)", out var m))
             {
                 var list = m.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -432,7 +446,7 @@ sealed class RuleFields(DressingFeature feature)
         (Shape.Quarter, "Quarter round", "A quarter circle filling the corner (shoe moulding, rounded beads)"),
         (Shape.Cove, "Cove", "A square with a quarter circle cut out (cove and crown mouldings)"),
         (Shape.Round, "Round", "A circle (pipes, rails, cables)"),
-        (Shape.Points, "Custom shape", "Any polygon, written as points in the rules file"),
+        (Shape.Points, "Custom points", "Any outline: edit its corners as points (x out of the face, y along the surface)"),
     ];
 
     static Shape ShapeOf(JsonObject? p) =>
@@ -457,8 +471,9 @@ sealed class RuleFields(DressingFeature feature)
             _ => new Vector2(0.05f),
         };
 
-        float preview = Theme.Px(64);
-        float fieldW = MathF.Max(Theme.Px(90), w - preview - ImGui.GetStyle().ItemSpacing.X);
+        var loaded = feature.Current()?.Rules.Rules.FirstOrDefault(r => r.Id == _rule.Id)?.Values.GetValueOrDefault(spec.Name) as Profile;
+        float preview = Theme.Px(84);
+        float fieldW = MathF.Max(Theme.Px(120), w - preview - ImGui.GetStyle().ItemSpacing.X);
         var previewAt = ImGui.GetCursorScreenPos() + new Vector2(fieldW + ImGui.GetStyle().ItemSpacing.X, 0);
         ImGui.BeginGroup();
         ImGui.SetNextItemWidth(fieldW);
@@ -466,7 +481,7 @@ sealed class RuleFields(DressingFeature feature)
         {
             foreach (var (s, label, tip) in Shapes)
             {
-                if (ImGui.Selectable(label, s == shape) && s != shape && s != Shape.Points)
+                if (ImGui.Selectable(label, s == shape) && s != shape)
                 {
                     float big = MathF.Max(extent.X, extent.Y);
                     JsonObject next = s switch
@@ -475,7 +490,9 @@ sealed class RuleFields(DressingFeature feature)
                         Shape.Wedge => new() { ["wedge"] = ParamJson.Pair(new Vector2(big, big)) },
                         Shape.Quarter => new() { ["quarter"] = ParamJson.Num(big) },
                         Shape.Cove => new() { ["cove"] = ParamJson.Num(big) },
-                        _ => new() { ["round"] = ParamJson.Num(big) },
+                        Shape.Round => new() { ["round"] = ParamJson.Num(big) },
+                        // Custom starts from the current outline, so a preset can be reshaped corner by corner.
+                        _ => new() { ["points"] = Points((loaded ?? Profile.Rect(extent.X, extent.Y)).Points) },
                     };
                     Set(spec.Name, next, spec.DisplayLabel);
                 }
@@ -484,77 +501,136 @@ sealed class RuleFields(DressingFeature feature)
             ImGui.EndCombo();
         }
         float half = (fieldW - ImGui.GetStyle().ItemSpacing.X) * 0.5f;
+        void SetKey(string key, JsonNode value)
+        {
+            var next = (JsonObject)p.DeepClone();
+            next[key] = value;
+            Set(spec.Name, next, spec.DisplayLabel);
+        }
         switch (shape)
         {
             case Shape.Strip or Shape.Wedge:
             {
                 string key = shape == Shape.Strip ? "rect" : "wedge";
+                // Replace only the side that changed, so the other keeps a shared value ("$baseHeight") if it uses one.
+                var pair = _ws.Resolve(p[key]) as JsonArray;
+                void SetSide(int i, double v) => SetKey(key, new JsonArray(i == 0 ? ParamJson.Num(v) : pair?[0]?.DeepClone() ?? ParamJson.Num(extent.X),
+                    i == 1 ? ParamJson.Num(v) : pair?[1]?.DeepClone() ?? ParamJson.Num(extent.Y)));
                 ImGui.SetNextItemWidth(half);
-                bool c = NumberField("##d", extent.X, ParamUnit.Length, 0.001, 10, out var d);
-                Tip("Depth: how far it stands out from the face");
+                if (NumberField("##d", extent.X, ParamUnit.Length, 0.001, 10, out var d, "depth")) SetSide(0, d);
+                Tip("How far it stands out from the face");
                 ImGui.SameLine();
                 ImGui.SetNextItemWidth(half);
-                c |= NumberField("##h", extent.Y, ParamUnit.Length, 0.001, 10, out var h);
-                Tip("Height: how far it runs along the surface it sits on");
-                if (c) Set(spec.Name, new JsonObject { [key] = ParamJson.Pair(new Vector2((float)d, (float)h)) }, spec.DisplayLabel);
+                if (NumberField("##h", extent.Y, ParamUnit.Length, 0.001, 10, out var h, "height")) SetSide(1, h);
+                Tip("How far it runs along the surface it sits on (up a wall from the floor)");
                 break;
             }
             case Shape.Quarter or Shape.Cove or Shape.Round:
             {
                 string key = shape switch { Shape.Quarter => "quarter", Shape.Cove => "cove", _ => "round" };
-                ImGui.SetNextItemWidth(shape == Shape.Round ? half : fieldW);
-                if (NumberField("##r", extent.X, ParamUnit.Length, 0.001, 10, out var r))
-                {
-                    var next = (JsonObject)p.DeepClone();
-                    next[key] = ParamJson.Num(r);
-                    Set(spec.Name, next, spec.DisplayLabel);
-                }
+                ImGui.SetNextItemWidth(half);
+                if (NumberField("##r", extent.X, ParamUnit.Length, 0.001, 10, out var r, shape == Shape.Round ? "Ø" : "r"))
+                    SetKey(key, ParamJson.Num(r));
                 Tip(shape == Shape.Round ? "Diameter" : "Radius");
-                if (shape == Shape.Round)
-                {
-                    ImGui.SameLine();
-                    ImGui.SetNextItemWidth(half);
-                    int sides = (int)(ParamJson.Number(p["sides"]) ?? 8);
-                    if (Drag("##sides", sides, out var s, 0.1f, 3, 64, "%.0f sides"))
-                    {
-                        var next = (JsonObject)p.DeepClone();
-                        next["sides"] = JsonValue.Create((int)Math.Round(s));
-                        Set(spec.Name, next, spec.DisplayLabel);
-                    }
-                }
+                ImGui.SameLine();
+                ImGui.SetNextItemWidth(half);
+                bool round = shape == Shape.Round;
+                int sides = (int)(ParamJson.Number(p["sides"]) ?? (round ? 8 : 6));
+                if (Drag("##sides", sides, out var s, 0.1f, round ? 3 : 2, round ? 64 : 32, round ? "%.0f sides" : "%.0f segments"))
+                    SetKey("sides", JsonValue.Create((int)Math.Round(s)));
+                Tip(round ? "Sides of the circle: more is smoother" : "Segments along the curve: more is smoother");
                 break;
             }
             default:
-                ImGui.TextColored(Theme.TextDim, $"{(p["points"] as JsonArray)?.Count ?? 0} points (Open JSON to edit)");
+                PointsEditor(spec, p, fieldW);
                 break;
         }
         ImGui.EndGroup();
-        DrawProfile(previewAt, preview, spec);
+        float groupBottom = ImGui.GetItemRectMax().Y;
+        float left = ImGui.GetItemRectMin().X;
+        DrawProfile(previewAt, preview, loaded);
+        // Carry on below whichever is taller: the fields (a long point list) or the preview.
+        if (groupBottom > ImGui.GetItemRectMax().Y)
+        {
+            ImGui.SetCursorScreenPos(new Vector2(left, groupBottom - ImGui.GetFrameHeight()));
+            ImGui.Dummy(new Vector2(0, ImGui.GetFrameHeight()));
+        }
+    }
+
+    static JsonArray Points(IEnumerable<Vector2> points) =>
+        new(points.Select(q => (JsonNode)new JsonArray(ParamJson.Num(q.X), ParamJson.Num(q.Y))).ToArray());
+
+    /// <summary>A custom outline's corners in cm, one row each (out of the face, along the surface), with add and remove.</summary>
+    void PointsEditor(ParamSpec spec, JsonObject p, float w)
+    {
+        // Work on the points as written, so a coordinate taken from a shared value ("$trimHeight") stays linked unless
+        // that coordinate itself is edited.
+        var raw = _ws.Resolve(p["points"]) as JsonArray ?? [];
+        double Coord(int i, int axis) => ParamJson.Number(_ws.Resolve((raw[i] as JsonArray)?[axis])) ?? 0;
+        float removeW = Theme.Px(24);
+        float each = (w - removeW - ImGui.GetStyle().ItemSpacing.X * 2) * 0.5f;
+        void Save(Func<JsonArray, JsonArray> change) =>
+            Set(spec.Name, new JsonObject { ["points"] = change((JsonArray)raw.DeepClone()) }, spec.DisplayLabel);
+        for (int i = 0; i < raw.Count; i++)
+        {
+            ImGui.PushID(i);
+            int index = i;
+            for (int axis = 0; axis < 2; axis++)
+            {
+                if (axis > 0) ImGui.SameLine();
+                ImGui.SetNextItemWidth(each);
+                int a = axis;
+                if (NumberField(axis == 0 ? "##x" : "##y", Coord(i, axis), ParamUnit.Length, -10, 10, out var v, axis == 0 ? "out" : "up"))
+                    Save(pts =>
+                    {
+                        var pt = pts[index] as JsonArray ?? new JsonArray(ParamJson.Num(0), ParamJson.Num(0));
+                        pts[index] = new JsonArray(a == 0 ? ParamJson.Num(v) : pt[0]?.DeepClone(), a == 1 ? ParamJson.Num(v) : pt[1]?.DeepClone());
+                        return pts;
+                    });
+                var shared = RulesWorkspace.VarName((raw[i] as JsonArray)?[axis]);
+                Tip($"Corner {i + 1}: {(axis == 0 ? "out from the face" : "along the surface it sits on")}{(shared != null ? $"\nFrom the shared value \"{shared}\"; editing it gives this corner its own value." : "")}");
+            }
+            ImGui.SameLine();
+            if (raw.Count <= 3) ImGui.BeginDisabled();
+            if (ImGui.Button("×", new Vector2(removeW, 0))) Save(pts => { pts.RemoveAt(index); return pts; });
+            if (raw.Count <= 3) ImGui.EndDisabled();
+            Tip(raw.Count <= 3 ? "An outline needs at least three corners" : "Remove this corner");
+            ImGui.PopID();
+        }
+        if (ImGui.SmallButton("+ Corner"))
+        {
+            int n = raw.Count;
+            var mid = n > 0 ? new Vector2((float)(Coord(n - 1, 0) + Coord(0, 0)), (float)(Coord(n - 1, 1) + Coord(0, 1))) * 0.5f : Vector2.Zero;
+            Save(pts => { pts.Add(new JsonArray(ParamJson.Num(mid.X), ParamJson.Num(mid.Y))); return pts; }); // halfway back to the first
+        }
+        Tip("Add a corner between the last and the first");
     }
 
     /// <summary>The cross-section as the loader builds it: the face it stands out from on the left, the surface below.</summary>
-    void DrawProfile(Vector2 at, float size, ParamSpec spec)
+    void DrawProfile(Vector2 at, float size, Profile? profile)
     {
         var dl = ImGui.GetWindowDrawList();
-        var rule = feature.Current()?.Rules.Rules.FirstOrDefault(r => r.Id == _rule.Id);
-        var profile = rule?.Values.GetValueOrDefault(spec.Name) as Profile;
-        float h = ImGui.GetFrameHeight() * 2 + ImGui.GetStyle().ItemSpacing.Y;
-        var box = new Vector2(size, h);
+        var box = new Vector2(size, MathF.Max(size * 0.8f, ImGui.GetFrameHeight() * 2 + ImGui.GetStyle().ItemSpacing.Y));
         uint guide = ImGui.ColorConvertFloat4ToU32(Theme.TextDisabled);
         dl.AddRectFilled(at, at + box, ImGui.ColorConvertFloat4ToU32(Theme.Track), Theme.Px(3));
-        float pad = Theme.Px(6);
-        var origin = new Vector2(at.X + pad, at.Y + box.Y - pad);
-        dl.AddLine(new Vector2(origin.X, at.Y + pad * 0.5f), origin, guide, Theme.Px(1));        // the face
-        dl.AddLine(origin, new Vector2(at.X + box.X - pad * 0.5f, origin.Y), guide, Theme.Px(1)); // the surface
-        if (profile == null || profile.Points.Length < 3) return;
-        var max = profile.Points.Aggregate(Vector2.Max);
-        var min = profile.Points.Aggregate(Vector2.Min);
-        float extent = MathF.Max(MathF.Max(max.X, max.Y), MathF.Max(-min.X, -min.Y));
-        float scale = MathF.Min(box.X, box.Y) - pad * 2;
-        scale /= MathF.Max(extent, 1e-4f);
-        var pts = profile.Points.Select(q => origin + new Vector2(q.X, -q.Y) * scale).ToArray();
-        for (int i = 0; i < pts.Length; i++) dl.AddLine(pts[i], pts[(i + 1) % pts.Length], Theme.AccentU32, Theme.Px(1.5f));
-        Tip($"Cross-section, {extent * 100:0.#} cm across. Left: the face it stands on; bottom: the surface it runs along.");
+        ImGui.SetCursorScreenPos(at);
+        ImGui.Dummy(box); // reserves the room and carries the tooltip
+        float pad = Theme.Px(8);
+        // Fit the outline and the corner it sits in, wherever the points go (negative ones included).
+        var pts = profile?.Points is { Length: >= 3 } p ? p : [];
+        var min = pts.Aggregate(Vector2.Zero, Vector2.Min);
+        var max = pts.Aggregate(Vector2.Zero, Vector2.Max);
+        var span = Vector2.Max(max - min, new Vector2(1e-4f));
+        float scale = MathF.Min((box.X - pad * 2) / span.X, (box.Y - pad * 2) / span.Y);
+        if (pts.Length == 0) scale = 1;
+        Vector2 Map(Vector2 q) => new(at.X + pad + (q.X - min.X) * scale, at.Y + box.Y - pad - (q.Y - min.Y) * scale);
+        var o = Map(Vector2.Zero);
+        dl.AddLine(new Vector2(o.X, at.Y + Theme.Px(3)), new Vector2(o.X, at.Y + box.Y - Theme.Px(3)), guide, Theme.Px(1)); // the face
+        dl.AddLine(new Vector2(at.X + Theme.Px(3), o.Y), new Vector2(at.X + box.X - Theme.Px(3), o.Y), guide, Theme.Px(1)); // the surface
+        if (pts.Length == 0) return;
+        uint line = ImGui.ColorConvertFloat4ToU32(Theme.Text);
+        for (int i = 0; i < pts.Length; i++) dl.AddLine(Map(pts[i]), Map(pts[(i + 1) % pts.Length]), line, Theme.Px(1.5f));
+        Tip($"Cross-section, {span.X * 100:0.#} × {span.Y * 100:0.#} cm. The vertical line is the face it stands out from, the horizontal one the surface it runs along.");
     }
 
     // ---- Props ----
@@ -562,7 +638,7 @@ sealed class RuleFields(DressingFeature feature)
     enum PropKind { Box, Cylinder, File }
 
     /// <summary>One prop: a box or cylinder (sizes in cm) or a .glb file (relative to the rules file it's written in).</summary>
-    void PropField(string id, JsonNode? value, float w, Action<JsonNode> set)
+    void PropField(string id, JsonNode? value, float w, Action<JsonNode> set, double? weight = null, Action<double>? setWeight = null, Action? remove = null)
     {
         ImGui.PushID(id);
         var kind = value switch
@@ -571,53 +647,97 @@ sealed class RuleFields(DressingFeature feature)
             JsonObject o when o.ContainsKey("cylinder") => PropKind.Cylinder,
             _ => PropKind.Box,
         };
-        float kindW = Theme.Px(84);
+        float sp = ImGui.GetStyle().ItemSpacing.X;
+        float x = ImGui.GetCursorPosX();
+        float kindW = Theme.Px(110), removeW = remove != null ? Theme.Px(24) + sp : 0;
+
+        // First line: what it is (and the file), then remove.
         ImGui.SetNextItemWidth(kindW);
-        if (ImGui.BeginCombo("##kind", kind.ToString()))
+        if (ImGui.BeginCombo("##kind", kind switch { PropKind.File => "Model file", _ => kind.ToString() }))
         {
             if (ImGui.Selectable("Box", kind == PropKind.Box) && kind != PropKind.Box) set(new JsonObject { ["box"] = new JsonArray(ParamJson.Num(0.3), ParamJson.Num(0.3), ParamJson.Num(0.3)) });
             if (ImGui.Selectable("Cylinder", kind == PropKind.Cylinder) && kind != PropKind.Cylinder) set(new JsonObject { ["cylinder"] = new JsonArray(ParamJson.Num(0.2), ParamJson.Num(0.5)) });
-            if (ImGui.Selectable("File...", false) && BrowseProp() is { } file) set(JsonValue.Create(file));
+            if (ImGui.Selectable("Model file...", kind == PropKind.File) && BrowseProp() is { } file) set(JsonValue.Create(file));
             ImGui.EndCombo();
         }
-        ImGui.SameLine();
-        float rest = w - kindW - ImGui.GetStyle().ItemSpacing.X;
-        switch (kind)
+        float rest = w - kindW - sp - removeW;
+        string? missing = null;
+        if (kind == PropKind.File)
         {
-            case PropKind.File:
+            ImGui.SameLine();
+            string browse = "Browse...";
+            float browseW = ImGui.CalcTextSize(browse).X + ImGui.GetStyle().FramePadding.X * 2;
+            string path = ParamJson.Text(value) ?? "";
+            ImGui.SetNextItemWidth(rest - browseW - sp);
+            if (TextField("##file", path, "props/thing.glb", out var t))
             {
-                float browse = ImGui.CalcTextSize("...").X + ImGui.GetStyle().FramePadding.X * 2;
-                ImGui.SetNextItemWidth(rest - browse - ImGui.GetStyle().ItemSpacing.X);
-                if (TextField("##file", ParamJson.Text(value) ?? "", "props/thing.glb", out var t) && ParamJson.IsPropFile(t)) set(JsonValue.Create(t));
-                Tip($"Relative to {Path.GetFileName(TargetFile)}. Props stand on their origin: +Y up, +X along the edge, +Z out of the face.");
-                ImGui.SameLine();
-                if (ImGui.Button("...") && BrowseProp() is { } file) set(JsonValue.Create(file));
-                Tip("Choose a .glb or .gltf file");
-                break;
+                if (ParamJson.IsPropFile(t)) set(JsonValue.Create(t));
+                else _ctx.Status($"\"{t}\" isn't a .glb or .gltf file", error: true);
             }
-            default:
+            Tip($"{path}\nRelative to {Path.GetFileName(TargetFile)}. Props stand on their origin: +Y up, +X along the edge, +Z out of the face.");
+            ImGui.SameLine();
+            if (ImGui.Button(browse) && BrowseProp() is { } file) set(JsonValue.Create(file));
+            Tip("Choose a .glb or .gltf file");
+            if (path.Length > 0 && !File.Exists(RulePaths.Resolve(TargetFile, path))) missing = $"File not found: {RulePaths.Resolve(TargetFile, path)}";
+        }
+        if (remove != null)
+        {
+            ImGui.SameLine(x + w - Theme.Px(24));
+            if (ImGui.Button("×##remove", new Vector2(Theme.Px(24), 0))) remove();
+            Tip("Remove this prop");
+        }
+        if (missing != null)
+        {
+            ImGui.SetCursorPosX(x);
+            ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + w);
+            ImGui.TextColored(Theme.Error, missing);
+            ImGui.PopTextWrapPos();
+        }
+
+        // Second line: its size, labelled, and how often it's picked.
+        var fields = new List<(string Label, double Value, string Tip)>();
+        string? key = kind switch { PropKind.Box => "box", PropKind.Cylinder => "cylinder", _ => null };
+        double[] nums = key == null ? [] : ParamJson.Numbers(_ws.ResolveDeep((value as JsonObject)?[key])) ?? (kind == PropKind.Box ? [0.3, 0.3, 0.3] : [0.2, 0.5]);
+        if (kind == PropKind.Box) fields.AddRange([("W", nums[0], "Width, along the edge"), ("H", nums[1], "Height"), ("D", nums[2], "Depth, out of the face")]);
+        if (kind == PropKind.Cylinder) fields.AddRange([("Ø", nums[0], "Diameter"), ("H", nums[1], "Height")]);
+        int count = fields.Count + (kind == PropKind.Cylinder ? 1 : 0) + (weight != null ? 1 : 0);
+        if (count == 0) { ImGui.PopID(); return; }
+        ImGui.SetCursorPosX(x);
+        float each = (w - sp * (count - 1)) / count;
+        bool changed = false;
+        var next = (double[])nums.Clone();
+        for (int i = 0; i < fields.Count; i++)
+        {
+            if (i > 0) ImGui.SameLine();
+            ImGui.SetNextItemWidth(each);
+            if (NumberField($"##n{i}", fields[i].Value, ParamUnit.Length, 0.001, 100, out var n, fields[i].Label)) { next[i] = n; changed = true; }
+            Tip(fields[i].Tip);
+        }
+        if (changed && key != null)
+        {
+            var obj = value is JsonObject o ? (JsonObject)o.DeepClone() : new JsonObject();
+            obj[key] = new JsonArray(next.Select(n => (JsonNode)ParamJson.Num(n)).ToArray());
+            set(obj);
+        }
+        if (kind == PropKind.Cylinder)
+        {
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(each);
+            int sides = (int)(ParamJson.Number((value as JsonObject)?["sides"]) ?? 12);
+            if (Drag("##sides", sides, out var s, 0.1f, 3, 64, "%.0f sides"))
             {
-                string key = kind == PropKind.Box ? "box" : "cylinder";
-                var nums = ParamJson.Numbers(_ws.Resolve((value as JsonObject)?[key])) ?? (kind == PropKind.Box ? [0.3, 0.3, 0.3] : [0.2, 0.5]);
-                string[] tips = kind == PropKind.Box ? ["Width (along the edge)", "Height", "Depth (out of the face)"] : ["Diameter", "Height"];
-                float each = (rest - ImGui.GetStyle().ItemSpacing.X * (nums.Length - 1)) / nums.Length;
-                bool changed = false;
-                var next = (double[])nums.Clone();
-                for (int i = 0; i < nums.Length && i < tips.Length; i++)
-                {
-                    if (i > 0) ImGui.SameLine();
-                    ImGui.SetNextItemWidth(each);
-                    if (NumberField($"##n{i}", nums[i], ParamUnit.Length, 0.001, 100, out var n)) { next[i] = n; changed = true; }
-                    Tip(tips[i]);
-                }
-                if (changed)
-                {
-                    var obj = value is JsonObject o ? (JsonObject)o.DeepClone() : new JsonObject();
-                    obj[key] = new JsonArray(next.Select(n => (JsonNode)ParamJson.Num(n)).ToArray());
-                    set(obj);
-                }
-                break;
+                var obj = (JsonObject)value!.DeepClone();
+                obj["sides"] = JsonValue.Create((int)Math.Round(s));
+                set(obj);
             }
+            Tip("Sides of the cylinder");
+        }
+        if (weight is { } wv)
+        {
+            if (fields.Count > 0 || kind == PropKind.Cylinder) ImGui.SameLine();
+            ImGui.SetNextItemWidth(each);
+            if (Drag("##weight", (float)wv, out var nw, 0.05f, 0, 100, "×%.1f")) setWeight?.Invoke(nw);
+            Tip("Weight: how often this prop is picked, relative to the others (×2 is twice as often as ×1)");
         }
         ImGui.PopID();
     }
@@ -634,34 +754,27 @@ sealed class RuleFields(DressingFeature feature)
         var props = raw is JsonArray a ? a.Select(i => i?.DeepClone()).ToList() : raw != null ? [raw.DeepClone()] : new List<JsonNode?>();
         var weights = ParamJson.Numbers(Value("weights"));
         float x = ImGui.GetCursorPosX();
-        float weightW = Theme.Px(70), removeW = Theme.Px(24);
+        float w = Avail();
         for (int i = 0; i < props.Count; i++)
         {
-            if (i > 0) ImGui.SetCursorPosX(x);
+            if (i > 0) { ImGui.Dummy(Theme.Px(0, 2)); ImGui.SetCursorPosX(x); }
             ImGui.PushID(i);
             int index = i;
-            float w = ImGui.GetContentRegionAvail().X - weightW - removeW - ImGui.GetStyle().ItemSpacing.X * 2;
-            PropField("prop", props[i], w, v =>
-            {
-                var list = new JsonArray(props.Select((p, j) => j == index ? v : p?.DeepClone()).ToArray());
-                Set(spec.Name, list, "props");
-            });
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(weightW);
             double weight = weights != null && i < weights.Length ? weights[i] : 1;
-            if (Drag("##w", (float)weight, out var nw, 0.05f, 0, 100, "×%.2f"))
-            {
-                var all = Enumerable.Range(0, props.Count).Select(j => j == index ? nw : weights != null && j < weights.Length ? weights[j] : 1).ToArray();
-                Set("weights", all.All(v => Math.Abs(v - all[0]) < 1e-9) ? null : new JsonArray(all.Select(v => (JsonNode)ParamJson.Num(v)).ToArray()), "weights");
-            }
-            Tip("How often this prop is chosen, relative to the others");
-            ImGui.SameLine();
-            if (props.Count > 1 && ImGui.Button("×", new Vector2(removeW, 0)))
-            {
-                var list = new JsonArray(props.Where((_, j) => j != index).Select(p => p?.DeepClone()).ToArray());
-                var rest = weights?.Where((_, j) => j != index).ToArray();
-                SetMany("remove prop", (spec.Name, list), ("weights", rest is { Length: > 0 } && props.Count - 1 == rest.Length ? new JsonArray(rest.Select(v => (JsonNode)ParamJson.Num(v)).ToArray()) : null));
-            }
+            PropField("prop", props[i], w,
+                v => Set(spec.Name, new JsonArray(props.Select((p, j) => j == index ? v : p?.DeepClone()).ToArray()), "props"),
+                props.Count > 1 ? weight : null,
+                nw =>
+                {
+                    var all = Enumerable.Range(0, props.Count).Select(j => j == index ? nw : weights != null && j < weights.Length ? weights[j] : 1).ToArray();
+                    Set("weights", all.All(v => Math.Abs(v - all[0]) < 1e-9) ? null : new JsonArray(all.Select(v => (JsonNode)ParamJson.Num(v)).ToArray()), "weights");
+                },
+                props.Count > 1 ? () =>
+                {
+                    var list = new JsonArray(props.Where((_, j) => j != index).Select(p => p?.DeepClone()).ToArray());
+                    var rest = weights?.Where((_, j) => j != index).ToArray();
+                    SetMany("remove prop", (spec.Name, list), ("weights", rest is { Length: > 0 } && props.Count - 1 == rest.Length ? new JsonArray(rest.Select(v => (JsonNode)ParamJson.Num(v)).ToArray()) : null));
+                } : null);
             ImGui.PopID();
         }
         ImGui.SetCursorPosX(x);

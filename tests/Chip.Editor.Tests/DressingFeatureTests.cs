@@ -203,6 +203,24 @@ public class DressingFeatureTests : IDisposable
     }
 
     [Fact]
+    public void Taking_a_wall_out_of_one_rule_leaves_the_rules_sharing_its_tag()
+    {
+        var ctx = Sample();
+        var west = ctx.Doc.Meshes.First(m => m.Name == "west");
+        int face = Enumerable.Range(0, west.Faces.Count).First(f => west.Faces[f].Tags.Contains("wall"));
+        ctx.SetMode(SelectMode.Face);
+        ctx.Sel.Add(ElementRef.Face(west.Id, face));
+        var ws = _feature.Workspace()!;
+        Assert.True(DressWithPopup.Apply(ctx, _feature, ws.Find("baseboard")!, ws)); // all dressed already: take it out
+        Assert.Equal("Take out of baseboard", ctx.Session.UndoLabel);
+        var why = ctx.Dressed()!.Explain(ctx.Doc.Find(west.Id)!, face).ToDictionary(e => e.Rule.Id, e => e.Reason);
+        Assert.Contains("opts out", why["baseboard"]);
+        Assert.Null(why["wall-lights"]); // still lit: the wall tag stayed
+        Assert.True(DressWithPopup.Apply(ctx, _feature, _feature.Workspace()!.Find("baseboard")!, _feature.Workspace()!));
+        Assert.Null(ctx.Dressed()!.Explain(ctx.Doc.Find(west.Id)!, face).First(e => e.Rule.Id == "baseboard").Reason);
+    }
+
+    [Fact]
     public void The_first_rule_creates_the_rules_file_for_a_saved_level()
     {
         var ctx = Sample();

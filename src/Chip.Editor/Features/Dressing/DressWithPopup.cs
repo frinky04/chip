@@ -9,11 +9,12 @@ using static Chip.Editor.UI.Widgets;
 namespace Chip.Editor.Features.Dressing;
 
 /// <summary>
-/// Edit > Dress with (Ctrl+Shift+T): a popup at the mouse listing the level's rules and the recipes it doesn't have yet.
-/// Picking one tags the selection so the rule takes it (adding the rule from its recipe first when needed), in one undo
-/// step; picking a rule the whole selection already has removes the tag. Face mode tags the selected faces; object mode
-/// tags the faces of each selected mesh the rule can use (walls, not their tops), or the meshes themselves for railings and
-/// stairs. Hovering a row highlights what the rule already takes.
+/// Edit > Dress with (Ctrl+Shift+T): a popup at the mouse listing the level's rules, then the recipes it doesn't have yet.
+/// Picking a rule dresses the selection with it (tags it, adding the rule from its recipe first when needed), in one undo
+/// step; picking a rule the whole selection already has takes the selection out of that rule only (a <c>skip:</c> tag or
+/// the mesh's switch), so other rules sharing the tag keep it. Face mode dresses the selected faces; object mode the faces
+/// of each selected mesh the rule can use (walls, not their tops), or the meshes themselves for railings and stairs.
+/// Hovering a row highlights what the rule already takes.
 /// </summary>
 public sealed class DressWithPopup
 {
@@ -23,7 +24,7 @@ public sealed class DressWithPopup
     string _query = "";
     int _index;
 
-    readonly record struct Row(string Label, string Detail, RuleEntry? Rule, Recipe? Recipe, int With, int Total);
+    readonly record struct Row(string Label, string Detail, string Tag, RuleEntry? Rule, Recipe? Recipe, int With, int Total, string? Shared);
 
     public void Open() => _openRequested = true;
 
@@ -42,8 +43,8 @@ public sealed class DressWithPopup
             }
         }
         var vp = ImGui.GetMainViewport();
-        float width = Theme.Px(400);
-        var pos = Vector2.Clamp(_at - new Vector2(width * 0.5f, Theme.Px(16)), vp.WorkPos + Theme.Px(8, 8), vp.WorkPos + vp.WorkSize - new Vector2(width + Theme.Px(8), Theme.Px(380)));
+        float width = Theme.Px(420);
+        var pos = Vector2.Clamp(_at - new Vector2(width * 0.5f, Theme.Px(16)), vp.WorkPos + Theme.Px(8, 8), vp.WorkPos + vp.WorkSize - new Vector2(width + Theme.Px(8), Theme.Px(420)));
         ImGui.SetNextWindowPos(pos, ImGuiCond.Appearing);
         ImGui.SetNextWindowSize(new Vector2(width, 0));
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Theme.Px(8, 8));
@@ -66,32 +67,40 @@ public sealed class DressWithPopup
         var ws = feature.Workspace();
         if (ws == null || !ws.CanEdit)
         {
+            ImGui.PushTextWrapPos(0);
             ImGui.TextColored(Theme.TextDim, ws == null ? "Save the level first: dressing rules live in a file beside it." : ws.MainError!);
+            ImGui.PopTextWrapPos();
+            if (ws == null && ImGui.Button("Save level...")) { ImGui.CloseCurrentPopup(); ctx.Commands.Execute("file.save"); }
             if (ImGui.IsKeyPressed(ImGuiKey.Escape)) ImGui.CloseCurrentPopup();
             ImGui.EndPopup();
             ImGui.PopStyleVar();
             return;
         }
         var rows = Rows(ctx, ws);
-        if (rows.Count > 0)
+        int usable = rows.Count;
+        if (usable > 0)
         {
             int step = (ImGui.IsKeyPressed(ImGuiKey.DownArrow) ? 1 : 0) - (ImGui.IsKeyPressed(ImGuiKey.UpArrow) ? 1 : 0);
-            _index = Math.Clamp(_index + step, 0, rows.Count - 1);
+            _index = Math.Clamp(_index + step, 0, usable - 1);
         }
-        Row? act = rows.Count > 0 && (ImGui.IsKeyPressed(ImGuiKey.Enter) || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter)) ? rows[_index] : null;
+        Row? act = usable > 0 && (ImGui.IsKeyPressed(ImGuiKey.Enter) || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter)) ? rows[_index] : null;
 
         float rowH = ImGui.GetTextLineHeight() + Theme.Px(8);
+        int headers = (rows.Any(r => r.Rule != null) ? 1 : 0) + (rows.Any(r => r.Recipe != null) ? 1 : 0);
         string? hovered = null;
         ImGui.Dummy(Theme.Px(0, 2));
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Vector2.Zero);
-        ImGui.BeginChild("##rows", new Vector2(0, rowH * Math.Clamp(rows.Count, 1, 12)), ImGuiChildFlags.None, ImGuiWindowFlags.NoBackground);
+        ImGui.BeginChild("##rows", new Vector2(0, rowH * Math.Clamp(rows.Count + headers, 1, 14)), ImGuiChildFlags.None, ImGuiWindowFlags.NoBackground);
         if (rows.Count == 0) ImGui.TextColored(Theme.TextDim, $"Nothing matches \"{_query.Trim()}\"");
         for (int i = 0; i < rows.Count; i++)
         {
             var row = rows[i];
+            if (i == 0 && row.Rule != null) GroupHeader("Rules in this level", rowH);
+            if (row.Recipe != null && (i == 0 || rows[i - 1].Recipe == null)) GroupHeader("Add from a recipe", rowH);
             var p = ImGui.GetCursorScreenPos();
             float w = ImGui.GetContentRegionAvail().X;
-            if (ImGui.InvisibleButton($"##r{i}", new Vector2(w, rowH))) act = row;
+            bool usableRow = row.Total > 0;
+            if (ImGui.InvisibleButton($"##r{i}", new Vector2(w, rowH)) && usableRow) act = row;
             bool hover = ImGui.IsItemHovered();
             if (hover && ImGui.GetIO().MouseDelta != Vector2.Zero) _index = i;
             if (hover && row.Rule != null) hovered = row.Rule.Id;
@@ -102,31 +111,28 @@ public sealed class DressWithPopup
             float x = p.X + Theme.Px(8);
             DrawState(dl, new Vector2(x, MathF.Round(p.Y + rowH * 0.5f)), row, selected);
             x += Theme.Px(20);
-            dl.AddText(new Vector2(x, ty), RowText(selected, dim: row.Rule is { Enabled: false }), row.Label);
+            bool dim = !usableRow || row.Rule is { Enabled: false };
+            dl.AddText(new Vector2(x, ty), RowText(selected, dim), row.Label);
             float dw = ImGui.CalcTextSize(row.Detail).X;
             dl.AddText(new Vector2(p.X + w - dw - Theme.Px(8), ty), RowText(selected, dim: true), row.Detail);
-            if (hover)
-                ImGui.SetTooltip(row.Recipe != null ? $"{row.Recipe.Description}\nAdds the rule {row.Recipe.Id} and tags the selection {row.Recipe.Tag}."
-                    : row.Total == 0 ? "Nothing selected can take this rule (see its faces filter in Dressing rules)"
-                    : row.With == row.Total ? "Click to take the selection out of this rule" : $"Click to dress the selection ({row.Total} {(row.Rule != null && ParamJson.PrimaryTag(row.Rule.Raw, ws.Resolve).Mesh ? "mesh" : "face")}{(row.Total == 1 ? "" : "s")})");
+            if (hover) ImGui.SetTooltip(Tooltip(row));
         }
         ImGui.EndChild();
         ImGui.PopStyleVar();
         ImGui.Dummy(Theme.Px(0, 4));
         ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
-        KeyHints([("Enter", "dress or undress"), ("Esc", "close")]);
+        KeyHints([("Enter", "dress or take out"), ("Esc", "close")]);
         ImGui.PopStyleColor();
-        feature.HighlightRule = hovered ?? (rows.Count > 0 ? rows[_index].Rule?.Id : null);
+        feature.HighlightRule = hovered ?? (usable > 0 ? rows[_index].Rule?.Id : null);
 
         bool toggle = !justOpened && ctx.Commands.Find("dressing.dressWith") is { } self && self.Hotkeys.Any(h => h.IsPressed());
-        if (act is { } a)
+        bool close = toggle || ImGui.IsKeyPressed(ImGuiKey.Escape);
+        if (act is { Total: > 0 } a)
         {
-            if (a.Recipe != null) ApplyRecipe(ctx, feature, ws, a.Recipe);
-            else if (a.Rule != null) Apply(ctx, feature, a.Rule, ws);
-            ImGui.CloseCurrentPopup();
-            feature.HighlightRule = null;
+            bool done = a.Recipe != null ? ApplyRecipe(ctx, feature, ws, a.Recipe) : a.Rule != null && Apply(ctx, feature, a.Rule, ws);
+            close |= done; // a failed edit keeps the popup open with the reason in the status bar
         }
-        else if (toggle || ImGui.IsKeyPressed(ImGuiKey.Escape))
+        if (close)
         {
             ImGui.CloseCurrentPopup();
             feature.HighlightRule = null;
@@ -135,25 +141,48 @@ public sealed class DressWithPopup
         ImGui.PopStyleVar();
     }
 
+    static void GroupHeader(string text, float rowH)
+    {
+        var p = ImGui.GetCursorScreenPos();
+        ImGui.Dummy(new Vector2(ImGui.GetContentRegionAvail().X, rowH));
+        ImGui.GetWindowDrawList().AddText(new Vector2(p.X + Theme.Px(8), MathF.Round(p.Y + (rowH - ImGui.GetTextLineHeight()) * 0.5f)),
+            ImGui.ColorConvertFloat4ToU32(Theme.TextDisabled), text);
+    }
+
+    static string Tooltip(Row row)
+    {
+        if (row.Total == 0) return "Nothing selected can take this rule (see its Faces filter in Dressing rules).";
+        string tag = row.Tag;
+        string shared = row.Shared != null ? $"\nThe tag {tag} also feeds {row.Shared}." : "";
+        if (row.Recipe != null) return $"{row.Recipe.Description}\nAdds the rule {row.Recipe.Id} and tags the selection {row.Recipe.Tag}.{shared}";
+        if (row.With == row.Total) return $"Click to take the selection out of {row.Rule!.Id} only (other rules using {tag} keep it).";
+        return $"Click to dress the selection with {row.Rule!.Id}{(row.Rule.Enabled ? "" : " (and switch the rule on)")}.{shared}";
+    }
+
     List<Row> Rows(EditorContext ctx, RulesWorkspace ws)
     {
         string q = _query.Trim();
         bool Match(params string[] texts) => q.Length == 0 || texts.Any(t => t.Contains(q, StringComparison.OrdinalIgnoreCase));
-        var rows = new List<Row>();
-        foreach (var rule in ws.Rules)
+        var tagged = ws.Rules.Select(r => (Rule: r, Tag: ParamJson.PrimaryTag(r.Raw, ws.Resolve))).Where(r => r.Tag.Tag != null).ToList();
+        string? Shared(string id, string tag)
         {
-            var (tag, mesh) = ParamJson.PrimaryTag(rule.Raw, ws.Resolve);
-            if (tag == null || !Match(rule.Id, tag, rule.KindInfo?.DisplayName ?? "")) continue;
+            var others = tagged.Where(t => t.Rule.Id != id && t.Tag.Tag == tag).Select(t => t.Rule.Id).ToList();
+            return others.Count == 0 ? null : string.Join(", ", others);
+        }
+        var rows = new List<Row>();
+        foreach (var (rule, (tag, mesh)) in tagged)
+        {
+            if (!Match(rule.Id, tag!, rule.KindInfo?.DisplayName ?? "")) continue;
             var faces = ParamJson.ReadFaces(ws.Resolve(rule.Raw["faces"]));
-            var (with, total) = DressingOps.DressCoverage(ctx.Doc, ctx.Sel, tag, mesh, faces);
-            rows.Add(new Row(rule.Id, $"{rule.KindInfo?.DisplayName ?? rule.Kind} · {tag}{(rule.Enabled ? "" : " · off")}", rule, null, with, total));
+            var (with, total) = DressingOps.DressCoverage(ctx.Doc, ctx.Sel, rule.Id, tag!, mesh, faces);
+            rows.Add(new Row(rule.Id, $"{rule.KindInfo?.DisplayName ?? rule.Kind}{(rule.Enabled ? "" : ", off")}, tag {tag}", tag!, rule, null, with, total, Shared(rule.Id, tag!)));
         }
         foreach (var recipe in Recipes.All)
         {
             if (ws.Find(recipe.Id) != null || !Match(recipe.Label, recipe.Id, recipe.Tag)) continue;
             var faces = ParamJson.ReadFaces(recipe.Rule()["faces"]);
-            var (_, total) = DressingOps.DressCoverage(ctx.Doc, ctx.Sel, recipe.Tag, recipe.MeshTag, faces);
-            rows.Add(new Row($"Add {recipe.Label}", $"new rule · {recipe.Tag}", null, recipe, 0, total));
+            var (_, total) = DressingOps.DressCoverage(ctx.Doc, ctx.Sel, recipe.Id, recipe.Tag, recipe.MeshTag, faces);
+            rows.Add(new Row(recipe.Label, $"{recipe.Kind.DisplayName}, tag {recipe.Tag}", recipe.Tag, null, recipe, 0, total, Shared(recipe.Id, recipe.Tag)));
         }
         return rows;
     }
@@ -163,7 +192,7 @@ public sealed class DressWithPopup
     {
         float s = Theme.Px(12);
         var min = new Vector2(centreLeft.X, MathF.Round(centreLeft.Y - s * 0.5f));
-        uint line = onAccent ? Theme.OnAccentU32 : ImGui.ColorConvertFloat4ToU32(Theme.TextDim);
+        uint line = onAccent ? Theme.OnAccentU32 : ImGui.ColorConvertFloat4ToU32(row.Total == 0 ? Theme.TextDisabled : Theme.TextDim);
         if (row.Recipe != null)
         {
             float c = s * 0.5f, arm = s * 0.35f;
@@ -177,45 +206,48 @@ public sealed class DressWithPopup
     }
 
     /// <summary>
-    /// Tags the selection so <paramref name="rule"/> takes it (or takes it out when it already all is), switching the rule
-    /// on if it was off, in one undo step.
+    /// Dresses the selection with <paramref name="rule"/>, or takes it out of just that rule when it all is dressed already,
+    /// switching the rule on if it was off, in one undo step. False (with the reason in the status bar) if nothing happened.
     /// </summary>
-    public static void Apply(EditorContext ctx, DressingFeature feature, RuleEntry rule, RulesWorkspace ws)
+    public static bool Apply(EditorContext ctx, DressingFeature feature, RuleEntry rule, RulesWorkspace ws)
     {
         var (tag, mesh) = ParamJson.PrimaryTag(rule.Raw, ws.Resolve);
-        if (tag == null) return;
+        if (tag == null) return false;
         var faces = ParamJson.ReadFaces(ws.Resolve(rule.Raw["faces"]));
-        var (with, total) = DressingOps.DressCoverage(ctx.Doc, ctx.Sel, tag, mesh, faces);
+        var (with, total) = DressingOps.DressCoverage(ctx.Doc, ctx.Sel, rule.Id, tag, mesh, faces);
         if (total == 0)
         {
             ctx.Status(Nothing(ctx, rule.Id, mesh, faces), error: true);
-            return;
+            return false;
         }
         bool on = with < total;
         int changed = 0;
-        feature.EditRules(on ? $"Dress with {rule.Id}" : $"Undress {rule.Id}", w => !on || rule.Enabled || w.SetEnabled(rule.Id, true),
-            ctx.Sel.MeshIds(), () => changed = DressingOps.Dress(ctx.Doc, ctx.Sel, tag, mesh, faces, on));
+        if (!feature.EditRules(on ? $"Dress with {rule.Id}" : $"Take out of {rule.Id}", w => !on || rule.Enabled || w.SetEnabled(rule.Id, true),
+                ctx.Sel.MeshIds(), () => changed = DressingOps.Dress(ctx.Doc, ctx.Sel, rule.Id, tag, mesh, faces, on)))
+            return false;
         string what = mesh ? SelectMode.Object.Count(changed) : SelectMode.Face.Count(changed);
-        ctx.Status(on ? $"Dressed {what} with {rule.Id} (tagged {tag}){(rule.Enabled ? "" : "; switched the rule on")}" : $"Took {what} out of {rule.Id} (removed the tag {tag})");
+        ctx.Status(on ? $"Dressed {what} with {rule.Id}{(rule.Enabled ? "" : "; switched the rule on")}" : $"Took {what} out of {rule.Id} (they keep the tag {tag} for other rules)");
+        return true;
     }
 
-    /// <summary>Adds the recipe's rule to the level and tags the selection for it, in one undo step.</summary>
-    public static void ApplyRecipe(EditorContext ctx, DressingFeature feature, RulesWorkspace ws, Recipe recipe)
+    /// <summary>Adds the recipe's rule to the level and dresses the selection with it, in one undo step.</summary>
+    public static bool ApplyRecipe(EditorContext ctx, DressingFeature feature, RulesWorkspace ws, Recipe recipe)
     {
         var faces = ParamJson.ReadFaces(recipe.Rule()["faces"]);
-        var (_, total) = DressingOps.DressCoverage(ctx.Doc, ctx.Sel, recipe.Tag, recipe.MeshTag, faces);
+        string id = ws.UniqueId(recipe.Id);
+        var (_, total) = DressingOps.DressCoverage(ctx.Doc, ctx.Sel, id, recipe.Tag, recipe.MeshTag, faces);
         if (total == 0)
         {
             ctx.Status(Nothing(ctx, recipe.Label, recipe.MeshTag, faces), error: true);
-            return;
+            return false;
         }
-        string id = ws.UniqueId(recipe.Id);
         int changed = 0;
         if (!feature.EditRules($"Dress with {recipe.Label}", w => { w.Add(id, recipe.Rule()); return true; }, ctx.Sel.MeshIds(),
-                () => changed = DressingOps.Dress(ctx.Doc, ctx.Sel, recipe.Tag, recipe.MeshTag, faces, true)))
-            return;
+                () => changed = DressingOps.Dress(ctx.Doc, ctx.Sel, id, recipe.Tag, recipe.MeshTag, faces, true)))
+            return false;
         feature.Window.Selected = id;
         ctx.Status($"Added the rule {id} and tagged {(recipe.MeshTag ? SelectMode.Object : SelectMode.Face).Count(changed)} {recipe.Tag}. Tune it in Dressing rules (Ctrl+Shift+D).");
+        return true;
     }
 
     static string Nothing(EditorContext ctx, string rule, bool mesh, FaceSelector faces) =>

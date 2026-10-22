@@ -20,22 +20,24 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
 
     public string Id => "dressing";
     public int Order => 160; // right after Tags: what the rules select by, then what they do
-    public bool Visible(EditorContext ctx) => ctx.Dressed() != null;
+    /// <summary>Shown for dressed levels, and (as a way in) for saved levels without rules while something is selected.</summary>
+    public bool Visible(EditorContext ctx) => ctx.Dressed() != null || ctx.Session.Path != null && !ctx.Sel.IsEmpty && TagOps.CanTag(ctx.Sel.Mode);
 
     public void Draw(EditorContext ctx)
     {
-        if (ctx.Dressed() is not { } level) return;
+        if (ctx.Dressed() is not { } level)
+        {
+            Heading("Dressing", "none yet");
+            Buttons(ctx, view: false);
+            ImGui.PushTextWrapPos(0);
+            ImGui.TextColored(Theme.TextDim, "Dress with adds trims, bevels, railings or props to the selection from a recipe.");
+            ImGui.PopTextWrapPos();
+            return;
+        }
         int errors = level.ErrorCount, warnings = level.WarningCount;
         int enabled = level.Rules.Rules.Count(r => r.Enabled);
         Heading("Dressing", errors > 0 ? $"{errors} error{(errors == 1 ? "" : "s")}" : warnings > 0 ? $"{warnings} warning{(warnings == 1 ? "" : "s")}" : $"{enabled} rule{(enabled == 1 ? "" : "s")}");
-
-        int view = TextSegments("##dressView", [("Dressed", "Show the level as shipped  (`)"), ("Blockout", "Show only the blockout. Export still includes the dressing  (`)")], ctx.ShowDressed ? 0 : 1);
-        if (view >= 0 && (view == 0) != ctx.ShowDressed) ctx.Commands.Execute("view.dressed");
-        ImGui.SameLine();
-        float openW = ImGui.CalcTextSize("Rules...").X + ImGui.GetStyle().FramePadding.X * 2;
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0, ImGui.GetContentRegionAvail().X - openW));
-        if (ImGui.Button("Rules...")) feature.Window.Open = true;
-        Tip($"Edit the rules (Ctrl+Shift+D). They live in {Path.GetFileName(feature.RulesPath)}, which agents can edit too; Chip reloads it whenever it changes.");
+        Buttons(ctx, view: true);
 
         // What touches the selection.
         var meshes = ctx.Sel.MeshIds();
@@ -96,6 +98,31 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
             ImGui.TextColored(Theme.TextDim, $"and {problems.Count - MaxProblems} more. Chip --rules-check lists them all.");
     }
 
+    /// <summary>The Dressed / Blockout switch (for dressed levels), then Dress with and Rules at the right.</summary>
+    void Buttons(EditorContext ctx, bool view)
+    {
+        if (view)
+        {
+            int v = TextSegments("##dressView", [("Dressed", "Show the level as shipped  (`)"), ("Blockout", "Show only the blockout. Export still includes the dressing  (`)")], ctx.ShowDressed ? 0 : 1);
+            if (v >= 0 && (v == 0) != ctx.ShowDressed) ctx.Commands.Execute("view.dressed");
+            ImGui.SameLine();
+        }
+        var style = ImGui.GetStyle();
+        float w = ImGui.CalcTextSize("Dress with...").X + ImGui.CalcTextSize("Rules...").X + style.FramePadding.X * 4 + style.ItemSpacing.X;
+        if (view && ImGui.GetContentRegionAvail().X < w) ImGui.NewLine(); // a narrow inspector: the buttons get their own row
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0, ImGui.GetContentRegionAvail().X - w));
+        bool canDress = !ctx.Sel.IsEmpty && TagOps.CanTag(ctx.Sel.Mode);
+        if (!canDress) ImGui.BeginDisabled();
+        if (ImGui.Button("Dress with...")) ctx.Commands.Execute("dressing.dressWith");
+        if (!canDress) ImGui.EndDisabled();
+        Tip("Dress the selection with a rule, or add one from a recipe  (Ctrl+Shift+T)");
+        ImGui.SameLine();
+        if (ImGui.Button("Rules...")) feature.Window.Open = true;
+        Tip(feature.RulesPath is { } path
+            ? $"Edit the rules  (Ctrl+Shift+D). They live in {Path.GetFileName(path)}, which agents can edit too; Chip reloads it whenever it changes."
+            : "Set up dressing rules for this level  (Ctrl+Shift+D)");
+    }
+
     /// <summary>
     /// "Why isn't this dressed?": for the selected face (one face in face mode) or mesh, each rule that leaves it alone and
     /// why (a missing tag, the wrong facing, switched off), with the closest tag it has when that looks like a typo.
@@ -109,20 +136,23 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
         if (ImGui.SmallButton(_whyOpen ? $"Hide rules that skip this {(face >= 0 ? "face" : "mesh")}" : $"Why don't {reasons.Count} rule{(reasons.Count == 1 ? "" : "s")} take this {(face >= 0 ? "face" : "mesh")}?"))
             _whyOpen = !_whyOpen;
         if (!_whyOpen) return;
-        float wrap = ImGui.GetContentRegionAvail().X;
+        float w = ImGui.GetContentRegionAvail().X;
+        float line = ImGui.GetTextLineHeight();
         foreach (var (rule, reason) in reasons)
         {
-            ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + wrap);
-            ImGui.Text(rule.Id);
-            ImGui.SameLine();
-            ImGui.TextColored(Theme.TextDim, reason!);
-            ImGui.PopTextWrapPos();
-            if (ImGui.IsItemHovered() && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            {
-                feature.Window.Open = true;
-                feature.Window.Selected = rule.Id;
-            }
-            Tip("Click to open the rule");
+            // One selectable row per rule: name, the reason under it, a chevron to open the rule.
+            ImGui.PushID(rule.Id);
+            var p = ImGui.GetCursorScreenPos();
+            float textW = w - Theme.Px(24);
+            var reasonSize = ImGui.CalcTextSize(reason!, false, textW);
+            float h = line + reasonSize.Y + Theme.Px(6);
+            if (ImGui.Selectable("##why", false, ImGuiSelectableFlags.None, new Vector2(w, h))) feature.Window.ShowRule(rule.Id);
+            Tip($"Open {rule.Id} in Dressing rules");
+            var dl = ImGui.GetWindowDrawList();
+            dl.AddText(p + Theme.Px(4, 2), ImGui.ColorConvertFloat4ToU32(Theme.Text), rule.Id);
+            dl.AddText(ImGui.GetFont(), ImGui.GetFontSize(), p + new Vector2(Theme.Px(4), line + Theme.Px(2)), ImGui.ColorConvertFloat4ToU32(Theme.TextDim), reason!, textW);
+            Icons.Draw(dl, Icon.ChevronRight, new Vector2(p.X + w - Theme.Px(12), p.Y + h * 0.5f), ImGui.ColorConvertFloat4ToU32(Theme.TextDim));
+            ImGui.PopID();
         }
     }
 
