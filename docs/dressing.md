@@ -264,7 +264,9 @@ box, climbing toward the end where the mesh is highest, so a ramp turns into ste
 or ramp as collision.
 
 **Props** are `{ "box": [w, h, d] }`, `{ "cylinder": [diameter, height], "sides": 12 }`, or a `.glb` / `.gltf` path relative
-to the rules file that names it (materials keep their glTF names, so name them after your textures; explicit UVs are kept).
+to the rules file that names it. A file's own textures (embedded, or images beside a `.gltf`) are used: its faces get a
+material named `file/material` that the editor adds to the library. Materials without an image keep their glTF names, so
+name them after your library textures. Explicit UVs are kept.
 The window rewrites prop paths when it copies a rule to another file (Duplicate, Save as style). A prop stands on its
 origin: +Y up (along the surface it sits on), +X along the edge, +Z out from the face. Edited prop files reload; a missing
 one warns once (W610).
