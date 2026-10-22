@@ -185,7 +185,7 @@ public sealed unsafe class Renderer : IDisposable
             var (u, v, cu, cv) = OrthoGridAxes(camera.Projection);
             float upp = camera.OrthoHeight / size.Y;
             float minor = s.Grid;
-            while (minor / upp < 6 && minor < 4096) minor *= 4;
+            while (minor / upp < 6 && minor < 4096) minor = Framework.EditorContext.MajorGrid(minor);
             DrawGrid(view, camera.Position, u, v, cu, cv, minor, camera.OrthoHeight * 4 + 50, fade: 1, Vector3.Zero, 0, strength: 1.5f);
         }
 
@@ -326,6 +326,9 @@ public sealed unsafe class Renderer : IDisposable
         _gl.Uniform3(Loc(p, "uV"), v);
         _gl.Uniform1(Loc(p, "uExtent"), extent);
         _gl.Uniform1(Loc(p, "uGrid"), grid);
+        float major = Framework.EditorContext.MajorGrid(grid);
+        _gl.Uniform1(Loc(p, "uMajor"), major);
+        _gl.Uniform1(Loc(p, "uMajor2"), Framework.EditorContext.MajorGrid(major));
         _gl.Uniform4(Loc(p, "uColU"), colU);
         _gl.Uniform4(Loc(p, "uColV"), colV);
         _gl.Uniform3(Loc(p, "uEye"), view.Eye);

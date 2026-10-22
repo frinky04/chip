@@ -12,6 +12,7 @@ public sealed partial class EditorApp
     {
         var s = _settings.Current;
         Ctx.Grid = s.GridDefault;
+        Ctx.SnapSpace = Enum.Parse<Viewport.SnapSpace>(s.SnapSpace);
         Ctx.TextureFolders = s.TextureFolders.ToList();
         _shell.Settings = _settings;
         _shell.ResetLayout = ResetLayout;

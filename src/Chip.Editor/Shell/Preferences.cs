@@ -179,6 +179,15 @@ public sealed partial class EditorApp
             ImGui.EndCombo();
         }
         Note("Used when Chip starts. Press [ and ] to change the grid while you work.");
+        PrefRow("Starting snap space");
+        ImGui.SetNextItemWidth(Theme.Px(220));
+        if (ImGui.BeginCombo("##snapspace", s.SnapSpace == nameof(Viewport.SnapSpace.World) ? "World grid" : "Relative steps"))
+        {
+            if (ImGui.Selectable("World grid", s.SnapSpace == nameof(Viewport.SnapSpace.World))) { s.SnapSpace = nameof(Viewport.SnapSpace.World); SaveSettings(); }
+            if (ImGui.Selectable("Relative steps", s.SnapSpace == nameof(Viewport.SnapSpace.Relative))) { s.SnapSpace = nameof(Viewport.SnapSpace.Relative); SaveSettings(); }
+            ImGui.EndCombo();
+        }
+        Note("World: moves land on the grid lines. Relative: they go in whole grid steps from where the selection was, so something off the grid stays off it. Press \\ to switch while you work.");
 
         PageGap();
         Widgets.Heading("Panels");

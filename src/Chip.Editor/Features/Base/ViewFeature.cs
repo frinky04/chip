@@ -41,6 +41,20 @@ public sealed class ViewFeature : IEditorFeature
         c.Add("view.gridSmaller", "Smaller grid", () => ctx.StepGrid(-1), "View", "[", group: "2-grid", order: 0);
         c.Add("view.gridLarger", "Larger grid", () => ctx.StepGrid(1), "View", "]", group: "2-grid", order: 1);
         c.Add("view.snap", "Snap to grid", () => ctx.Snap = !ctx.Snap, "View", group: "2-grid", order: 2, isChecked: () => ctx.Snap);
+        c.Add(new Command
+        {
+            Id = "view.snapSpace", Label = "Snap to world grid", Menu = "View", Group = "2-grid", Order = 3,
+            Hotkeys = [Hotkey.Parse("\\")],
+            Description = "On: moves land on world grid lines. Off: moves go in whole grid steps from where the selection was",
+            IsChecked = () => ctx.SnapSpace == SnapSpace.World,
+            Execute = () =>
+            {
+                ctx.SnapSpace = ctx.SnapSpace == SnapSpace.World ? SnapSpace.Relative : SnapSpace.World;
+                ctx.Status(ctx.SnapSpace == SnapSpace.World
+                    ? "World snapping: moves land on the grid lines"
+                    : "Relative snapping: moves go in whole grid steps from where the selection was");
+            },
+        });
         c.Add("view.backfaces", "Select backfaces", () =>
         {
             ctx.Backfaces = !ctx.Backfaces;

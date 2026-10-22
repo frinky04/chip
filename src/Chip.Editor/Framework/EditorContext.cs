@@ -15,8 +15,22 @@ namespace Chip.Editor.Framework;
 /// </summary>
 public sealed class EditorContext
 {
-    /// <summary>Metric powers of two: 1/32 m (~3 cm) to 16 m.</summary>
-    public static readonly float[] GridSizes = [1 / 32f, 1 / 16f, 1 / 8f, 1 / 4f, 1 / 2f, 1, 2, 4, 8, 16];
+    /// <summary>
+    /// Grid steps, 1 cm to 16 m. Below 25 cm they go 10, 5 and 1 cm (round numbers to work in) rather than halving to
+    /// 12.5 and 6.25. 10 cm doesn't nest in 25 cm, but 5 cm nests in both, so it is always one step to get back onto
+    /// either. From 25 cm up every size is a whole number of 25 cm.
+    /// </summary>
+    public static readonly float[] GridSizes = [0.01f, 0.05f, 0.1f, 0.25f, 0.5f, 1, 2, 4, 8, 16];
+
+    /// <summary>
+    /// The size of the brighter lines drawn over a grid of <paramref name="minor"/>: a round number the minor size
+    /// divides (1 cm → 10 cm, 5 cm → 25 cm, 10 cm → 50 cm), else four steps (25 cm → 1 m, as before).
+    /// </summary>
+    public static float MajorGrid(float minor) =>
+        MathF.Abs(minor - 0.01f) < 1e-5f ? 0.1f
+        : MathF.Abs(minor - 0.05f) < 1e-5f ? 0.25f
+        : MathF.Abs(minor - 0.1f) < 1e-5f ? 0.5f
+        : minor * 4;
 
     readonly Func<double> _clock;
     readonly List<IViewportTool> _tools = new();
@@ -134,6 +148,12 @@ public sealed class EditorContext
 
     public float Grid { get; set; } = 0.25f;
     public bool Snap { get; set; } = true;
+
+    /// <summary>
+    /// What gizmo moves and nudges line up with: World puts the selection on world grid lines, Relative moves it by
+    /// whole grid steps from where it was. The gizmo holds it so its maths stays testable on its own.
+    /// </summary>
+    public SnapSpace SnapSpace { get => Gizmo.SnapSpace; set => Gizmo.SnapSpace = value; }
     /// <summary>Scythe-style backface selection: picking can hit faces pointing away (rendering never changes). On by default.</summary>
     public bool Backfaces { get; set; } = true;
 

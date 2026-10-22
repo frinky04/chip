@@ -13,6 +13,12 @@ public sealed class ViewSettings
     /// <summary>Scythe: open (boundary) edges drawn dashed in a distinct colour.</summary>
     public bool BoundaryEdges { get; set; } = true;
 
+    /// <summary>Lengths beside the selection's edges, Scythe style (View > Show dimensions).</summary>
+    public bool ShowDimensions { get; set; } = true;
+
+    /// <summary>Each edge, the selection's overall size, or both (View > Dimensions).</summary>
+    public Dimensions.DimensionMode DimensionMode { get; set; } = Dimensions.DimensionMode.Both;
+
     /// <summary>Short corner-normal lines on the selection (stream L, View > Show normals).</summary>
     public bool ShowNormals { get; set; }
 

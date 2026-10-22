@@ -14,6 +14,12 @@ public enum Handle { None, X, Y, Z, PlaneYZ, PlaneXZ, PlaneXY, Center }
 public enum GizmoOrientation { World, Local, View }
 
 /// <summary>
+/// What grid snapping lines a move up with. World: the selection lands on world grid lines. Relative: it moves by whole
+/// grid steps from where it started, so something off the grid stays off it by the same amount.
+/// </summary>
+public enum SnapSpace { World, Relative }
+
+/// <summary>
 /// Finds a point to align to under the cursor (vertex, edge midpoint, face centre). <paramref name="excludeSelection"/>
 /// skips the geometry being moved so it can't snap onto itself.
 /// </summary>
@@ -35,6 +41,12 @@ public sealed class Gizmo
     public GizmoOrientation Orientation = GizmoOrientation.World;
     /// <summary>Rotation snap step, separate from the grid. Scythe default 15°.</summary>
     public float RotateSnapDegrees = 15f;
+    /// <summary>
+    /// What moves snap to (<see cref="Viewport.SnapSpace"/>). In World, the anchor lands on grid lines along each world
+    /// axis being dragged; an axis that isn't a world axis (local or view gizmo on a turned selection) has no grid lines
+    /// to land on and moves in steps. Rotation and scale always snap their own amounts.
+    /// </summary>
+    public SnapSpace SnapSpace = SnapSpace.World;
 
     public Handle Hover { get; private set; }
     public Handle Active { get; private set; }
@@ -50,13 +62,32 @@ public sealed class Gizmo
     public SnapQuery? SnapProvider { get; set; }
     /// <summary>Overrides the pivot handed to <see cref="BeginDrag"/> (temporary pivot). Wired to <c>EditorContext.PivotOverride</c>.</summary>
     public Func<Vector3?>? PivotHook { get; set; }
+    /// <summary>
+    /// The point a World-space move puts on the grid when there's no temporary pivot: the selection's bounds' low
+    /// corner (Hammer), so a box whose corners sit on the grid keeps them there even when its centre doesn't. Falls
+    /// back to the pivot.
+    /// </summary>
+    public Func<Vector3?>? AnchorHook { get; set; }
     /// <summary>The point the last aligned drag snapped to, for feedback; null when not aligning.</summary>
     public Vector3? AlignTarget { get; private set; }
+
+    /// <summary>
+    /// What the drag in progress has done so far, for the readout: where the pivot started, how far it moved (world),
+    /// the turn in degrees about the handle's axis, and the scale along the gizmo's axes.
+    /// </summary>
+    public readonly record struct DragAmount(Vector3 Start, Vector3 Delta, float Degrees, Vector3 Scale);
+    public DragAmount Amount { get; private set; }
+
+    /// <summary>
+    /// During a snapped World-space move, where the anchor is now: the point sitting on the grid lines. Null otherwise.
+    /// </summary>
+    public Vector3? SnapMark => Dragging && Mode == GizmoMode.Translate && SnapSpace == SnapSpace.World && _snapped ? _anchor + Amount.Delta : null;
+    bool _snapped;
 
     readonly Vector3[] _basis = [Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ];
     public IReadOnlyList<Vector3> Basis => _basis;
 
-    Vector3 _pivot;
+    Vector3 _pivot, _anchor;
     Vector2 _startMouse;
     float _startAxisParam;
     Vector3 _startPlaneHit;
@@ -158,7 +189,10 @@ public sealed class Gizmo
     public void BeginDrag(Handle h, ViewInfo v, Vector3 pivot, Vector2 mouse)
     {
         Active = h;
-        _pivot = PivotHook?.Invoke() ?? pivot;
+        var placed = PivotHook?.Invoke();
+        _pivot = placed ?? pivot;
+        _anchor = placed ?? AnchorHook?.Invoke() ?? _pivot;
+        Amount = new DragAmount(_pivot, Vector3.Zero, 0, Vector3.One);
         _startMouse = mouse;
         _angle = 0;
         _pushPullStart = CtrlHeld && ShiftHeld && Mode == GizmoMode.Translate;
@@ -175,6 +209,52 @@ public sealed class Gizmo
         AlignTarget = null;
     }
 
+    /// <summary>
+    /// The transform for values typed during the drag instead of the mouse. Move: one value goes along an axis handle (or
+    /// along the way a plane or centre drag is heading), two along a plane handle's axes, three along all the gizmo's
+    /// axes (kept to the handle). Rotate: degrees about the handle's axis, right-hand rule, as the readout shows it.
+    /// Scale: a factor along the handle (all axes on the centre). Null when the values don't fit the handle.
+    /// </summary>
+    public (Matrix4x4 M, bool Rigid)? Exact(IReadOnlyList<float> values)
+    {
+        if (!Dragging || values.Count == 0) return null;
+        switch (Mode)
+        {
+            case GizmoMode.Translate:
+            {
+                Vector3 d;
+                if (values.Count == 1)
+                {
+                    if (Active is Handle.X or Handle.Y or Handle.Z) d = AxisOf(Active) * values[0];
+                    else if (Amount.Delta.LengthSquared() > 1e-10f) d = Vector3.Normalize(Amount.Delta) * values[0];
+                    else return null; // no direction yet: drag a little first, or type one value per axis
+                }
+                else if (values.Count == 2)
+                {
+                    if (Active is not (Handle.PlaneYZ or Handle.PlaneXZ or Handle.PlaneXY)) return null;
+                    var (u, w) = PlaneAxes(AxisIndex(Active));
+                    d = u * values[0] + w * values[1];
+                }
+                else d = Constrain(_basis[0] * values[0] + _basis[1] * values[1] + _basis[2] * values[2], Active);
+                Amount = Amount with { Delta = d };
+                return (Matrix4x4.CreateTranslation(d), true);
+            }
+            case GizmoMode.Rotate:
+                if (values.Count != 1) return null;
+                Amount = Amount with { Degrees = values[0] };
+                return (About(Matrix4x4.CreateFromAxisAngle(AxisOf(Active), values[0] * MathF.PI / 180)), true);
+            default:
+            {
+                if (values.Count != 1 || MathF.Abs(values[0]) < 1e-4f) return null;
+                var scale = Vector3.One;
+                if (Active == Handle.Center) scale = new Vector3(values[0]);
+                else scale[AxisIndex(Active)] = values[0];
+                Amount = Amount with { Scale = scale };
+                return (About(InBasis(Matrix4x4.CreateScale(scale))), false);
+            }
+        }
+    }
+
     /// <summary>Snapping applies unless Ctrl is held (a Ctrl+Shift push/pull keeps snapping: Ctrl is part of its chord).</summary>
     bool Snapping(bool snap) => snap && !(CtrlHeld && !_pushPullStart);
 
@@ -182,18 +262,24 @@ public sealed class Gizmo
     public (Matrix4x4 M, bool Rigid) DragTransform(ViewInfo v, Vector2 mouse, float grid, bool snap)
     {
         snap = Snapping(snap);
+        _snapped = snap && !AlignHeld;
         var ray = v.ScreenRay(mouse);
         AlignTarget = null;
         switch (Mode)
         {
             case GizmoMode.Translate:
             {
+                Vector3 delta;
                 if (AlignHeld && SnapProvider?.Invoke(v, mouse, true) is { } target)
                 {
                     AlignTarget = target;
-                    return (Matrix4x4.CreateTranslation(Constrain(target - _pivot, Active)), true);
+                    delta = Constrain(target - _pivot, Active);
                 }
-                return (Matrix4x4.CreateTranslation(TranslateDelta(v, ray, Active, grid, snap)), true);
+                // A press that hasn't moved yet moves nothing (a World snap would otherwise jump on a click).
+                else if (Vector2.DistanceSquared(mouse, _startMouse) < 4) delta = Vector3.Zero;
+                else delta = TranslateDelta(v, ray, Active, grid, snap);
+                Amount = Amount with { Delta = delta };
+                return (Matrix4x4.CreateTranslation(delta), true);
             }
             case GizmoMode.Rotate:
             {
@@ -208,6 +294,7 @@ public sealed class Gizmo
                 float facing = Vector3.Dot(axis, v.Eye - _pivot) >= 0 ? 1 : -1;
                 float world = -_angle * facing;
                 if (snap && RotateSnapDegrees > 0) world = MeshOps.Snap(world, RotateSnapDegrees * MathF.PI / 180f);
+                Amount = Amount with { Degrees = world * 180 / MathF.PI };
                 return (About(Matrix4x4.CreateFromAxisAngle(axis, world)), true);
             }
             default:
@@ -230,6 +317,7 @@ public sealed class Gizmo
                     scale = Vector3.One;
                     scale[AxisIndex(Active)] = s;
                 }
+                Amount = Amount with { Scale = scale };
                 return (About(InBasis(Matrix4x4.CreateScale(scale))), false);
             }
         }
@@ -242,7 +330,7 @@ public sealed class Gizmo
         {
             var axis = AxisOf(h);
             float d = AxisParam(ray, _pivot, axis) - _startAxisParam;
-            return axis * (snap ? MeshOps.Snap(d, grid) : d);
+            return axis * (snap ? SnapAlong(axis, d, grid) : d);
         }
         var hit = PlaneHit(v, ray, h, _pivot);
         var delta = hit is { } p ? p - _startPlaneHit : Vector3.Zero;
@@ -261,9 +349,26 @@ public sealed class Gizmo
     Vector3 SnapInBasis(Vector3 d, float grid)
     {
         var r = Vector3.Zero;
-        for (int i = 0; i < 3; i++) r += _basis[i] * MeshOps.Snap(Vector3.Dot(d, _basis[i]), grid);
+        for (int i = 0; i < 3; i++) r += _basis[i] * SnapAlong(_basis[i], Vector3.Dot(d, _basis[i]), grid);
         return r;
     }
+
+    /// <summary>
+    /// A drag of <paramref name="d"/> along <paramref name="axis"/>, snapped: in World space (on a world axis) the anchor
+    /// ends on a grid line; otherwise the drag is a whole number of grid steps.
+    /// </summary>
+    float SnapAlong(Vector3 axis, float d, float grid)
+    {
+        if (SnapSpace == SnapSpace.World && IsWorldAxis(axis))
+        {
+            float start = Vector3.Dot(_anchor, axis);
+            return MeshOps.Snap(start + d, grid) - start;
+        }
+        return MeshOps.Snap(d, grid);
+    }
+
+    /// <summary>Lies along X, Y or Z (either way), so world grid lines cross it.</summary>
+    internal static bool IsWorldAxis(Vector3 a) => MathF.Max(MathF.Abs(a.X), MathF.Max(MathF.Abs(a.Y), MathF.Abs(a.Z))) > 0.9999f;
 
     /// <summary>Re-expresses a transform built on the X/Y/Z axes in the gizmo's frame (row vectors: Bᵀ M B).</summary>
     Matrix4x4 InBasis(Matrix4x4 m)

@@ -2,6 +2,7 @@ using System.Numerics;
 using Chip.Core.Geometry.Primitives;
 using Chip.Core.Scene;
 using Chip.Core.Texturing;
+using Chip.Editor.Features.Dimensions;
 using Chip.Editor.Framework;
 using Chip.Editor.Tools.Block;
 using Chip.Editor.UI;
@@ -80,8 +81,6 @@ public sealed class RectangleTool : IViewportTool
         var center = (min + max) * 0.5f;
         float len = MathF.Max(ctx.Grid, MathF.Min(1, Vector3.Distance(min, max) * 0.2f));
         Overlay.Line(dl, origin, v, center, center + _facing * len, Overlay.Faint, Theme.Px(1.5f)); // which side the face points to
-        var d = max - min;
-        var (u, w) = Primitive.BaseAxes(_plane.Normal);
-        Overlay.Label(dl, origin, v, max, $"{MathF.Abs(Vector3.Dot(d, u)):0.###} × {MathF.Abs(Vector3.Dot(d, w)):0.###} m");
+        DimensionDraw.Box(dl, origin, v, min, max);
     }
 }

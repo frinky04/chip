@@ -156,6 +156,8 @@ static class Shaders
         #version 330 core
         in vec3 vPos;
         uniform float uGrid;
+        uniform float uMajor;
+        uniform float uMajor2;
         uniform vec3 uEye;
         uniform vec3 uOrigin;
         uniform vec3 uU;
@@ -177,7 +179,8 @@ static class Shaders
         void main() {
             vec3 d = vPos - uOrigin;
             vec2 c = vec2(dot(d, uU), dot(d, uV));
-            float a = max(lines(c, uGrid) * 0.10, lines(c, uGrid * 4.0) * 0.26) * uStrength;
+            // Minor lines, brighter majors, and the next tier up, which stays when the others thin out with distance.
+            float a = max(lines(c, uGrid) * 0.10, max(lines(c, uMajor), lines(c, uMajor2)) * 0.26) * uStrength;
             vec3 col = vec3(0.62);
             vec2 w = fwidth(c) * 1.5;
             float au = (1.0 - min(abs(c.y) / w.y, 1.0)) * uColU.a; // the line along uU

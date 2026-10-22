@@ -2,6 +2,7 @@ using System.Numerics;
 using Chip.Core.Geometry.Primitives;
 using Chip.Core.Scene;
 using Chip.Core.Texturing;
+using Chip.Editor.Features.Dimensions;
 using Chip.Editor.Framework;
 using Chip.Editor.Tools.Block;
 using Chip.Editor.UI;
@@ -160,8 +161,8 @@ public sealed class PolygonTool : IViewportTool
                     Overlay.Line(dl, origin, v, _points[^1], cur, Theme.AccentU32, w);
                     if (_points.Count >= 2) Overlay.Line(dl, origin, v, cur, _points[0], Overlay.Faint, Theme.Px(1)); // closing edge
                     _plane.DrawCursor(dl, origin, v, cur);
-                    Overlay.Label(dl, origin, v, cur, $"{Vector3.Distance(_points[^1], cur):0.###} m");
                 }
+                DimensionDraw.Path(dl, origin, v, _cursor is { } end ? [.. _points, end] : _points);
                 for (int i = 0; i < _points.Count; i++) Overlay.Dot(dl, origin, v, _points[i], hollow: i == 0 && _points.Count >= 3);
                 return;
             default:
@@ -169,7 +170,10 @@ public sealed class PolygonTool : IViewportTool
                     float h = MathF.Abs(_height) < 1e-4f ? _grid : _height;
                     if (Primitive.Prism(_points, _plane.Normal * h, "", TextureMapping.Default) is { } preview)
                         Overlay.Wire(dl, origin, v, preview);
-                    Overlay.Label(dl, origin, v, Centroid() + _plane.Normal * h, $"{h:0.###} m");
+                    // The height beside the prism's upright edge at the first corner, pushed away from its middle.
+                    var up = _plane.Normal * h;
+                    DimensionDraw.Edge(dl, origin, v, _points[0], _points[0] + up, Centroid() + up * 0.5f,
+                        DimensionDraw.ColorOf(DimensionDraw.AxisOf(_points[0], _points[0] + up)), text: Labels.Measure(MathF.Abs(h)));
                     return;
                 }
         }

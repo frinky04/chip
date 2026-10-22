@@ -3,6 +3,7 @@ using Chip.Core.Geometry;
 using Chip.Core.Scene;
 using Chip.Core.Texturing;
 using Chip.Editor.Framework;
+using Chip.Editor.Viewport;
 
 namespace Chip.Editor.Features.Base;
 
@@ -144,15 +145,26 @@ public sealed class EditFeature : IEditorFeature
         foreach (var (mesh, verts) in _ctx.Sel.VertexSets(_ctx.Doc)) MeshOps.SnapToGrid(mesh, verts, _ctx.Grid);
     });
 
-    /// <summary>Moves the selection one grid step along the view's dominant axes.</summary>
+    /// <summary>
+    /// Moves the selection along the view's dominant axes: one grid step, or in World snap space to the next grid line
+    /// that way (a full step once it is on the grid). The temporary pivot, else the selection's low corner, is what
+    /// lands on the line, as with the gizmo.
+    /// </summary>
     void Nudge(int right, int up)
     {
         var cam = _ctx.Camera;
         var axisRight = TextureMapping.DominantAxis(cam.Right with { Y = 0 });
         var axisUp = MathF.Abs(cam.Forward.Y) > 0.7f ? TextureMapping.DominantAxis(cam.Up with { Y = 0 }) : Vector3.UnitY;
-        var delta = (axisRight * right + axisUp * up) * _ctx.Grid;
+        var dir = axisRight * right + axisUp * up;
+        float grid = _ctx.Grid;
+        var delta = dir * grid;
+        if (_ctx.SnapSpace == SnapSpace.World && (_ctx.PivotOverride ?? _ctx.SelectionBounds()?.Min) is { } anchor)
+            delta = dir * NextLine(Vector3.Dot(anchor, dir), grid);
         if (TransformGesture.Start(_ctx.Session, "Nudge") is not { } g) return;
         g.Apply(Matrix4x4.CreateTranslation(delta), rigid: true);
         g.Commit();
     }
+
+    /// <summary>How far from <paramref name="s"/> to the next grid line above it (a whole step when it is on one).</summary>
+    internal static float NextLine(float s, float grid) => (MathF.Floor(s / grid + 1e-4f) + 1) * grid - s;
 }

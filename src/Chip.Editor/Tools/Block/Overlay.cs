@@ -6,7 +6,7 @@ using ImGuiNET;
 
 namespace Chip.Editor.Tools.Block;
 
-/// <summary>Screen-space drawing shared by the creation tools: wire previews, points, and the size readout.</summary>
+/// <summary>Screen-space drawing shared by the creation tools: wire previews, points and labels (sizes go through DimensionDraw).</summary>
 public static class Overlay
 {
     public const uint Shadow = 0xE6100F0E;
@@ -56,6 +56,4 @@ public static class Overlay
         dl.AddRectFilled(origin + pos - pad, origin + pos + ts + pad, 0xE0141416, Theme.Px(2));
         dl.AddText(origin + pos, Theme.AccentU32, text);
     }
-
-    public static string Size(Vector3 size) => $"{size.X:0.###} × {size.Y:0.###} × {size.Z:0.###} m";
 }

@@ -1,7 +1,10 @@
 using System.Numerics;
 using Chip.Core.Picking;
 using Chip.Core.Scene;
+using Chip.Editor.Features.Dimensions;
 using Chip.Editor.Features.SelectionTools;
+using Chip.Editor.Features.View;
+using Chip.Editor.Tools.Block;
 using Chip.Editor.Framework;
 using Chip.Editor.UI;
 using Chip.Editor.Viewport;
@@ -21,6 +24,8 @@ namespace Chip.Editor.Tools;
 public sealed class SelectTool : IViewportTool
 {
     TransformGesture? _gesture;
+    /// <summary>An exact value being typed during a gizmo drag, or null while the mouse steers.</summary>
+    string? _typed;
     bool _marqueeArmed, _marquee, _painting, _swallowRelease;
     enum PaintOp { Replace, Add, Remove }
     PaintOp _paintOp;
@@ -40,8 +45,10 @@ public sealed class SelectTool : IViewportTool
     /// <summary>Box select ignores elements hidden behind other surfaces (off: vertices and edges select through).</summary>
     public bool VisibleOnly { get; set; }
 
-    public (string Key, string Action)[] Hints => _gesture != null
-        ? [("Esc", "cancel")]
+    public (string Key, string Action)[] Hints => _typed != null
+        ? [("Enter", "apply"), ("Backspace", "edit"), ("Esc", "cancel")]
+        : _gesture != null
+        ? [("Type", "an exact value"), ("Esc", "cancel")]
         : [("LMB", "select"), ("Drag", "paint select"), ("Ctrl+Alt+drag", "box"), ("Dbl-click", _mode switch
         {
             SelectMode.Edge => "loop", SelectMode.Object => "select", _ => "connected",
@@ -49,6 +56,7 @@ public sealed class SelectTool : IViewportTool
 
     public bool Cancel(EditorContext ctx)
     {
+        _typed = null;
         if (_gesture != null)
         {
             _gesture.Cancel();
@@ -71,9 +79,15 @@ public sealed class SelectTool : IViewportTool
         var gizmo = ctx.Gizmo;
         _mode = ctx.Sel.Mode;
 
-        // An active gizmo drag owns the mouse until release.
+        // An active gizmo drag owns the mouse until release, or until Enter once a value is being typed.
         if (_gesture != null)
         {
+            Type(io);
+            if (_typed != null)
+            {
+                TypedDrag(ctx);
+                return;
+            }
             if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
             {
                 var (m, rigid) = gizmo.DragTransform(ctx.View, mouse, ctx.Grid, ctx.Snap);
@@ -172,6 +186,49 @@ public sealed class SelectTool : IViewportTool
         _marqueeArmed = _marquee = _painting = false;
     }
 
+    /// <summary>
+    /// Typing during a drag: a digit, point or minus starts an exact value (the mouse stops steering, and letting go no
+    /// longer ends the drag); Backspace edits it, and emptying it hands control back to the mouse.
+    /// </summary>
+    void Type(ImGuiIOPtr io)
+    {
+        for (int i = 0; i < io.InputQueueCharacters.Size; i++)
+        {
+            char c = (char)io.InputQueueCharacters[i];
+            bool starts = char.IsDigit(c) || c is '.' or '-';
+            if (_typed == null && !starts) continue;
+            if (starts || c is ' ' or ',' or ';' or '%' or '°' or 'c' or 'm' or 'd' or 'e' or 'g' or 'x' or 'C' or 'M' or 'X') _typed = (_typed ?? "") + c;
+        }
+        if (_typed != null && ImGui.IsKeyPressed(ImGuiKey.Backspace))
+            _typed = _typed.Length > 1 ? _typed[..^1] : null;
+    }
+
+    /// <summary>Previews the typed value; Enter applies it and ends the drag.</summary>
+    void TypedDrag(EditorContext ctx)
+    {
+        var gizmo = ctx.Gizmo;
+        var values = NumericEntry.Parse(_typed!, DragReadout.UnitFor(gizmo.Mode));
+        var exact = values != null ? gizmo.Exact(values) : null;
+        if (exact is { } e) _gesture!.Apply(e.M, e.Rigid);
+        if (!ImGui.IsKeyPressed(ImGuiKey.Enter, false) && !ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, false)) return;
+        if (exact == null)
+        {
+            ctx.Status(gizmo.Mode switch
+            {
+                GizmoMode.Rotate => "Type an angle in degrees, like 90 or -45",
+                GizmoMode.Scale => "Type a scale, like 2, 0.5 or 150%",
+                _ => values is { Length: 1 } ? "Drag a little first so the move has a direction, or type a value for each axis: 1 0 -2"
+                    : "Type a distance, like 1.5, 150cm, or one value per axis: 1 0 -2",
+            }, error: true);
+            return;
+        }
+        _gesture!.Commit();
+        _gesture = null;
+        gizmo.EndDrag();
+        _typed = null;
+        _swallowRelease = ImGui.IsMouseDown(ImGuiMouseButton.Left); // the button still held from the drag does nothing
+    }
+
     /// <summary>Paint select starts: no modifier replaces the selection, Shift adds to it, Ctrl removes from it.</summary>
     void BeginPaint(EditorContext ctx, ImGuiIOPtr io)
     {
@@ -245,11 +302,65 @@ public sealed class SelectTool : IViewportTool
 
     public void Draw(EditorContext ctx, ImDrawListPtr dl, Vector2 origin)
     {
+        if (ViewSettings.Of(ctx) is { ShowDimensions: true } view && !ctx.Sel.IsEmpty && ctx.SelectionBounds() is { } bounds)
+            DrawDimensions(ctx, dl, origin, view.DimensionMode, bounds);
         if (ctx.SelectionPivot() is { } pivot) ctx.Gizmo.Draw(dl, origin, ctx.View, pivot);
+        if (_gesture != null && ctx.Gizmo.Dragging) DrawReadout(ctx, dl, origin);
         if (!_marquee) return;
         var a = origin + _pressPos;
         var b = origin + ctx.Mouse;
         dl.AddRectFilled(Vector2.Min(a, b), Vector2.Max(a, b), (Theme.AccentU32 & 0x00FFFFFF) | 0x22000000);
         dl.AddRect(Vector2.Min(a, b), Vector2.Max(a, b), Theme.AccentU32);
+    }
+
+    /// <summary>
+    /// The selection's sizes: edge labels, and the overall size further out where it says something the edges don't
+    /// (two stacked wall faces: their combined height). Overall alone still falls back to the edges for one face or an
+    /// object, whose overall size is its edges.
+    /// </summary>
+    static void DrawDimensions(EditorContext ctx, ImDrawListPtr dl, Vector2 origin, DimensionMode mode, (Vector3 Min, Vector3 Max) bounds)
+    {
+        var edges = Dimensions.ForSelection(ctx.Doc, ctx.Sel, bounds);
+        var overall = Dimensions.Overall(ctx.Doc, ctx.Sel);
+        var placed = new List<(Vector2 Min, Vector2 Max)>();
+        if (mode != DimensionMode.Edges && overall is { } e)
+            DimensionDraw.Overall(dl, origin, ctx.View, e, mode == DimensionMode.Overall ? [] : edges, placed);
+        if (mode != DimensionMode.Overall || overall == null)
+            DimensionDraw.Groups(dl, origin, ctx.View, edges, (bounds.Min + bounds.Max) * 0.5f, placed);
+    }
+
+    /// <summary>
+    /// How far the drag has gone, beside the gizmo: per-axis distance (or angle, or scale), a faint line back to where a
+    /// move started, a mark where a World-space move lands on the grid, and the value being typed.
+    /// </summary>
+    void DrawReadout(EditorContext ctx, ImDrawListPtr dl, Vector2 origin)
+    {
+        var g = ctx.Gizmo;
+        var v = ctx.View;
+        var amount = g.Amount;
+        var now = amount.Start + amount.Delta;
+        if (g.Mode == GizmoMode.Translate && amount.Delta.LengthSquared() > 1e-10f)
+        {
+            Overlay.Line(dl, origin, v, amount.Start, now, Overlay.Faint, Theme.Px(1.5f));
+            Overlay.Dot(dl, origin, v, amount.Start, hollow: true);
+        }
+        if (g.SnapMark is { } mark && v.Project(mark, out var m))
+        {
+            float r = Theme.Px(4);
+            var c = origin + m;
+            dl.AddQuadFilled(c + new Vector2(0, -r - 1.5f), c + new Vector2(r + 1.5f, 0), c + new Vector2(0, r + 1.5f), c + new Vector2(-r - 1.5f, 0), Overlay.Shadow);
+            dl.AddQuadFilled(c + new Vector2(0, -r), c + new Vector2(r, 0), c + new Vector2(0, r), c + new Vector2(-r, 0), Theme.AccentU32);
+        }
+
+        uint dim = ImGui.ColorConvertFloat4ToU32(Theme.TextDim), text = ImGui.ColorConvertFloat4ToU32(Theme.Text);
+        var runs = DragReadout.Describe(g.Mode, g.Active, g.Basis, amount, _gesture!.Kind, _gesture.StartBounds.Max - _gesture.StartBounds.Min)
+            .Select((r, i) => (r.Text, i == 0 ? dim : r.Axis >= 0 ? Theme.AxisU32[r.Axis] : text)).ToList();
+        if (_typed != null)
+        {
+            bool valid = NumericEntry.Parse(_typed, DragReadout.UnitFor(g.Mode)) != null;
+            runs = [runs[0], ($"{_typed}|", valid ? Theme.AccentU32 : Theme.AxisU32[0]), ("Enter applies", dim)];
+        }
+        var at = g.Mode == GizmoMode.Translate ? now : amount.Start;
+        DimensionDraw.Runs(dl, origin, v, at, runs, Theme.Px(22, 22));
     }
 }

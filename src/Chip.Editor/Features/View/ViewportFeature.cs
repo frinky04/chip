@@ -22,6 +22,7 @@ public sealed class ViewportFeature : IEditorFeature
 
         // Gizmo hooks: the select tool's existing drag path picks these up without changes.
         ctx.Gizmo.PivotHook = () => ctx.PivotOverride;
+        ctx.Gizmo.AnchorHook = () => ctx.SelectionBounds()?.Min;
         ctx.Gizmo.SnapProvider = (view, mouse, excludeSelection) =>
             DragAlign.Find(ctx.Doc, view, mouse, excludeSelection ? ctx.Sel.VertexSets(ctx.Doc) : null, Theme.Scale);
 
@@ -67,6 +68,33 @@ public sealed class ViewportFeature : IEditorFeature
             Execute = () => ViewSettings.Of(ctx).BoundaryEdges = !ViewSettings.Of(ctx).BoundaryEdges,
             IsChecked = () => ViewSettings.Of(ctx).BoundaryEdges,
         });
+        c.Add(new Command
+        {
+            Id = "view.dimensions", Label = "Show dimensions", Menu = "View", Group = "4-shading", Order = 12,
+            Description = "Lengths beside the selection's edges: a face's width and height, a box's three sizes, each selected edge",
+            Execute = () => ViewSettings.Of(ctx).ShowDimensions = !ViewSettings.Of(ctx).ShowDimensions,
+            IsChecked = () => ViewSettings.Of(ctx).ShowDimensions,
+        });
+        (Dimensions.DimensionMode M, string Label, string Desc)[] dimModes =
+        [
+            (Dimensions.DimensionMode.Both, "Dimensions: edges and overall", "Each edge's length, and the selection's overall size further out where it adds something"),
+            (Dimensions.DimensionMode.Edges, "Dimensions: edges", "Each edge's length (one label for parallel edges of the same length)"),
+            (Dimensions.DimensionMode.Overall, "Dimensions: overall", "The selection's overall size only: several faces, edges or vertices measured as one shape"),
+        ];
+        for (int i = 0; i < dimModes.Length; i++)
+        {
+            var (mode, label, desc) = dimModes[i];
+            c.Add(new Command
+            {
+                Id = $"view.dimensions{mode}", Label = label, Menu = "View", Group = "4-shading", Order = 13 + i, Description = desc,
+                Execute = () =>
+                {
+                    ViewSettings.Of(ctx).DimensionMode = mode;
+                    ViewSettings.Of(ctx).ShowDimensions = true;
+                },
+                IsChecked = () => ViewSettings.Of(ctx).ShowDimensions && ViewSettings.Of(ctx).DimensionMode == mode,
+            });
+        }
 
         for (int i = 0; i < RotationSteps.Length; i++)
         {

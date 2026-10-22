@@ -2,6 +2,7 @@ using System.Numerics;
 using Chip.Core.Geometry.Primitives;
 using Chip.Core.Scene;
 using Chip.Core.Texturing;
+using Chip.Editor.Features.Dimensions;
 using Chip.Editor.Framework;
 using Chip.Editor.Tools.Block;
 using Chip.Editor.UI;
@@ -145,7 +146,7 @@ public sealed class BlockTool : IViewportTool
                 {
                     var (min, max) = (Vector3.Min(_a, _b), Vector3.Max(_a, _b));
                     Overlay.Box(dl, origin, v, min, max, Theme.AccentU32, Theme.Px(2));
-                    Overlay.Label(dl, origin, v, max, Overlay.Size(max - min));
+                    DimensionDraw.Box(dl, origin, v, min, max);
                     return;
                 }
             default:
@@ -158,10 +159,9 @@ public sealed class BlockTool : IViewportTool
                         Overlay.Box(dl, origin, v, frame.Min, frame.Max, Overlay.Faint, Theme.Px(1));
                         Overlay.Wire(dl, origin, v, Primitive.Build(Shape, options, frame, "", TextureMapping.Default));
                     }
-                    string text = Overlay.Size(frame.Max - frame.Min);
+                    DimensionDraw.Box(dl, origin, v, frame.Min, frame.Max);
                     if (Shape is PrimitiveShape.Stairs or PrimitiveShape.SpiralStairs)
-                        text += $", {options.Steps} steps of {frame.Size.Y / Math.Max(1, options.Steps):0.###} m";
-                    Overlay.Label(dl, origin, v, frame.Max, text);
+                        Overlay.Label(dl, origin, v, frame.Max, $"{options.Steps} steps of {Labels.Measure(frame.Size.Y / Math.Max(1, options.Steps))}");
                     return;
                 }
         }

@@ -3,6 +3,7 @@ using Chip.Core.Geometry;
 using Chip.Core.Picking;
 using Chip.Core.Scene;
 using Chip.Editor.Features.CutTools;
+using Chip.Editor.Features.Dimensions;
 using Chip.Editor.Framework;
 using Chip.Editor.UI;
 using ImGuiNET;
@@ -141,6 +142,7 @@ public sealed class KnifeTool : IViewportTool
         for (int i = 0; i + 1 < _points.Count; i++) CutDraw.Line(dl, origin, v, _points[i], _points[i + 1], dim, Theme.Px(1.5f));
         if (_points.Count > 0 && _cursor is { } c) CutDraw.Line(dl, origin, v, _points[^1], c.Position, dim, Theme.Px(1));
         foreach (var (a, b) in _preview) CutDraw.Stroke(dl, origin, v, a, b, Theme.AccentU32, Theme.Px(2));
+        DimensionDraw.Path(dl, origin, v, _points.Count > 0 && _cursor is { } end ? [.. _points, end.Position] : _points);
         foreach (var p in _points) CutDraw.Dot(dl, origin, v, p, Theme.AccentU32, Theme.Px(3.5f));
         if (_cursor is { } cur) CutDraw.Marker(dl, origin, v, cur);
     }

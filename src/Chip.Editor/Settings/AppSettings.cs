@@ -21,6 +21,8 @@ public sealed class AppSettings
     public float? UiScale { get; set; }
     /// <summary>Grid size in metres when Chip starts. One of <see cref="EditorContext.GridSizes"/>.</summary>
     public float GridDefault { get; set; } = 0.25f;
+    /// <summary>Snap space when Chip starts: "World" (moves land on grid lines) or "Relative" (whole grid steps).</summary>
+    public string SnapSpace { get; set; } = "World";
     /// <summary>Seconds between autosaves of a changed document; 0 turns autosave off.</summary>
     public int AutosaveSeconds { get; set; } = 60;
 
@@ -54,7 +56,8 @@ public sealed class AppSettings
     public AppSettings Normalize()
     {
         if (UiScale is { } s && (!float.IsFinite(s) || s < 0.75f || s > 4f)) UiScale = null;
-        if (Array.IndexOf(EditorContext.GridSizes, GridDefault) < 0) GridDefault = 0.25f;
+        if (Array.IndexOf(EditorContext.GridSizes, GridDefault) < 0) GridDefault = 0.25f; // e.g. 12.5 cm from the old power-of-two steps
+        if (!Enum.TryParse<Viewport.SnapSpace>(SnapSpace, out _)) SnapSpace = nameof(Viewport.SnapSpace.World);
         AutosaveSeconds = AutosaveSeconds <= 0 ? 0 : Math.Clamp(AutosaveSeconds, 10, 3600);
         TextureFolders = Clean(TextureFolders);
         RecentFiles = Clean(RecentFiles).Take(MaxRecentFiles).ToList();

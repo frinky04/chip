@@ -24,7 +24,7 @@ public sealed partial class EditorApp
     Vector2? _shotDragMouse;
     bool _shotButtonHeld;
 
-    static (Vector2 From, Vector2 To, Framework.Hotkey? Mods)? ParseShotDrag(string? v)
+    static (Vector2 From, Vector2 To, Framework.Hotkey? Mods, bool Hold)? ParseShotDrag(string? v)
     {
         if (string.IsNullOrWhiteSpace(v)) return null;
         var p = v.Split(',', StringSplitOptions.TrimEntries);
@@ -32,10 +32,11 @@ public sealed partial class EditorApp
         float F(int i) => float.Parse(p[i], System.Globalization.CultureInfo.InvariantCulture);
         // Modifiers parse as a hotkey on a dummy key ("Ctrl+Alt" -> "Ctrl+Alt+F12").
         var mods = p.Length > 4 && p[4].Length > 0 ? Framework.Hotkey.Parse(p[4] + "+F12") : (Framework.Hotkey?)null;
-        return (new Vector2(F(0), F(1)), new Vector2(F(2), F(3)), mods);
+        // "hold" as a sixth field keeps the button down, so the capture shows the drag in progress (readouts).
+        return (new Vector2(F(0), F(1)), new Vector2(F(2), F(3)), mods, p.Length > 5 && p[5] == "hold");
     }
 
-    void RunShotDrag((Vector2 From, Vector2 To, Framework.Hotkey? Mods) d)
+    void RunShotDrag((Vector2 From, Vector2 To, Framework.Hotkey? Mods, bool Hold) d)
     {
         var io = ImGui.GetIO();
         void Mods(bool down)
@@ -56,6 +57,16 @@ public sealed partial class EditorApp
         {
             _shotDragMouse = Vector2.Lerp(d.From, d.To, s / (float)steps);
             Frame(1 / 60f);
+        }
+        if (d.Hold)
+        {
+            // CHIP_SHOT_TYPE="1.5" types into the held drag (the gizmo's exact-value entry).
+            if (Environment.GetEnvironmentVariable("CHIP_SHOT_TYPE") is { Length: > 0 } typed)
+            {
+                foreach (char c in typed) io.AddInputCharacter(c);
+                Frame(1 / 60f);
+            }
+            return;
         }
         _shotButtonHeld = false;
         io.AddMouseButtonEvent(0, false);
@@ -93,6 +104,14 @@ public sealed partial class EditorApp
                 break;
             case "shortcuts":
                 ctx.ShowShortcuts = true;
+                break;
+            case "dimensions" when doc.Meshes.Count > 3: // the doorway wall's room side: three meshes, one 8 m wall overall
+                ctx.SetMode(SelectMode.Face);
+                foreach (var wallPiece in doc.Meshes.Skip(1).Take(3))
+                    for (int f = 0; f < wallPiece.Faces.Count; f++)
+                        if (wallPiece.FaceNormal(f).X < -0.9f) ctx.Sel.Add(ElementRef.Face(wallPiece.Id, f));
+                ctx.Camera.Position = new System.Numerics.Vector3(1.5f, 4, 4);
+                ctx.Camera.LookAt(new System.Numerics.Vector3(8, 1.5f, 4));
                 break;
             case "shortcuts-search": // the sheet filtered by a search
                 ctx.ShowShortcuts = true;

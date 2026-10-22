@@ -25,7 +25,7 @@ public sealed class BevelTool : IViewportTool
     public const int MaxSegments = 16;
 
     /// <summary>Width in metres: the live value while a bevel is pending, and the starting value for the next one.</summary>
-    public float Width { get; set; } = 0.125f;
+    public float Width { get; set; } = 0.1f;
     public int Segments { get; set; } = 1;
 
     bool _pending, _dragging, _previewCut;

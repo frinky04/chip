@@ -67,13 +67,15 @@ public sealed partial class EditorApp
         // Right group: grid, snap, backfaces. Measured so it right-aligns exactly.
         var style = ImGui.GetStyle();
         string gridText = Labels.Length(Ctx.Grid);
-        float slot = ImGui.CalcTextSize("3.13 cm").X;
+        float slot = ImGui.CalcTextSize("50 cm").X;
         float Btn(string t) => ImGui.CalcTextSize(t).X + style.FramePadding.X * 2;
         float ToggleW(string label) => Theme.Px(8) * 2 + Fonts.IconSize + Theme.Px(6) + ImGui.CalcTextSize(label).X;
         float gap = Theme.Px(6);
         bool dressing = Ctx.Dressed() != null; // the toggle only exists for levels with a rules file
+        string spaceText = Ctx.SnapSpace == SnapSpace.World ? "World" : "Relative";
+        float spaceW = Theme.Px(8) * 2 + ImGui.CalcTextSize("Relative").X + Theme.Px(14);
         float rightW = ImGui.CalcTextSize("Grid").X + gap + Btn("-") + gap + slot + gap + Btn("+") + Theme.Px(12)
-            + ToggleW("Snap") + Theme.Px(2) + ToggleW("Backfaces") + (dressing ? Theme.Px(2) + ToggleW("Dressed") : 0);
+            + ToggleW("Snap") + Theme.Px(2) + spaceW + Theme.Px(2) + ToggleW("Backfaces") + (dressing ? Theme.Px(2) + ToggleW("Dressed") : 0);
         ImGui.SameLine(MathF.Max(width - style.WindowPadding.X - rightW, ImGui.GetCursorPosX() + Theme.Px(12)));
         ImGui.AlignTextToFramePadding();
         ImGui.TextColored(Theme.TextDim, "Grid");
@@ -89,6 +91,14 @@ public sealed partial class EditorApp
         Tip("Larger grid  (])");
         ImGui.SameLine(0, Theme.Px(12));
         if (Toggle("snap", Icon.Snap, "Snap", Ctx.Snap ? "Snap to grid is on. Hold Ctrl while dragging to bypass" : "Snap to grid is off", Ctx.Snap)) Ctx.Snap = !Ctx.Snap;
+        ImGui.SameLine(0, Theme.Px(2));
+        if (Dropdown("snapspace", null, spaceText, "Relative",
+                "What moves snap to  (\\)\nWorld: the selection lands on the grid lines\nRelative: it moves in whole grid steps from where it was"))
+        {
+            if (ImGui.MenuItem("World", null, Ctx.SnapSpace == SnapSpace.World)) Ctx.SnapSpace = SnapSpace.World;
+            if (ImGui.MenuItem("Relative", null, Ctx.SnapSpace == SnapSpace.Relative)) Ctx.SnapSpace = SnapSpace.Relative;
+            ImGui.EndPopup();
+        }
         ImGui.SameLine();
         if (Toggle("backfaces", Icon.Backfaces, "Backfaces", "Select faces that point away from you  (Alt+B)", Ctx.Backfaces)) Ctx.Commands.Execute("view.backfaces");
         if (dressing)
