@@ -170,6 +170,16 @@ public static class GltfImporter
             m.Collision = g.Collision;
             result.Meshes.Add(m);
         }
+        for (int i = 0; i < (gltfMaterials?.Count ?? 0); i++)
+        {
+            string name = MaterialName(i, null);
+            if (name == fallbackMaterial || result.Images.ContainsKey(name) || gltfMaterials![i] is not JsonObject mat) continue;
+            try { if (reader.BaseColorImage(mat) is { } image) result.Images[name] = image; }
+            catch (Exception e) when (e is InvalidDataException or NotSupportedException or FormatException or IOException or InvalidOperationException)
+            {
+                warnings.Add($"Couldn't read the texture of material {name}: {e.Message}");
+            }
+        }
         return result;
     }
 
@@ -260,6 +270,42 @@ public static class GltfImporter
                 b = File.ReadAllBytes(file);
             }
             return _buffers[index] = b;
+        }
+
+        /// <summary>The material's base colour image (PNG or JPEG), or null when it has none.</summary>
+        public ImportedImage? BaseColorImage(JsonObject material)
+        {
+            if (material["pbrMetallicRoughness"]?["baseColorTexture"]?["index"]?.GetValue<int>() is not int texture
+                || root["textures"]?[texture]?["source"]?.GetValue<int>() is not int source
+                || root["images"]?[source] is not JsonObject image) return null;
+            string? mime = image["mimeType"]?.GetValue<string>();
+            string? uri = image["uri"]?.GetValue<string>();
+            byte[] data;
+            if (image["bufferView"]?.GetValue<int>() is int viewIndex)
+            {
+                var view = root["bufferViews"]![viewIndex]!;
+                var buffer = Buffer(view["buffer"]!.GetValue<int>());
+                int offset = view["byteOffset"]?.GetValue<int>() ?? 0, length = view["byteLength"]!.GetValue<int>();
+                if (offset + length > buffer.Length) throw new InvalidDataException("An image runs past its buffer");
+                data = buffer.AsSpan(offset, length).ToArray();
+            }
+            else if (uri != null && uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                int comma = uri.IndexOf(',');
+                if (comma < 0 || !uri[..comma].EndsWith(";base64", StringComparison.OrdinalIgnoreCase)) return null;
+                mime ??= uri[5..uri.IndexOf(';')];
+                data = Convert.FromBase64String(uri[(comma + 1)..]);
+            }
+            else if (uri != null && baseDir != null && File.Exists(Path.Combine(baseDir, Uri.UnescapeDataString(uri))))
+                data = File.ReadAllBytes(Path.Combine(baseDir, Uri.UnescapeDataString(uri)));
+            else return null;
+            string ext = mime?.ToLowerInvariant() switch
+            {
+                "image/png" => ".png",
+                "image/jpeg" or "image/jpg" => ".jpg",
+                _ => uri != null && !uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ? Path.GetExtension(uri).ToLowerInvariant() : "",
+            };
+            return ext is ".png" or ".jpg" or ".jpeg" ? new ImportedImage(data, ext == ".jpeg" ? ".jpg" : ext) : null;
         }
 
         (byte[] Data, int Offset, int Stride, int Count, int ComponentType, bool Normalized) Layout(int accessor, int components)

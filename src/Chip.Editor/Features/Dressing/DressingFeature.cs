@@ -260,8 +260,38 @@ public sealed class DressingFeature : IEditorFeature
         _version = session.Version;
         _rulesPath = path;
         _level = path == null ? null : _dresser.Dress(session.Doc, path, session.MeshRevision, checkFiles: rulesChanged);
+        if (_level != null) RegisterPropTextures(_level);
         Announce();
         return _level;
+    }
+
+    readonly Dictionary<string, Core.IO.ImportedImage> _registered = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Makes textures that came inside prop files into materials (written to a temp folder, since the renderer and the
+    /// exporter read images from disk), so props draw and export with their own textures.
+    /// </summary>
+    void RegisterPropTextures(DressedLevel level)
+    {
+        foreach (var (name, image) in level.PropTextures)
+        {
+            if (_registered.TryGetValue(name, out var had) && ReferenceEquals(had, image) && _ctx.Materials.Contains(name)) continue;
+            try
+            {
+                var dir = Path.Combine(Path.GetTempPath(), "chip-prop-textures");
+                Directory.CreateDirectory(dir);
+                var file = Path.Combine(dir, string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)) + image.Extension);
+                if (!File.Exists(file) || !File.ReadAllBytes(file).AsSpan().SequenceEqual(image.Data)) File.WriteAllBytes(file, image.Data);
+                using var stream = new MemoryStream(image.Data);
+                if (!MaterialLibrary.TryReadImageSize(stream, image.Extension, out int w, out int h)) continue;
+                _ctx.Materials.Add(new MaterialInfo(name, file, w, h) { Folder = "props", Source = "dressing props" });
+                _registered[name] = image;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                _ctx.Status($"Couldn't use the texture inside {name.Split('/')[0]}: {e.Message}", error: true);
+            }
+        }
     }
 
     /// <summary>Says so in the status bar when rules (re)load, so edits to the file get feedback in the editor.</summary>

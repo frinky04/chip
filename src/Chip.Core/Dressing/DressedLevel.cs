@@ -55,6 +55,12 @@ public sealed class DressedLevel : IMeshSet
     }
 
     public RuleSet Rules { get; }
+
+    /// <summary>
+    /// Textures that came inside prop files, by the material their faces use (<c>file/material</c>). The editor registers
+    /// them as materials so props draw and export with their own textures.
+    /// </summary>
+    public IReadOnlyDictionary<string, Core.IO.ImportedImage> PropTextures { get; init; } = new Dictionary<string, Core.IO.ImportedImage>();
     public IReadOnlyList<PolyMesh> Meshes { get; }
     /// <summary>Rule file problems first, then what came up while dressing.</summary>
     public IReadOnlyList<Diagnostic> Diagnostics { get; }

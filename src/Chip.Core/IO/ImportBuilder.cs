@@ -6,7 +6,17 @@ using Chip.Core.Texturing;
 namespace Chip.Core.IO;
 
 /// <summary>What an import produced: new meshes and entities (ids unassigned) plus notes for the user.</summary>
-public sealed record ImportResult(List<PolyMesh> Meshes, List<Entity> Entities, List<string> Warnings);
+public sealed record ImportResult(List<PolyMesh> Meshes, List<Entity> Entities, List<string> Warnings)
+{
+    /// <summary>
+    /// The file's own base colour images by the material name its faces use (glTF: embedded, data-URI or beside the file).
+    /// Only materials with a PNG or JPEG image are listed.
+    /// </summary>
+    public Dictionary<string, ImportedImage> Images { get; init; } = new(StringComparer.Ordinal);
+}
+
+/// <summary>An image read from an imported file: its bytes and extension (<c>.png</c> or <c>.jpg</c>).</summary>
+public sealed record ImportedImage(byte[] Data, string Extension);
 
 /// <summary>
 /// Turns triangle soups (or n-gons) from a file into an editable <see cref="PolyMesh"/>: welds coincident positions,
