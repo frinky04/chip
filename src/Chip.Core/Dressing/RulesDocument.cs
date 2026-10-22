@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 namespace Chip.Core.Dressing;
 
 /// <summary>
-/// One rules file as editable JSON, for the editor's Dressing rules window. <see cref="Write"/> saves it in Chip's
+/// One rules file as editable JSON, for the editor's Dressing tab. <see cref="Write"/> saves it in Chip's
 /// canonical layout: top-level keys and each rule's keys in a fixed order (kind first, then the kind's parameters in
 /// table order), one parameter per line, short values on one line. Comments are not kept (use <c>note</c>). Agents and
 /// people can still edit the file by hand; Chip reloads it as before.

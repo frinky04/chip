@@ -31,14 +31,14 @@ public sealed class EntitySection : IInspectorSection
         var entities = ctx.Sel.Entities(ctx.Doc);
         if (entities.Count != 1)
         {
-            Heading("Entities", $"{entities.Count} selected");
+            if (!Heading("Entities", $"{entities.Count} selected")) return;
             Dim("Select one entity to edit its class and properties");
             return;
         }
         var e = entities[0];
         int id = e.Id;
         var cls = EntityClasses.Get(e.ClassName);
-        Heading("Entity", cls.Label);
+        if (!Heading("Entity", cls.Label)) return;
 
         RowLabel("Class", ClassTip());
         float arrow = ImGui.GetFrameHeight();

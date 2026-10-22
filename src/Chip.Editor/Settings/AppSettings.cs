@@ -13,7 +13,8 @@ public sealed class AppSettings
     public const int MaxRecentCommands = 8;
     public static readonly int[] AutosaveChoices = [0, 30, 60, 120, 300, 600];
     public static readonly float[] UiScaleChoices = [1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f];
-    public const float DefaultInspectorWidth = 320, DefaultToolStripWidth = 44;
+    public const float DefaultInspectorWidth = 320, DefaultToolStripWidth = 44, DefaultDockWidth = 320;
+    public const float MinDockWidth = 240, MaxDockWidth = 640;
 
     public int Version { get; set; } = 1;
 
@@ -36,6 +37,13 @@ public sealed class AppSettings
 
     public float InspectorWidth { get; set; } = DefaultInspectorWidth;
     public float ToolStripWidth { get; set; } = DefaultToolStripWidth;
+    public float DockWidth { get; set; } = DefaultDockWidth;
+    /// <summary>The left dock's tab (a dock panel id), or null for the first.</summary>
+    public string? DockTab { get; set; }
+    /// <summary>False when the left dock is collapsed to its icon rail.</summary>
+    public bool DockOpen { get; set; } = true;
+    /// <summary>Ids of inspector sections folded to their title bar.</summary>
+    public List<string> CollapsedSections { get; set; } = new();
 
     public void AddRecentFile(string path)
     {
@@ -66,6 +74,8 @@ public sealed class AppSettings
             .ToDictionary(kv => kv.Key, kv => kv.Value ?? []);
         InspectorWidth = Width(InspectorWidth, DefaultInspectorWidth, 240, 720);
         ToolStripWidth = Width(ToolStripWidth, DefaultToolStripWidth, 40, 96);
+        DockWidth = Width(DockWidth, DefaultDockWidth, MinDockWidth, MaxDockWidth);
+        CollapsedSections = Clean(CollapsedSections);
         return this;
     }
 

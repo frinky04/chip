@@ -16,6 +16,8 @@ public sealed partial class EditorApp
         Ctx.TextureFolders = s.TextureFolders.ToList();
         _shell.Settings = _settings;
         _shell.ResetLayout = ResetLayout;
+        if (s.DockTab != null && Ctx.DockPanels.Any(p => p.Id == s.DockTab)) Ctx.DockTab = s.DockTab;
+        Ctx.DockOpen = s.DockOpen;
 
         var errors = Ctx.Commands.ApplyHotkeyOverrides(s.Hotkeys);
         if (_settings.LoadError != null) Ctx.Status(_settings.LoadError, error: true);

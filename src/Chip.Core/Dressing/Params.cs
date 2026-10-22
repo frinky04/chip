@@ -36,7 +36,7 @@ public enum ParamUnit { None, Length, Degrees, PerM2, Scale }
 
 /// <summary>
 /// One parameter a rule kind accepts: its type, default, range and description, plus how the editor shows it (a label,
-/// a unit, and labels for choices). The tables drive validation, defaults, the JSON Schema, the Dressing rules window and
+/// a unit, and labels for choices). The tables drive validation, defaults, the JSON Schema, the editor's Dressing tab and
 /// the inspector, so adding a parameter is one line.
 /// </summary>
 public sealed record ParamSpec(string Name, ParamType Type, object? Default, string Description,

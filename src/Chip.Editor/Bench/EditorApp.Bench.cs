@@ -46,14 +46,14 @@ public sealed partial class EditorApp
             Ctx.Commands.Execute("view.layoutSingle");
             ViewportLayout.Of(Ctx).Activate(ViewportLayout.Of(Ctx).Panes[0]);
             Ctx.Camera.Apply(camera);
-            Outliner.For(Ctx).Open = false;
+            Ctx.DockOpen = false; // the dock's rail only, except in the outliner scenario
             probe.Mouse = null;
             probe.Pick = name.StartsWith("hover-");
             if (name == "empty") Ctx.Session.Reset(new Document(), null);
             if (name is "hover-face" or "inspector-500") Ctx.SetMode(SelectMode.Face);
             if (name is "hover-edge" or "soft-edges") Ctx.SetMode(SelectMode.Edge);
             if (name == "hover-vertex") Ctx.SetMode(SelectMode.Vertex);
-            if (name == "outliner") Ctx.Commands.Execute("scene.outliner"); // tree defaults to fully expanded
+            if (name == "outliner") Ctx.ShowDock(Outliner.PanelId); // tree defaults to fully expanded
             if (name == "four-pane") Ctx.Commands.Execute("view.layoutFour");
             if (name == "inspector-500")
                 foreach (var mesh in doc.Meshes)
@@ -96,6 +96,9 @@ public sealed partial class EditorApp
                 rebuilds += _renderer.LastRebuildCount;
             }
             gesture?.Cancel();
+            // A window too narrow for the dock shows its rail instead, which would time an empty scenario.
+            if (name == "outliner" && _dockDrawn != Outliner.PanelId)
+                throw new InvalidOperationException("The outliner scenario didn't draw the Scene tab: the window is too narrow for the dock at this UI scale");
             var stageMedians = FrameProbe.Stages.Select((stage, i) => (stage, value: FrameStatistics.Summarize(stages[i]).MedianMs)).ToDictionary(p => p.stage, p => p.value);
             var times = FrameStatistics.Summarize(cpu);
             Console.WriteLine($"{name,-16} CPU {times.MedianMs:F3} / {times.P95Ms:F3} / {times.MaxMs:F3} ms; {allocations.Average():F0} B/frame; GPU {FrameStatistics.Summarize(gpu).MedianMs:F3} ms");

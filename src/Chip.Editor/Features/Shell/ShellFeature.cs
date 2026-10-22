@@ -25,6 +25,8 @@ public sealed class ShellFeature : IEditorFeature
         _ctx = ctx;
         var c = ctx.Commands;
         c.Add("shell.palette", "Command palette", () => PaletteRequested = true, "View", "Ctrl+P", group: "8-window", order: 0);
+        c.Add("shell.toggleDock", "Side panel", () => ctx.DockOpen = !ctx.DockOpen, "View", "Ctrl+\\", group: "5-panels", order: -1,
+            isChecked: () => ctx.DockOpen);
         c.Add("shell.resetLayout", "Reset panel sizes", () => ResetLayout(), "View", group: "8-window", order: 1);
         c.Add("shell.preferences", "Preferences...", () => PreferencesRequested = true, "Edit", "Ctrl+Shift+P", group: "9-preferences");
         c.Add("file.clearRecent", "Clear recent files", ClearRecent, canExecute: () => Settings.Current.RecentFiles.Count > 0);

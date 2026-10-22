@@ -27,7 +27,7 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
     {
         if (ctx.Dressed() is not { } level)
         {
-            Heading("Dressing", "none yet");
+            if (!Heading("Dressing", "none yet")) return;
             Buttons(ctx, view: false);
             ImGui.PushTextWrapPos(0);
             ImGui.TextColored(Theme.TextDim, "Dress with adds trims, bevels, railings or props to the selection from a recipe.");
@@ -36,7 +36,7 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
         }
         int errors = level.ErrorCount, warnings = level.WarningCount;
         int enabled = level.Rules.Rules.Count(r => r.Enabled);
-        Heading("Dressing", errors > 0 ? $"{errors} error{(errors == 1 ? "" : "s")}" : warnings > 0 ? $"{warnings} warning{(warnings == 1 ? "" : "s")}" : $"{enabled} rule{(enabled == 1 ? "" : "s")}");
+        if (!Heading("Dressing", errors > 0 ? $"{errors} error{(errors == 1 ? "" : "s")}" : warnings > 0 ? $"{warnings} warning{(warnings == 1 ? "" : "s")}" : $"{enabled} rule{(enabled == 1 ? "" : "s")}")) return;
         Buttons(ctx, view: true);
 
         // What touches the selection.
@@ -147,7 +147,7 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
             var reasonSize = ImGui.CalcTextSize(reason!, false, textW);
             float h = line + reasonSize.Y + Theme.Px(6);
             if (ImGui.Selectable("##why", false, ImGuiSelectableFlags.None, new Vector2(w, h))) feature.Window.ShowRule(rule.Id);
-            Tip($"Open {rule.Id} in Dressing rules");
+            Tip($"Open {rule.Id} in the Dressing tab");
             var dl = ImGui.GetWindowDrawList();
             dl.AddText(p + Theme.Px(4, 2), ImGui.ColorConvertFloat4ToU32(Theme.Text), rule.Id);
             dl.AddText(ImGui.GetFont(), ImGui.GetFontSize(), p + new Vector2(Theme.Px(4), line + Theme.Px(2)), ImGui.ColorConvertFloat4ToU32(Theme.TextDim), reason!, textW);

@@ -29,14 +29,17 @@ public static class ClassPicker
     static bool Matches(EntityClass c, string filter) => filter.Trim() is not { Length: > 0 } f
         || c.Name.Contains(f, StringComparison.OrdinalIgnoreCase) || c.Label.Contains(f, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>One row per class matching <paramref name="filter"/>, the current one selected. Returns the class clicked.</summary>
-    public static string? Draw(string current, string filter)
+    /// <summary>
+    /// One row per class matching <paramref name="filter"/>, the current one selected (none when <paramref name="current"/>
+    /// is null). <paramref name="references"/> false leaves out the reference model class. Returns the class clicked.
+    /// </summary>
+    public static string? Draw(string? current, string filter, bool references = true)
     {
         string? picked = null;
         bool any = false;
         foreach (var c in EntityClasses.All)
         {
-            if (!Matches(c, filter)) continue;
+            if (!Matches(c, filter) || !references && c.Name == ReferenceModels.ClassName) continue;
             any = true;
             var (icon, col) = EntityDraw.Style(c.Name);
             var p = ImGui.GetCursorScreenPos();

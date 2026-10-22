@@ -22,11 +22,12 @@ public sealed class ReferencesFeature : IEditorFeature
         ctx.AddPanel(Track);
 
         var c = ctx.Commands;
-        c.Add("references.place", "Reference model", () => Activate(ctx, null), "Tools", group: "8-reference", order: 0);
-        c.Add("references.placeFile", "Reference model from file…", () =>
+        // Also in the Place tab of the dock; here for the palette.
+        c.Add("references.place", "Place reference model", () => Activate(ctx, null));
+        c.Add("references.placeFile", "Place reference model from file…", () =>
         {
             if (ReferencePicker.ChooseFile() is { } file) Activate(ctx, file);
-        }, "Tools", group: "8-reference", order: 1);
+        });
         c.AddReference("Entity", "Click a wall (reference model)", "fit the model into or against the wall");
     }
 

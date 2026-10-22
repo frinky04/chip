@@ -9,15 +9,18 @@ using static Chip.Editor.UI.Widgets;
 namespace Chip.Editor.Features.Scene;
 
 /// <summary>
-/// The outliner (Ctrl+Shift+O): a floating tree of groups, meshes and entities. Click selects (a group selects its members),
-/// Ctrl+click toggles, Shift+click selects a range; double-click or F2 renames; the eye and lock buttons hide and lock;
-/// dragging rows onto a group moves them into it (onto the empty space below the tree: out to the top level). The search
-/// box filters by name or entity class. Selection stays in sync with the viewport because both read the session's selection.
+/// The Scene tab of the dock (Ctrl+Shift+O): the outliner, a tree of groups, meshes and entities. Click selects (a group
+/// selects its members), Ctrl+click toggles, Shift+click selects a range; double-click or F2 renames; the eye and lock
+/// buttons hide and lock; dragging rows onto a group moves them into it (onto the empty space below the tree: out to the
+/// top level). The search box filters by name or entity class. Under the tree: hidden and locked counts with Unhide all
+/// and Unlock all, and the selection sets. Selection stays in sync with the viewport because both read the session's
+/// selection.
 /// </summary>
-public sealed class Outliner
+public sealed class Outliner : IDockPanel
 {
     static readonly ConditionalWeakTable<EditorContext, Outliner> Instances = new();
     const string Payload = "CHIP_OUTLINER";
+    public const string PanelId = "scene";
 
     public static Outliner For(EditorContext ctx) => Instances.GetValue(ctx, _ => new Outliner());
 
@@ -28,35 +31,54 @@ public sealed class Outliner
     bool _focusRename;
     string _renameText = "";
     List<OutlinerNode> _dragged = new();
-    bool _wasOpen;
     readonly Rendering.FrameCache<List<OutlinerNode>> _tree = new(selection: false);
     string? _treeSearch;
     List<OutlinerNode>? _rows;
     string _summary = "";
+    float _footerH;
+    readonly Rendering.FrameCache<(int Hidden, int Locked)> _hiddenLocked = new(selection: false);
 
-    public bool Open { get; set; }
+    public string Id => PanelId;
+    public string Title => "Scene";
+    public Icon Icon => Icon.ListTree;
+    public int Order => 10;
+    public string? Command => "scene.outliner";
 
     public void Draw(EditorContext ctx)
     {
-        if (!Open) { _wasOpen = false; return; }
-        var vpSize = ctx.ViewportSize;
-        float margin = Theme.Px(10), top = Theme.Px(44);
-        float w = MathF.Min(Theme.Px(340), MathF.Max(Theme.Px(260), vpSize.X * 0.3f));
-        ImGui.SetNextWindowPos(ctx.ViewportOrigin + new Vector2(margin, top), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(w, MathF.Max(Theme.Px(260), MathF.Min(Theme.Px(560), vpSize.Y - top - margin))), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSizeConstraints(Theme.Px(220, 160), new Vector2(float.MaxValue));
-        if (!_wasOpen) ImGui.SetNextWindowFocus();
-        _wasOpen = true;
-        bool open = true;
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Theme.Px(10, 8));
-        bool visible = ImGui.Begin("Outliner###outliner", ref open, ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoScrollbar);
-        ImGui.PopStyleVar();
-        if (visible) DrawContents(ctx);
-        ImGui.End();
-        if (!open) Open = false;
+        DrawTree(ctx, _footerH); // the footer's height from last frame: the tree takes the rest
+        float footerTop = ImGui.GetCursorPosY();
+        DrawFooter(ctx);
+        _footerH = ImGui.GetCursorPosY() - footerTop + ImGui.GetStyle().ItemSpacing.Y;
     }
 
-    void DrawContents(EditorContext ctx)
+    /// <summary>Hidden and locked counts (with the commands that undo them), then the selection sets.</summary>
+    void DrawFooter(EditorContext ctx)
+    {
+        var doc = ctx.Doc;
+        if (!_hiddenLocked.IsCurrent(ctx.Session))
+            _hiddenLocked.Store(ctx.Session, (doc.Meshes.Count(m => m.Hidden) + doc.Entities.Count(e => e.Hidden) + doc.Groups.Count(g => g.Hidden),
+                doc.Meshes.Count(m => m.Locked) + doc.Entities.Count(e => e.Locked) + doc.Groups.Count(g => g.Locked)));
+        var (hidden, locked) = _hiddenLocked.Value;
+        if (hidden + locked > 0)
+        {
+            ImGui.Dummy(Theme.Px(0, 2));
+            float half = (ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemSpacing.X) * 0.5f;
+            ImGui.BeginDisabled(hidden == 0);
+            if (ImGui.Button(hidden == 0 ? "Nothing hidden" : $"Unhide {hidden}", new Vector2(half, 0))) ctx.Commands.Execute("edit.unhideAll");
+            ImGui.EndDisabled();
+            Tip("Show everything hidden  (Alt+H)");
+            ImGui.SameLine();
+            ImGui.BeginDisabled(locked == 0);
+            if (ImGui.Button(locked == 0 ? "Nothing locked" : $"Unlock {locked}", new Vector2(-1, 0))) ctx.Commands.Execute("scene.unlockAll");
+            ImGui.EndDisabled();
+            Tip("Unlock everything  (Ctrl+Shift+L)");
+        }
+        ImGui.Dummy(Theme.Px(0, 4));
+        SelectionTools.SelectionSetsView.Draw(ctx, SelectionTools.SelectionSets.For(ctx));
+    }
+
+    void DrawTree(EditorContext ctx, float reserve)
     {
         var doc = ctx.Doc;
         ImGui.SetNextItemWidth(-1);
@@ -71,9 +93,9 @@ public sealed class Outliner
         }
         var rows = _rows ??= OutlinerTree.Flatten(_tree.Value, _collapsed, expandAll: searching);
 
-        float footerH = ImGui.GetFrameHeightWithSpacing();
+        float footerH = ImGui.GetFrameHeightWithSpacing() + reserve;
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Bg);
-        if (ImGui.BeginChild("##tree", new Vector2(0, ImGui.GetContentRegionAvail().Y - footerH), ImGuiChildFlags.None))
+        if (ImGui.BeginChild("##tree", new Vector2(0, MathF.Max(Theme.Px(120), ImGui.GetContentRegionAvail().Y - footerH)), ImGuiChildFlags.None))
         {
             if (rows.Count == 0)
             {

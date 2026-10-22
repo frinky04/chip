@@ -78,7 +78,7 @@ public class SelectionFeatureTests
         ctx.Commands.Execute("select.restoreSet");
         Assert.Equal(SelectMode.Face, ctx.Sel.Mode);
         Assert.Equal(ElementRef.Face(m.Id, 2), ctx.Sel.Active);
-        Assert.Contains(ctx.Sections, s => s.Id == "selectionSets");
+        Assert.Single(Chip.Editor.Features.SelectionTools.SelectionSets.For(ctx).All); // listed under the outliner, in the Scene tab
     }
 
     [Fact]

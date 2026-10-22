@@ -174,16 +174,16 @@ public sealed partial class EditorApp
             }
             case "dressing" or "dressing-blockout" or "dressing-railing" or "dressing-rules" or "dressing-dresswith" or "dressing-tags":
             {
-                // The dressing sample from inside the room; the sample opens the Dressing rules window, which most states close.
+                // The dressing sample from inside the room; the sample opens the Dressing tab, which most states swap for Materials.
                 ctx.Commands.Execute("dressing.sample");
-                if (state != "dressing-rules") ctx.Commands.Execute("dressing.rules");
+                if (state != "dressing-rules") ctx.ShowDock(Features.Materials.MaterialBrowser.PanelId);
                 ctx.Camera.Position = new System.Numerics.Vector3(7.4f, 2.4f, 5.5f);
                 ctx.Camera.LookAt(new System.Numerics.Vector3(3.2f, 0.2f, 1.6f));
                 ctx.SetMode(SelectMode.Object);
                 string pick = state == "dressing-railing" ? "rail-north" : state == "dressing-dresswith" ? "plinth" : "pillar"; // railing: its per-mesh overrides show
                 if (ctx.Doc.Meshes.FirstOrDefault(m => m.Name == pick) is { } picked) ctx.Sel.Add(ElementRef.Object(picked.Id));
                 if (state == "dressing-blockout") ctx.Commands.Execute("view.dressed");
-                // CHIP_SHOT_RULE=<id> (or "vars") picks what the Dressing rules window shows.
+                // CHIP_SHOT_RULE=<id> (or "vars") picks what the Dressing tab shows.
                 if (Environment.GetEnvironmentVariable("CHIP_SHOT_RULE") is { Length: > 0 } shotRule)
                 {
                     if (shotRule == "vars") _dressing.Window.ShowSharedValues(); else _dressing.Window.ShowRule(shotRule);

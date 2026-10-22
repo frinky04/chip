@@ -25,7 +25,7 @@ public sealed class CollisionSection : IInspectorSection
     {
         var modes = ctx.Sel.MeshIds().Select(ctx.Doc.Find).OfType<PolyMesh>().Select(m => m.Collision).Distinct().ToList();
         if (modes.Count == 0) return;
-        Heading("Collision");
+        if (!Heading("Collision")) return;
         RowLabel("Mode", "How the selected meshes collide in the exported .glb");
         ImGui.SetNextItemWidth(-1);
         string preview = modes.Count == 1 ? Modes.First(m => m.Mode == modes[0]).Label : "Mixed";

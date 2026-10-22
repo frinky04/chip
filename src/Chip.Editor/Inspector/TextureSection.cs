@@ -39,7 +39,7 @@ public sealed class TextureSection : IInspectorSection
         var faces = stats.Faces;
         if (faces.Count == 0) return;
         var options = TextureOptions.For(ctx);
-        Heading("Texture", TextureOps.Plural(faces.Count));
+        if (!Heading("Texture", TextureOps.Plural(faces.Count))) return;
 
         int explicitCount = stats.ExplicitCount;
         RowLabel("UVs", "Explicit UVs (from unwraps, wraps or the fast texture tool) override the projection and stay on the geometry");

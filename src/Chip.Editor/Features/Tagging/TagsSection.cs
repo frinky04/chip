@@ -25,7 +25,7 @@ public sealed class TagsSection(TagsPopup popup) : IInspectorSection
         if (!_cache.IsCurrent(ctx.Session))
             _cache.Store(ctx.Session, (TagOps.OnSelection(ctx.Doc, ctx.Sel), TagOps.TargetCount(ctx.Doc, ctx.Sel)));
         var (tags, targets) = _cache.Value;
-        Heading("Tags", ctx.Sel.Mode == SelectMode.Object ? "on meshes" : null);
+        if (!Heading("Tags", ctx.Sel.Mode == SelectMode.Object ? "on meshes" : null)) return;
 
         string? remove = null, complete = null, selectAll = null;
         float right = ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X;

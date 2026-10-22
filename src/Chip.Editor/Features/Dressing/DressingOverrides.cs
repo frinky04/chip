@@ -69,7 +69,7 @@ sealed class DressingOverrides(DressingFeature feature)
         if (ImGui.Checkbox("##on", ref on)) Edit(ctx, mesh.Id, on ? "Switch dressing rule on" : "Switch dressing rule off", d => d.WithSkip(rule.Id, !on));
         Tip(skipped ? $"Off for this mesh: let {rule.Id} dress it again" : $"On: untick to stop {rule.Id} dressing this mesh (other meshes keep it)");
         ImGui.SameLine();
-        if (IconButton("edit", Icon.ChevronRight, $"Open {rule.Id} in Dressing rules, to change it for every mesh", w)) feature.Window.ShowRule(rule.Id);
+        if (IconButton("edit", Icon.ChevronRight, $"Open {rule.Id} in the Dressing tab, to change it for every mesh", w)) feature.Window.ShowRule(rule.Id);
 
         // Values set for this mesh: put them into the rule for everyone, or drop them.
         if (overridden && !skipped)
@@ -98,7 +98,7 @@ sealed class DressingOverrides(DressingFeature feature)
         var key = (mesh.Id, rule.Id, spec.Name);
         string id = $"##{spec.Name}";
         void Set(JsonNode? value) => Edit(ctx, mesh.Id, $"Dressing: {rule.Id} {spec.DisplayLabel}", d => d.WithParam(rule.Id, spec.Name, value));
-        // Lengths show in centimetres, as in the Dressing rules window; the file keeps metres.
+        // Lengths show in centimetres, as in the Dressing tab; the file keeps metres.
         float scale = spec.Unit == ParamUnit.Length ? 100 : 1;
         string fmt = spec.Unit switch { ParamUnit.Length => "%.1f cm", ParamUnit.Degrees => "%.0f°", ParamUnit.PerM2 => "%.2f per m²", ParamUnit.Scale => "%.2f×", _ => "%.3f" };
 

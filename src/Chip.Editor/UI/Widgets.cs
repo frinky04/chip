@@ -87,6 +87,13 @@ public static class Widgets
         return clicked;
     }
 
+    /// <summary>The width <see cref="SegmentedControl"/> takes for these items, for toolbars that fit themselves to their room.</summary>
+    public static float SegmentedWidth((Icon Icon, string Label, string Tip)[] items) =>
+        items.Sum(i => LabeledWidth(i.Label, Kind.Segment)) + Theme.Px(2) * (items.Length - 1) + Theme.Px(3) * 2;
+
+    /// <summary>The width <see cref="Toggle"/> takes with this label ("" for icon only).</summary>
+    public static float ToggleWidth(string label) => LabeledWidth(label);
+
     /// <summary>On/off setting with icon + label; "on" is a neutral raised fill with an orange icon.</summary>
     public static bool Toggle(string id, Icon icon, string label, string tip, bool on) =>
         LabeledButton(id, icon, label, tip, on, Kind.Toggle);
@@ -313,55 +320,120 @@ public static class Widgets
     public static void SectionDivider() => ImGui.Dummy(Theme.Px(0, 6));
 
     static bool _dockTitle;
+    static string? _dockId;
+
+    /// <summary>Ids of inspector sections folded to their title bar. The host points this at the persisted list.</summary>
+    public static ICollection<string> Folded { get; set; } = new List<string>();
+    /// <summary>Set when a title bar is clicked, so the host saves <see cref="Folded"/>; the host clears it.</summary>
+    public static bool FoldChanged { get; set; }
 
     /// <summary>
     /// The inspector host brackets each section with these: the section's first <see cref="Heading"/> becomes a
-    /// full-width dock title bar (Krita's docker headers); later headings inside it stay plain group headings.
+    /// full-width dock title bar (Krita's docker headers) that folds the section; later headings stay plain group headings.
     /// </summary>
-    public static void BeginDockSection() => _dockTitle = true;
-    public static void EndDockSection() => _dockTitle = false;
+    public static void BeginDockSection(string id)
+    {
+        _dockTitle = true;
+        _dockId = id;
+    }
 
-    /// <summary>SemiBold heading with an optional right-aligned detail; a dock title bar at the top of an inspector section.</summary>
-    public static void Heading(string title, string? trailing = null)
+    public static void EndDockSection()
+    {
+        _dockTitle = false;
+        _dockId = null;
+    }
+
+    /// <summary>
+    /// SemiBold heading with an optional right-aligned detail; a dock title bar at the top of an inspector section.
+    /// Returns false when that section is folded: the section returns without drawing its body.
+    /// </summary>
+    public static bool Heading(string title, string? trailing = null)
     {
         if (_dockTitle)
         {
             _dockTitle = false;
-            DockTitle(title, trailing);
-            return;
+            return DockTitle(title, trailing, _dockId);
         }
         ImGui.PushFont(Fonts.Strong);
         ImGui.Text(title);
         ImGui.PopFont();
         if (trailing != null)
         {
-            float w = ImGui.CalcTextSize(trailing).X;
+            float titleEnd = ImGui.GetItemRectMax().X - ImGui.GetWindowPos().X + Theme.Px(12);
+            string shown = Ellipsize(trailing, ImGui.GetWindowContentRegionMax().X - titleEnd);
+            float w = ImGui.CalcTextSize(shown).X;
             ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - w);
-            ImGui.TextColored(Theme.TextDim, trailing);
+            ImGui.TextColored(Theme.TextDim, shown);
+            if (shown != trailing) Tip(trailing);
         }
+        return true;
     }
 
-    /// <summary>Chrome-coloured bar across the whole panel, dark hairline above, title left, detail right.</summary>
-    static void DockTitle(string title, string? trailing)
+    /// <summary>
+    /// Chrome-coloured bar across the whole panel, dark hairline above, fold chevron and title left, detail right.
+    /// Clicking it folds or unfolds section <paramref name="id"/>. Returns whether the section is open.
+    /// </summary>
+    static bool DockTitle(string title, string? trailing, string? id)
     {
         var dl = ImGui.GetWindowDrawList();
         var wp = ImGui.GetWindowPos();
         float x0 = wp.X, x1 = wp.X + ImGui.GetWindowWidth();
         var cur = ImGui.GetCursorScreenPos();
         float h = MathF.Round(ImGui.GetTextLineHeight() + Theme.Px(12));
+        bool open = id == null || !Folded.Contains(id);
+        bool hovered = false;
+        if (id != null)
+        {
+            ImGui.SetCursorScreenPos(new Vector2(x0, cur.Y));
+            if (ImGui.InvisibleButton("##fold", new Vector2(x1 - x0, h)))
+            {
+                if (open) Folded.Add(id); else Folded.Remove(id);
+                open = !open;
+                FoldChanged = true;
+            }
+            hovered = ImGui.IsItemHovered();
+            ImGui.SetCursorScreenPos(cur);
+        }
         dl.PushClipRect(new Vector2(x0, cur.Y), new Vector2(x1, cur.Y + h), false); // past the window padding
-        dl.AddRectFilled(new Vector2(x0, cur.Y), new Vector2(x1, cur.Y + h), U32(Theme.Bg));
+        dl.AddRectFilled(new Vector2(x0, cur.Y), new Vector2(x1, cur.Y + h), U32(hovered ? Theme.Panel : Theme.Bg));
         dl.AddLine(new Vector2(x0, cur.Y), new Vector2(x1, cur.Y), U32(Theme.Border), Theme.Px(1));
         float ty = MathF.Round(cur.Y + (h - ImGui.GetTextLineHeight()) * 0.5f);
+        if (id != null)
+        {
+            // A small fold arrow in the left padding, so titles still line up with the rows below them.
+            var c = new Vector2(MathF.Round(x0 + (cur.X - x0) * 0.5f), MathF.Round(cur.Y + h * 0.5f));
+            float s = Theme.Px(3.5f);
+            uint col = U32(hovered ? Theme.Text : Theme.TextDisabled);
+            if (open) dl.AddTriangleFilled(new Vector2(c.X - s, c.Y - s * 0.5f), new Vector2(c.X + s, c.Y - s * 0.5f), new Vector2(c.X, c.Y + s * 0.7f), col);
+            else dl.AddTriangleFilled(new Vector2(c.X - s * 0.5f, c.Y - s), new Vector2(c.X + s * 0.7f, c.Y), new Vector2(c.X - s * 0.5f, c.Y + s), col);
+        }
         dl.AddText(Fonts.Strong, Fonts.BodySize, new Vector2(cur.X, ty), U32(Theme.Text), title);
         if (trailing != null)
         {
-            float w = ImGui.CalcTextSize(trailing).X;
-            dl.AddText(new Vector2(MathF.Round(wp.X + ImGui.GetWindowContentRegionMax().X - w), ty), U32(Theme.TextDim), trailing);
+            // The detail gives way to the title: cut to the room left, the whole of it in a tooltip.
+            float right = wp.X + ImGui.GetWindowContentRegionMax().X;
+            float titleEnd = cur.X + ImGui.CalcTextSize(title).X + Theme.Px(12);
+            string shown = Ellipsize(trailing, right - titleEnd);
+            float w = ImGui.CalcTextSize(shown).X;
+            dl.AddText(new Vector2(MathF.Round(right - w), ty), U32(Theme.TextDim), shown);
+            if (shown != trailing && ImGui.IsMouseHoveringRect(new Vector2(right - w, cur.Y), new Vector2(right, cur.Y + h))) ShowTip(trailing);
         }
         dl.PopClipRect();
         ImGui.Dummy(new Vector2(0, h));
-        ImGui.Dummy(Theme.Px(0, 2));
+        if (open) ImGui.Dummy(Theme.Px(0, 2));
+        return open;
+    }
+
+    /// <summary>Cuts text with an ellipsis to fit <paramref name="width"/> (nothing at all when not even "…" fits).</summary>
+    public static string Ellipsize(string text, float width)
+    {
+        if (ImGui.CalcTextSize(text).X <= width) return text;
+        for (int n = text.Length - 1; n > 0; n--)
+        {
+            var t = text[..n] + "…";
+            if (ImGui.CalcTextSize(t).X <= width) return t;
+        }
+        return ImGui.CalcTextSize("…").X <= width ? "…" : "";
     }
 
     /// <summary>Starts an inspector row: dim label in a fixed column; the next widget fills the rest.</summary>

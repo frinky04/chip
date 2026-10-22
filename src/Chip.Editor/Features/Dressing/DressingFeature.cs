@@ -12,7 +12,7 @@ namespace Chip.Editor.Features.Dressing;
 /// <summary>
 /// Dressing in the editor (docs/dressing.md): keeps the level dressed by its rules file, re-dressing when the document
 /// changes and checking the rules files for edits four times a second, so an agent (or you) editing the JSON sees the
-/// result live. The Dressing rules window (Ctrl+Shift+D) edits the rules; Dress with (Ctrl+Shift+T) applies a rule to the
+/// result live. The Dressing tab of the dock (Ctrl+Shift+D) edits the rules; Dress with (Ctrl+Shift+T) applies a rule to the
 /// selection. Rule edits are written to the JSON file as undo steps (<see cref="EditRules"/>). ` toggles between the
 /// dressed level and the bare blockout; editing always works on the blockout.
 /// </summary>
@@ -28,7 +28,7 @@ public sealed class DressingFeature : IEditorFeature
     RuleSet? _announced;
     RulesWorkspace? _workspace;
     (RuleSet? Rules, string? Path) _workspaceKey;
-    DressingRulesWindow _window = null!;
+    DressingPanel _window = null!;
     readonly DressWithPopup _dressWith = new();
 
     /// <summary>Seconds between checks of the rules files on disk.</summary>
@@ -42,12 +42,13 @@ public sealed class DressingFeature : IEditorFeature
     /// <summary>View > Tag colours: every tagged face tinted by its tag, so untagged surfaces stand out.</summary>
     public bool TagColours { get; set; }
 
-    public DressingRulesWindow Window => _window;
+    /// <summary>The Dressing tab of the dock.</summary>
+    public DressingPanel Window => _window;
 
     public void Register(EditorContext ctx)
     {
         _ctx = ctx;
-        _window = new DressingRulesWindow(this);
+        _window = new DressingPanel(this, ctx);
         ctx.Dressed = Current;
         ctx.ViewportTints = Tints;
         ctx.Session.FilesChanged += _ => Recheck();
@@ -60,18 +61,20 @@ public sealed class DressingFeature : IEditorFeature
             Execute = () => TagColours = !TagColours, IsChecked = () => TagColours,
             Description = "Tint every tagged face by its tag, so untagged surfaces stand out",
         });
-        c.Add("dressing.rules", "Dressing rules...", () => _window.Open = !_window.Open, "Tools", "Ctrl+Shift+D", group: "8-dressing", order: 0);
+        c.Add("dressing.rules", "Dressing", () => ctx.ToggleDock(DressingPanel.PanelId), "View", "Ctrl+Shift+D",
+            group: "5-panels", order: 3, isChecked: () => ctx.DockShowing(DressingPanel.PanelId));
         c.Add("dressing.dressWith", "Dress with...", () => _dressWith.Open(), "Edit", "Ctrl+Shift+T",
             () => TagOps.CanTag(ctx.Sel.Mode) && !ctx.Sel.IsEmpty, "5-tags", 1);
-        c.Add("dressing.new", "New dressing rules file", Create, "Tools", null,
-            () => ctx.Session.Path != null && Current() == null, "8-dressing", 1);
-        c.Add("dressing.open", "Open rules file (JSON)", Open, "Tools", null, () => Current() != null, "8-dressing", 2);
-        c.Add("dressing.sample", "Open dressing sample", OpenSample, "Tools", null, group: "8-dressing", order: 3);
-        c.Add("dressing.bake", "Bake dressing", Bake, "Tools", null,
-            () => Current() is { } level && DressingBake.CanBake(level, ctx.Sel.MeshIds()), "8-dressing", 4);
+        // The rules file's commands: in the Dressing tab's menu, and the palette.
+        c.Add("dressing.new", "New dressing rules file", Create, canExecute: () => ctx.Session.Path != null && Current() == null);
+        c.Add("dressing.open", "Open rules file (JSON)", Open, canExecute: () => Current() != null);
+        c.Add("dressing.sample", "Open dressing sample", OpenSample);
+        c.Add("dressing.bake", "Bake dressing", Bake, "Edit",
+            canExecute: () => Current() is { } level && DressingBake.CanBake(level, ctx.Sel.MeshIds()), group: "5-tags", order: 2);
         ctx.AddSection(new DressingSection(this));
+        ctx.AddDockPanel(_window);
         ctx.AddPanel(ProxyHoverTip);
-        ctx.AddPanel(_window.Draw);
+        ctx.AddPanel(_window.Update);
         ctx.AddPanel(x => _dressWith.Draw(x, this));
     }
 
@@ -308,7 +311,7 @@ public sealed class DressingFeature : IEditorFeature
         _announced = _level.Rules;
         int errors = _level.Rules.Diagnostics.Count(d => d.IsError);
         string file = Path.GetFileName(_rulesPath!);
-        if (errors > 0) _ctx.Status($"{file}: {errors} error{(errors == 1 ? "" : "s")} in the rules. See Dressing rules (Ctrl+Shift+D).", error: true);
+        if (errors > 0) _ctx.Status($"{file}: {errors} error{(errors == 1 ? "" : "s")} in the rules. See the Dressing tab (Ctrl+Shift+D).", error: true);
         else if (!first && !_window.Open) _ctx.Status($"Reloaded {file}: {_level.Rules.Rules.Count(r => r.Enabled)} rules");
     }
 
@@ -348,7 +351,7 @@ public sealed class DressingFeature : IEditorFeature
             _ctx.FrameAll();
             Recheck();
             _window.Open = true;
-            _ctx.Status("Opened the dressing sample. Change a rule in Dressing rules and watch the room update.");
+            _ctx.Status("Opened the dressing sample. Change a rule in the Dressing tab and watch the room update.");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

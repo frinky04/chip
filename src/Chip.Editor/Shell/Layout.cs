@@ -6,32 +6,66 @@ using ImGuiNET;
 namespace Chip.Editor;
 
 /// <summary>
-/// Fixed layout (menu, tool strip, viewport, inspector, status) with draggable splitters for the tool strip and
-/// inspector widths, persisted in settings as logical pixels. Double-click a splitter to restore its default.
+/// Fixed layout: menu, then left to right the dock (library tabs, or its icon rail when collapsed), the tool strip, the
+/// viewport and the inspector, then the status bar. Draggable splitters size the dock, tool strip and inspector,
+/// persisted in settings as logical pixels. Double-click a splitter to restore its default.
 /// </summary>
 /// <remarks>
 /// Docking was evaluated and left out: ImGui.NET 1.90 exposes DockSpaceOverViewport but not DockBuilder, so a default
 /// layout would rely on a hand-written imgui.ini keyed to window names and sizes. Every panel here is a registry host
-/// (sections, tools, commands) rather than a free window, so splitters give the useful part (sizing) while keeping
-/// captures deterministic and features independent of where panels sit.
+/// (dock tabs, sections, tools, commands) rather than a free window, so splitters give the useful part (sizing) while
+/// keeping captures deterministic and features independent of where panels sit.
 /// </remarks>
 public sealed partial class EditorApp
 {
-    /// <summary>Tool strip and inspector widths in physical pixels, clamped so the viewport keeps at least 240 px.</summary>
-    (float Tool, float Inspector) PanelWidths(float total)
+    /// <summary>Logical width the viewport keeps whatever the panels want: room for its header at its most compact.</summary>
+    const float MinViewportWidth = 400;
+
+    /// <summary>
+    /// Dock, tool strip and inspector widths in physical pixels. The viewport keeps <see cref="MinViewportWidth"/>. When the window is
+    /// narrower than the panels want, the dock and inspector shrink towards their minimum (240 px each) in proportion to
+    /// how far each is above it; when even that doesn't fit, the dock shows as its rail (<paramref name="squeezed"/>)
+    /// without forgetting that it's open, and only then does the inspector go below its minimum.
+    /// </summary>
+    (float Dock, float Tool, float Inspector) PanelWidths(float total, out bool squeezed)
     {
         var s = _settings.Current;
         float tool = Theme.Px(AppSettings.Width(s.ToolStripWidth, AppSettings.DefaultToolStripWidth, 40, 96));
+        float dock = Theme.Px(AppSettings.Width(s.DockWidth, AppSettings.DefaultDockWidth, AppSettings.MinDockWidth, AppSettings.MaxDockWidth));
         float inspector = Theme.Px(AppSettings.Width(s.InspectorWidth, AppSettings.DefaultInspectorWidth, 240, 720));
-        inspector = MathF.Max(MathF.Min(inspector, total - tool - Theme.Px(240)), Theme.Px(160));
-        return (tool, inspector);
+        float minViewport = Theme.Px(MinViewportWidth), minDock = Theme.Px(AppSettings.MinDockWidth), minInspector = Theme.Px(240);
+        float room = total - tool - minViewport; // for the dock and inspector together
+        squeezed = Ctx.DockOpen && room < minDock + minInspector;
+        if (Ctx.DockOpen && !squeezed)
+        {
+            float over = dock + inspector - room;
+            if (over > 0)
+            {
+                float dockSlack = dock - minDock, inspectorSlack = inspector - minInspector;
+                float k = over / MathF.Max(dockSlack + inspectorSlack, 1);
+                dock -= dockSlack * k;
+                inspector -= inspectorSlack * k;
+            }
+            return (MathF.Round(dock), tool, MathF.Round(inspector));
+        }
+        dock = DockRailWidth;
+        inspector = MathF.Max(MathF.Min(inspector, room - dock), MathF.Min(Theme.Px(160), MathF.Max(total - tool - dock - Theme.Px(80), 0)));
+        return (dock, tool, inspector);
     }
 
-    void DrawSplitters(Vector2 pos, Vector2 size, float height, float toolW, float inspectorW)
+    void DrawSplitters(Vector2 pos, Vector2 size, float height, float dockW, float toolW, float inspectorW, bool dockSqueezed)
     {
         float scale = Theme.Scale;
-        if (Splitter("##splitTools", pos.X + toolW, pos.Y, height, out float mouseX, out bool reset))
-            _settings.Current.ToolStripWidth = Math.Clamp((mouseX - pos.X) / scale, 40, 96);
+        if (Ctx.DockOpen && !dockSqueezed)
+        {
+            if (Splitter("##splitDock", pos.X + dockW, pos.Y, height, out float dockX, out bool dockReset))
+                _settings.Current.DockWidth = Math.Clamp((dockX - pos.X) / scale, AppSettings.MinDockWidth, AppSettings.MaxDockWidth);
+            if (dockReset) { _settings.Current.DockWidth = AppSettings.DefaultDockWidth; _settings.Save(); }
+        }
+
+        float toolX = pos.X + dockW;
+        if (Splitter("##splitTools", toolX + toolW, pos.Y, height, out float mouseX, out bool reset))
+            _settings.Current.ToolStripWidth = Math.Clamp((mouseX - toolX) / scale, 40, 96);
         if (reset) { _settings.Current.ToolStripWidth = AppSettings.DefaultToolStripWidth; _settings.Save(); }
 
         if (Splitter("##splitInspector", pos.X + size.X - inspectorW, pos.Y, height, out mouseX, out reset))
@@ -77,6 +111,7 @@ public sealed partial class EditorApp
     {
         _settings.Current.InspectorWidth = AppSettings.DefaultInspectorWidth;
         _settings.Current.ToolStripWidth = AppSettings.DefaultToolStripWidth;
+        _settings.Current.DockWidth = AppSettings.DefaultDockWidth;
         _settings.Save();
         Ctx.Status("Panel sizes reset");
     }

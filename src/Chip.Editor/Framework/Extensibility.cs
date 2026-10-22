@@ -66,6 +66,23 @@ public interface IInspectorSection
 }
 
 /// <summary>
+/// A tab in the left dock: something you pick from (materials, the scene tree, things to place, dressing rules). One tab
+/// shows at a time, in <see cref="Order"/>; the dock collapses to an icon rail. The inspector is for the selection.
+/// </summary>
+public interface IDockPanel
+{
+    string Id { get; }
+    string Title { get; }
+    Icon Icon { get; }
+    /// <summary>Lower comes first. Built-ins: materials 0, scene 10, place 20, dressing 30.</summary>
+    int Order { get; }
+    /// <summary>The command that shows this tab, for its hotkey in tooltips. Null for none.</summary>
+    string? Command => null;
+    /// <summary>Fill the dock's content area (below the tabs). Called only while this tab is showing.</summary>
+    void Draw(EditorContext ctx);
+}
+
+/// <summary>
 /// The unit of extension. Every non-abstract implementation in the editor assembly is created and registered at startup,
 /// so a feature adds files and never edits shared ones. Register commands, tools, sections and mouse bindings here.
 /// </summary>

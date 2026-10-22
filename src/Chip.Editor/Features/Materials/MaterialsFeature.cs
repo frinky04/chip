@@ -6,7 +6,7 @@ namespace Chip.Editor.Features.Materials;
 
 /// <summary>
 /// Materials and assets: library folders (bundled textures, bundled tool materials, <c>CHIP_TEXTURE_DIRS</c>, folders
-/// added this session), the material browser, replace material, and applying per-material texel density.
+/// added this session), the Materials tab of the dock, replace material, and applying per-material texel density.
 /// </summary>
 public sealed class MaterialsFeature : IEditorFeature
 {
@@ -23,14 +23,15 @@ public sealed class MaterialsFeature : IEditorFeature
 
         var browser = MaterialBrowser.For(ctx);
         var replace = ReplaceMaterialDialog.For(ctx);
-        ctx.AddPanel(browser.Draw);
+        ctx.AddDockPanel(browser);
+        ctx.AddPanel(browser.Update);
         ctx.AddPanel(replace.Draw);
 
         var c = ctx.Commands;
         bool HasFaceTargets() => ctx.Sel.FaceSets(ctx.Doc).Count > 0;
 
-        c.Add("materials.browser", "Material browser", () => browser.Open = !browser.Open, "View", "T",
-            group: "5-panels", isChecked: () => browser.Open);
+        c.Add("materials.browser", "Materials", () => ctx.ToggleDock(MaterialBrowser.PanelId), "View", "T",
+            group: "5-panels", isChecked: () => ctx.DockShowing(MaterialBrowser.PanelId));
         c.Add("materials.replace", "Replace material…", () => replace.Show(ctx), "Texture",
             canExecute: () => ctx.Doc.Meshes.Any(m => m.Faces.Count > 0), group: "1-material", order: 5);
         c.Add("materials.applyDensity", "Reset scale to material density", () => ctx.ForFaces("Apply Material Density", (mesh, faces) =>

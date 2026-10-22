@@ -13,6 +13,10 @@ namespace Chip.Editor.Features.SelectionTools;
 /// </summary>
 public sealed class SelectionSets
 {
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<EditorContext, SelectionSets> Instances = new();
+
+    public static SelectionSets For(EditorContext ctx) => Instances.GetValue(ctx, _ => new SelectionSets());
+
     readonly List<SelectionSet> _sets = new();
     int _counter;
 
@@ -57,18 +61,22 @@ public sealed class SelectionSets
     }
 }
 
-/// <summary>Inspector block: name and save the selection, click a set to restore it, right-click to update or delete.</summary>
-public sealed class SelectionSetsSection(SelectionSets sets) : IInspectorSection
+/// <summary>
+/// Under the outliner in the Scene tab: name and save the selection, click a set to restore it, right-click to update
+/// or delete.
+/// </summary>
+public static class SelectionSetsView
 {
-    string _name = "";
+    static string _name = "";
 
-    public string Id => "selectionSets";
-    public int Order => 150;
-    public bool Visible(EditorContext ctx) => sets.All.Count > 0 || !ctx.Sel.IsEmpty;
-
-    public void Draw(EditorContext ctx)
+    public static void Draw(EditorContext ctx, SelectionSets sets)
     {
         Heading("Selection sets", sets.All.Count > 0 ? sets.All.Count.ToString() : null);
+        if (ctx.Sel.IsEmpty && sets.All.Count == 0)
+        {
+            ImGui.TextColored(Theme.TextDisabled, "Select something to save it as a set");
+            return;
+        }
         if (!ctx.Sel.IsEmpty)
         {
             var style = ImGui.GetStyle();
@@ -84,7 +92,6 @@ public sealed class SelectionSetsSection(SelectionSets sets) : IInspectorSection
             }
             Tip("Save the current selection as a set");
         }
-        else if (sets.All.Count == 0) return;
 
         uint dim = ImGui.ColorConvertFloat4ToU32(Theme.TextDim);
         for (int i = 0; i < sets.All.Count; i++)

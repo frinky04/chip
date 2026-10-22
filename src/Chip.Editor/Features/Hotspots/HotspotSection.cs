@@ -36,7 +36,7 @@ public sealed class HotspotSection : IInspectorSection
         var state = HotspotState.For(ctx);
         var s = state.Settings;
         var target = ResolveForInspector(ctx, state);
-        Heading("Hotspot", target?.Asset.Name);
+        if (!Heading("Hotspot", target?.Asset.Name)) return;
 
         RowLabel("Uses", "Hotspots use the active material when it has a hotspot asset, else the selected face's");
         if (target is { } t) ImGui.Text(t.Material);

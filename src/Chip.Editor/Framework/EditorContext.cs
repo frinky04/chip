@@ -37,6 +37,7 @@ public sealed class EditorContext
     readonly List<IInspectorSection> _sections = new();
     readonly List<MouseBinding> _mouseBindings = new();
     readonly List<Action<EditorContext>> _panels = new();
+    readonly List<IDockPanel> _dockPanels = new();
 
     public EditorContext(Session session, MaterialLibrary materials, Func<double>? clock = null)
     {
@@ -76,10 +77,51 @@ public sealed class EditorContext
     public IReadOnlyList<IViewportTool> Tools => _tools;
     public IReadOnlyList<IInspectorSection> Sections => _sections;
     public IReadOnlyList<MouseBinding> MouseBindings => _mouseBindings;
-    /// <summary>Floating windows (e.g. the material browser) the host draws every frame after the fixed panels.</summary>
+    /// <summary>
+    /// Per-frame callbacks the host runs after the fixed panels: floating windows (replace material, the hotspot editor)
+    /// and work that goes on whether or not a panel shows (thumbnail uploads, highlights).
+    /// </summary>
     public IReadOnlyList<Action<EditorContext>> Panels => _panels;
 
     public void AddPanel(Action<EditorContext> draw) => _panels.Add(draw);
+
+    /// <summary>Tabs of the left dock, in order.</summary>
+    public IReadOnlyList<IDockPanel> DockPanels => _dockPanels;
+
+    public void AddDockPanel(IDockPanel panel)
+    {
+        if (_dockPanels.Any(p => p.Id == panel.Id)) throw new InvalidOperationException($"Duplicate dock panel '{panel.Id}'");
+        _dockPanels.Add(panel);
+        _dockPanels.Sort((a, b) => a.Order.CompareTo(b.Order));
+    }
+
+    string? _dockTab;
+
+    /// <summary>The dock tab showing (or that shows when the dock opens), the first tab until one is picked. The host persists it.</summary>
+    public string? DockTab
+    {
+        get => _dockTab ?? (_dockPanels.Count > 0 ? _dockPanels[0].Id : null);
+        set => _dockTab = value;
+    }
+    /// <summary>False when the dock is collapsed to its icon rail.</summary>
+    public bool DockOpen { get; set; } = true;
+
+    /// <summary>Whether a dock tab is on screen.</summary>
+    public bool DockShowing(string id) => DockOpen && DockTab == id;
+
+    /// <summary>Opens the dock on a tab.</summary>
+    public void ShowDock(string id)
+    {
+        DockOpen = true;
+        DockTab = id;
+    }
+
+    /// <summary>Opens the dock on a tab, or collapses the dock when that tab is already showing.</summary>
+    public void ToggleDock(string id)
+    {
+        if (DockShowing(id)) DockOpen = false;
+        else ShowDock(id);
+    }
 
     /// <summary>Registers a tool and its "Tools" menu command. The first tool registered with id "select" is the default.</summary>
     public void AddTool(IViewportTool tool)

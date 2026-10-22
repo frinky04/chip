@@ -9,16 +9,18 @@ using static Chip.Editor.UI.Widgets;
 namespace Chip.Editor.Features.Materials;
 
 /// <summary>
-/// The material browser (T): a floating window over the viewport's right side with search, a folder tree built from the
-/// library folders, favourites and recent materials, and a virtualised thumbnail grid. Click makes a material active,
-/// double-click applies it to the selection, dragging onto a face applies it there. One instance per context holds the
-/// session state (favourites, recent, thumbnails) that the inspector's Material section shares.
+/// The Materials tab of the left dock (T), Scythe's material browser: search, All / Starred / Recent and a folder picker
+/// built from the library folders, a virtualised thumbnail grid, and pinned under it the active material (its own texel
+/// density), the Shift+Alt slots and Apply. Click makes a material active, double-click applies it to the selection,
+/// dragging onto a face applies it there. One instance per context holds the session state (favourites, recent,
+/// thumbnails) that the inspector's Material section shares.
 /// </summary>
-public sealed class MaterialBrowser
+public sealed class MaterialBrowser : IDockPanel
 {
     static readonly ConditionalWeakTable<EditorContext, MaterialBrowser> Instances = new();
     const int MaxRecent = 16;
     const string FavouritesKey = "*favourites", RecentKey = "*recent", AllKey = "*all";
+    public const string PanelId = "materials";
 
     public static MaterialBrowser For(EditorContext ctx) => Instances.GetValue(ctx, _ => new MaterialBrowser());
 
@@ -27,17 +29,21 @@ public sealed class MaterialBrowser
     string? _lastActive;
     string _search = "";
     string _folder = AllKey;
-    float _thumb = 80;
+    float _thumb = 72;
     string? _dragging;
-    Vector2 _winMin, _winMax;
-    bool _wasOpen;
+    float _footerH;
 
     // Filter cache: rebuilt when any input changes.
     (int Lib, string Search, string Folder, int Fav, int Recent) _filterKey = (-1, "", "", -1, -1);
     List<MaterialInfo> _shown = new();
     int _favVersion, _recentVersion;
 
-    public bool Open { get; set; }
+    public string Id => PanelId;
+    public string Title => "Materials";
+    public Icon Icon => Icon.Palette;
+    public int Order => 0;
+    public string? Command => "materials.browser";
+
     public ThumbnailCache Thumbs { get; } = new();
     public IReadOnlyList<string> Favourites => _favourites;
     public IReadOnlyList<string> Recent => _recent;
@@ -95,45 +101,20 @@ public sealed class MaterialBrowser
         ctx.Status($"Applied {material}");
     }
 
-    /// <summary>Per-frame host callback: recent tracking, thumbnail uploads, drag and drop, then the window when open.</summary>
-    public void Draw(EditorContext ctx)
+    /// <summary>Per-frame host callback, whether or not the tab shows: recent tracking, thumbnail uploads, drag and drop.</summary>
+    public void Update(EditorContext ctx)
     {
         TrackRecent(ctx);
         Thumbs.Pump(ctx);
         UpdateDrag(ctx);
-        if (!Open) { _wasOpen = false; return; }
-
-        float margin = Theme.Px(10);
-        var vpSize = ctx.ViewportSize;
-        float w = MathF.Min(Theme.Px(480), MathF.Max(Theme.Px(300), vpSize.X * 0.45f));
-        float top = Theme.Px(44); // clear the viewport header's grid and snap controls
-        var pos = ctx.ViewportOrigin + new Vector2(vpSize.X - w - margin, top);
-        ImGui.SetNextWindowPos(pos, ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(w, MathF.Max(Theme.Px(240), vpSize.Y - top - margin)), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSizeConstraints(Theme.Px(280, 200), new Vector2(float.MaxValue));
-        if (!_wasOpen) ImGui.SetNextWindowFocus();
-        _wasOpen = true;
-        bool open = true;
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Theme.Px(10, 8));
-        bool visible = ImGui.Begin("Materials###materialBrowser", ref open, ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoScrollbar);
-        ImGui.PopStyleVar();
-        if (visible)
-        {
-            _winMin = ImGui.GetWindowPos();
-            _winMax = _winMin + ImGui.GetWindowSize();
-            DrawContents(ctx);
-        }
-        ImGui.End();
-        if (!open) Open = false;
     }
 
     void UpdateDrag(EditorContext ctx)
     {
         if (_dragging == null) return;
         var mouse = ImGui.GetIO().MousePos;
-        bool overBrowser = Open && mouse.X >= _winMin.X && mouse.Y >= _winMin.Y && mouse.X < _winMax.X && mouse.Y < _winMax.Y;
         var rel = mouse - ctx.ViewportOrigin;
-        bool overViewport = rel.X >= 0 && rel.Y >= 0 && rel.X < ctx.ViewportSize.X && rel.Y < ctx.ViewportSize.Y && !overBrowser;
+        bool overViewport = rel.X >= 0 && rel.Y >= 0 && rel.X < ctx.ViewportSize.X && rel.Y < ctx.ViewportSize.Y;
         if (ImGui.IsMouseReleased(ImGuiMouseButton.Left))
         {
             var material = _dragging;
@@ -155,40 +136,167 @@ public sealed class MaterialBrowser
         }
     }
 
-    void DrawContents(EditorContext ctx)
+    /// <summary>The dock tab: search and filters, the grid, then the active material pinned at the bottom.</summary>
+    public void Draw(EditorContext ctx)
     {
         var lib = ctx.Materials;
-        float gap = Theme.Px(8);
-        float sliderW = Theme.Px(96);
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - sliderW - gap);
+        var style = ImGui.GetStyle();
+        float gap = Theme.Px(6);
+        float more = ImGui.GetFrameHeight();
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - more - gap);
         ImGui.InputTextWithHint("##search", "Search materials", ref _search, 128);
         ImGui.SameLine(0, gap);
-        ImGui.SetNextItemWidth(sliderW);
-        Widgets.ValueSlider("##thumb", "", ref _thumb, 40, 160, "%.0f px", t => $"{t:0} px");
-        Tip($"Thumbnail size: {_thumb:0} px");
+        if (IconButton("more", Icon.Dots, "Thumbnail size, hotspot editor, texture folders, replace material", more)) ImGui.OpenPopup("##browserMenu");
+        DrawMenu(ctx);
 
+        DrawFilters(lib);
         var shown = Filtered(lib);
-        float footerH = ImGui.GetFrameHeightWithSpacing();
-        var avail = ImGui.GetContentRegionAvail();
-        float treeW = MathF.Min(Theme.Px(150), avail.X * 0.4f);
 
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Bg);
-        if (ImGui.BeginChild("##folders", new Vector2(treeW, avail.Y - footerH), ImGuiChildFlags.None))
-            DrawFolders(lib);
-        ImGui.EndChild();
-        ImGui.PopStyleColor();
-        ImGui.SameLine(0, gap);
-        if (ImGui.BeginChild("##grid", new Vector2(0, avail.Y - footerH), ImGuiChildFlags.None))
+        float gridH = ImGui.GetContentRegionAvail().Y - _footerH;
+        if (ImGui.BeginChild("##grid", new Vector2(0, MathF.Max(gridH, Theme.Px(80))), ImGuiChildFlags.None))
             DrawGrid(ctx, shown);
         ImGui.EndChild();
 
-        ImGui.AlignTextToFramePadding();
-        if (_search.Length > 0)
+        float footerTop = ImGui.GetCursorPosY();
+        DrawActive(ctx);
+        _footerH = ImGui.GetCursorPosY() - footerTop + style.ItemSpacing.Y;
+    }
+
+    /// <summary>The ⋯ menu: thumbnail size, the hotspot editor, texture folders, and replacing materials in the level.</summary>
+    void DrawMenu(EditorContext ctx)
+    {
+        if (!ImGui.BeginPopup("##browserMenu")) return;
+        ImGui.TextColored(Theme.TextDim, "Thumbnails");
+        ImGui.SetNextItemWidth(Theme.Px(200));
+        ValueSlider("##thumb", "", ref _thumb, 40, 160, "%.0f px", t => $"{t:0} px");
+        ImGui.Separator();
+        foreach (var id in new[] { "hotspot.editor", "", "materials.addFolder", "materials.rescan", "", "materials.replace", "materials.applyDensity" })
         {
-            ImGui.TextColored(Theme.TextDim, shown.Count == 1 ? "1 match" : $"{shown.Count} matches");
-            ImGui.SameLine(0, Theme.Px(16));
+            if (id.Length == 0) ImGui.Separator();
+            else if (ctx.Commands.Find(id) is { } c && ImGui.MenuItem(c.Label, c.HotkeyText, c.IsChecked?.Invoke() ?? false, c.Enabled)) c.Execute();
         }
-        KeyHints([("Click", "activate"), ("Double-click", "apply"), ("Drag", "onto a face")]);
+        ImGui.EndPopup();
+    }
+
+    /// <summary>All / Starred / Recent, then the folder picker (a tree in a popup) filling the rest of the row.</summary>
+    void DrawFilters(MaterialLibrary lib)
+    {
+        int active = _folder switch { AllKey => 0, FavouritesKey => 1, RecentKey => 2, _ => -1 };
+        int picked = TextSegments("##quick", [("All", $"Every material ({lib.All.Count})"),
+            ("Starred", "Materials you starred. Right-click a material to star it."), ("Recent", "Materials you made active lately")], active);
+        if (picked >= 0) _folder = picked switch { 0 => AllKey, 1 => FavouritesKey, _ => RecentKey };
+        float minCombo = Theme.Px(90);
+        if (ImGui.GetContentRegionAvail().X - ImGui.GetItemRectSize().X - Theme.Px(6) >= minCombo) ImGui.SameLine(0, Theme.Px(6));
+        ImGui.SetNextItemWidth(-1);
+        string label = active >= 0 ? "Folder…" : FolderLabel(_folder);
+        if (ImGui.BeginCombo("##folder", label, ImGuiComboFlags.HeightLarge))
+        {
+            DrawFolders(lib);
+            ImGui.EndCombo();
+        }
+        Tip(active >= 0 ? "Show one texture folder" : $"Showing {label}. Pick another folder, or All.");
+    }
+
+    /// <summary>"concrete" for "C:/textures|walls/concrete", or the source folder's name for a whole source.</summary>
+    static string FolderLabel(string key)
+    {
+        int bar = key.IndexOf('|');
+        if (bar < 0) return key;
+        var sub = key[(bar + 1)..];
+        if (sub.Length > 0) return sub[(sub.LastIndexOf('/') + 1)..];
+        var source = key[..bar];
+        return Path.GetFileName(source) is { Length: > 0 } n ? n : source;
+    }
+
+    /// <summary>
+    /// Pinned under the grid, Scythe's lower-left corner: the active material (star, size, tiling, its own texel density),
+    /// the Shift+Alt slots, and Apply.
+    /// </summary>
+    void DrawActive(EditorContext ctx)
+    {
+        var lib = ctx.Materials;
+        var active = lib.Get(ctx.ActiveMaterial);
+        ImGui.Dummy(Theme.Px(0, 2));
+        var dl = ImGui.GetWindowDrawList();
+        var line = ImGui.GetCursorScreenPos();
+        float x0 = ImGui.GetWindowPos().X;
+        dl.AddLine(new Vector2(x0, line.Y), new Vector2(x0 + ImGui.GetWindowWidth(), line.Y), ImGui.ColorConvertFloat4ToU32(Theme.Border), Theme.Px(1));
+        ImGui.Dummy(Theme.Px(0, 6));
+
+        float big = Theme.Px(44);
+        MaterialTiles.Tile(ctx, this, active, big, caption: false);
+        ImGui.SameLine(0, Theme.Px(10));
+        ImGui.BeginGroup();
+        float star = ImGui.GetTextLineHeight();
+        ImGui.PushFont(Fonts.Strong);
+        ImGui.Text(MaterialTiles.Fit(active.Name, ImGui.GetContentRegionAvail().X - star - Theme.Px(8)));
+        ImGui.PopFont();
+        ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - star);
+        bool fav = IsFavourite(active.Name);
+        if (MaterialTiles.StarButton("##fav", fav, star, fav ? "Unstar" : "Star: pin it under Starred")) ToggleFavourite(active.Name);
+        string tool = active.Tool != ToolMaterial.None ? "tool material · " : "";
+        ImGui.TextColored(Theme.TextDim, $"{tool}{active.Width} × {active.Height} px, tiles every {Labels.Length(active.TileWidth)}");
+        ImGui.EndGroup();
+
+        DrawOwnDensity(ctx, active);
+
+        ImGui.Dummy(Theme.Px(0, 2));
+        ImGui.TextColored(Theme.TextDim, "Slots");
+        ImGui.SameLine();
+        ImGui.TextColored(Theme.TextDisabled, "Shift+Alt+1..0");
+        var slots = lib.All.Take(10).ToList();
+        // Even rows that fill the width: all ten slots on one row when they fit at a usable size, else two rows of five.
+        float spacing = Theme.Px(4), width = ImGui.GetContentRegionAvail().X;
+        int perRow = (width - spacing * 9) / 10 >= Theme.Px(30) ? 10 : 5;
+        float cell = MathF.Floor((width - spacing * (perRow - 1)) / perRow);
+        for (int i = 0; i < slots.Count; i++)
+        {
+            if (i % perRow != 0) ImGui.SameLine(0, spacing);
+            var t = MaterialTiles.Tile(ctx, this, slots[i], cell, caption: false, badge: ((i + 1) % 10).ToString());
+            if (t.Clicked) ctx.ActiveMaterial = slots[i].Name;
+            if (t.DoubleClicked) ApplyToSelection(ctx, slots[i].Name);
+        }
+
+        ImGui.Dummy(Theme.Px(0, 2));
+        bool canApply = ctx.Sel.FaceSets(ctx.Doc).Count > 0;
+        ImGui.BeginDisabled(!canApply);
+        PushPrimary();
+        if (ImGui.Button("Apply to selection", new Vector2(-1, 0))) ctx.Commands.Execute("texture.apply");
+        PopPrimary();
+        ImGui.EndDisabled();
+        Tip(canApply ? "Apply the active material to the selection  (Shift+T)" : "Select faces or objects to apply  (Shift+T)");
+    }
+
+    /// <summary>The active texture's own density ("1 m is 128 px"), or following the level's (set in Level, with nothing selected).</summary>
+    static void DrawOwnDensity(EditorContext ctx, MaterialInfo active)
+    {
+        bool custom = active.TexelDensity != null;
+        bool canEdit = !MaterialLibrary.IsMissing(active) && active.Width > 0;
+        RowLabel("Density", custom
+            ? $"{active.Name} has its own texel density. Reset to follow the level's."
+            : $"{active.Name} follows the level's texel density ({ctx.Materials.DefaultTexelsPerMeter:0.##} px per metre; change it under Level, with nothing selected). Change this to give the texture its own density (saved next to the texture).");
+        float resetW = custom ? Theme.Px(60) + Theme.Px(6) : 0;
+        ImGui.BeginDisabled(!canEdit);
+        // Dimmed while the texture just follows the level; setting a value gives it its own density.
+        if (DensityField("##textureDensity", active.TexelsPerMeter, out float own, resetW, dim: !custom))
+            SetDensity(ctx, active, MathF.Abs(own - ctx.Materials.DefaultTexelsPerMeter) < 1e-3f ? null : own);
+        ImGui.EndDisabled();
+        if (custom)
+        {
+            ImGui.SameLine(0, Theme.Px(6));
+            if (ImGui.Button("Reset", new Vector2(Theme.Px(60), 0))) SetDensity(ctx, active, null);
+            Tip($"Follow the level again: 1 m is {ctx.Materials.DefaultTexelsPerMeter:0.##} px");
+        }
+    }
+
+    static void SetDensity(EditorContext ctx, MaterialInfo m, float? density)
+    {
+        bool saved = ctx.Materials.SetTexelDensity(m.Name, density);
+        var now = ctx.Materials.Get(m.Name);
+        if (!saved)
+            ctx.Status($"Couldn't write {MaterialLibrary.SidecarName} in {now.Source}. The new size applies until Chip closes; check the folder is writable.", error: true);
+        else
+            ctx.Status($"{m.Name} tiles every {Labels.Length(now.TileWidth)}. Texture > Reset scale to material density updates existing faces");
     }
 
     List<MaterialInfo> Filtered(MaterialLibrary lib)
@@ -224,14 +332,6 @@ public sealed class MaterialBrowser
 
     void DrawFolders(MaterialLibrary lib)
     {
-        ImGui.Dummy(Theme.Px(0, 2));
-        Entry(FavouritesKey, "Favourites", _favourites.Count(lib.Contains));
-        Entry(RecentKey, "Recent", _recent.Count(lib.Contains));
-        Entry(AllKey, "All materials", lib.All.Count);
-        ImGui.Dummy(Theme.Px(0, 2));
-        ImGui.Separator();
-        ImGui.Dummy(Theme.Px(0, 2));
-
         foreach (var group in lib.All.Where(m => m.Source.Length > 0).GroupBy(m => m.Source, StringComparer.OrdinalIgnoreCase))
         {
             var subs = group.Select(m => m.Folder).Where(f => f.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)
@@ -257,22 +357,17 @@ public sealed class MaterialBrowser
         if (_folder == key) flags |= ImGuiTreeNodeFlags.Selected;
         if (sub.Length == 0) ImGui.SetNextItemOpen(true, ImGuiCond.Once);
         bool open = ImGui.TreeNodeEx(key, flags, label);
-        if (ImGui.IsItemClicked() && !ImGui.IsItemToggledOpen()) _folder = key;
+        if (ImGui.IsItemClicked() && !ImGui.IsItemToggledOpen())
+        {
+            _folder = key;
+            ImGui.CloseCurrentPopup();
+        }
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort)) ImGui.SetTooltip(tip);
         if (open && children.Count > 0)
         {
             foreach (var c in children) FolderNode(source, c, c[(c.LastIndexOf('/') + 1)..], allSubs, c);
             ImGui.TreePop();
         }
-    }
-
-    void Entry(string key, string label, int count)
-    {
-        if (ImGui.Selectable($"{label}##{key}", _folder == key)) _folder = key;
-        var cs = count.ToString();
-        float w = ImGui.CalcTextSize(cs).X;
-        ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - w - Theme.Px(4));
-        ImGui.TextColored(Theme.TextDim, cs);
     }
 
     void DrawGrid(EditorContext ctx, List<MaterialInfo> shown)
@@ -282,18 +377,30 @@ public sealed class MaterialBrowser
             ImGui.Dummy(Theme.Px(0, 8));
             ImGui.TextColored(Theme.TextDim, _folder switch
             {
-                FavouritesKey when _search.Length == 0 => "No favourites yet. Right-click a material to add it.",
+                FavouritesKey when _search.Length == 0 => "Nothing starred yet. Right-click a material to star it.",
                 RecentKey when _search.Length == 0 => "Materials you make active show up here.",
                 _ => _search.Length > 0 ? $"Nothing matches \"{_search}\"." : "No materials in this folder.",
             });
             return;
         }
-        float size = Theme.Px(_thumb);
+        // The thumbnail size picks how many columns fit; the tiles then stretch to fill the row, so no strip is left over.
         bool caption = _thumb >= 56;
         float spacing = Theme.Px(8);
         float captionH = caption ? ImGui.GetTextLineHeight() * (Fonts.SmallSize / Fonts.BodySize) + Theme.Px(4) : 0;
+        int perRow = 0;
+        float size = 0;
+        void Fit(float width)
+        {
+            perRow = Math.Max(1, (int)((width + spacing) / (Theme.Px(_thumb) + spacing)));
+            size = MathF.Floor((width - spacing * (perRow - 1)) / perRow);
+        }
+        // Whether a scrollbar is needed is decided from the full width, never from whether one shows now, so a layout
+        // that only just overflows can't flip between the two every frame.
+        float full = ImGui.GetWindowWidth();
+        Fit(full);
+        if ((shown.Count + perRow - 1) / perRow * (size + captionH + spacing) > ImGui.GetWindowHeight())
+            Fit(full - ImGui.GetStyle().ScrollbarSize);
         float rowH = size + captionH + spacing;
-        int perRow = Math.Max(1, (int)((ImGui.GetContentRegionAvail().X + spacing) / (size + spacing)));
         int rows = (shown.Count + perRow - 1) / perRow;
 
         // Only rows in view are laid out (and so only their thumbnails are requested).
@@ -332,7 +439,7 @@ public sealed class MaterialBrowser
             if (ImGui.MenuItem("Make active")) ctx.ActiveMaterial = m.Name;
             bool canApply = ctx.Sel.FaceSets(ctx.Doc).Count > 0;
             if (ImGui.MenuItem("Apply to selection", null, false, canApply)) ApplyToSelection(ctx, m.Name);
-            if (ImGui.MenuItem(IsFavourite(m.Name) ? "Remove from favourites" : "Add to favourites")) ToggleFavourite(m.Name);
+            if (ImGui.MenuItem(IsFavourite(m.Name) ? "Unstar" : "Star")) ToggleFavourite(m.Name);
             ImGui.Separator();
             if (ImGui.MenuItem("Replace in level with this…")) ReplaceMaterialDialog.For(ctx).Show(ctx, to: m.Name);
             if (ImGui.MenuItem("Copy name")) ImGui.SetClipboardText(m.Name);

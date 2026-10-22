@@ -1,8 +1,8 @@
 # Dressing
 
 Status: built (tags; the engine; `bevel`, `sweep`, `railing`, `stairs`, `repeat`, `scatter`; props; per-mesh overrides;
-Bake; the Dressing rules window, recipes, Dress with, styles and tag colours). Name: **Dressing** (as in set dressing).
-Try it: Tools > Open dressing sample.
+Bake; the Dressing tab, recipes, Dress with, styles and tag colours). Name: **Dressing** (as in set dressing).
+Try it: the Dressing tab's ⋯ menu > Open dressing sample.
 
 You build the blockout. Dressing turns it into the level you ship by following rules: a trim along every wall base,
 bevels on outside corners, a railing built from a box, stairs from a ramp, rubble on the floors. Change the blockout and
@@ -15,8 +15,8 @@ write the same rules, and Chip reloads the file whenever it changes on disk.
 
 1. **One direction.** The blockout is the only thing you edit. The dressed level is computed from it and never edited
    by hand (per-object Bake is the escape hatch).
-2. **The file is the truth.** The Dressing rules window is a view of the rules file: every change is written to it at once,
-   as an undo step. Hand and agent edits to the file show up in the window and the viewport within a quarter second.
+2. **The file is the truth.** The Dressing tab is a view of the rules file: every change is written to it at once,
+   as an undo step. Hand and agent edits to the file show up in the tab and the viewport within a quarter second.
 3. **Two stages, both reading only the blockout.**
    - *Shape* replaces a blockout mesh: a **modifier** (bevel) swaps in a modified copy; a **proxy** (railing, stairs) hides
      the mesh and builds from its box.
@@ -39,7 +39,7 @@ write the same rules, and Chip reloads the file whenever it changes on disk.
    at corners and stopping at doorways.
 3. Select the ramp, Dress with *Add Stairs*; select the railing box, Dress with *Add Railing*. In the blockout view
    (`` ` ``) meshes a proxy rule replaces get stripes tinted by kind.
-4. Press Ctrl+Shift+D (**Dressing rules**). The baseboard rule is selected: set the profile to *Cove*, 8 cm; pick a
+4. Press Ctrl+Shift+D (the **Dressing** tab). The baseboard rule is selected: set the profile to *Cove*, 8 cm; pick a
    material. Each change redresses the level as you release the mouse. Hovering a rule in the list tints what it takes
    in the viewport.
 5. Add *Corner bevel* from **+ Add rule**: 2 cm bevels on every outside corner between `wall` faces.
@@ -49,7 +49,7 @@ write the same rules, and Chip reloads the file whenever it changes on disk.
    their settings; set this one's baluster spacing to 10 cm (stored on the mesh, not in the rules). **Use for all** puts
    that value into the rule for every railing.
 8. One corner looks wrong. Switch the rule off for that mesh in the inspector, tag the face `skip:baseboard`, or Bake
-   that wall (Tools > Bake dressing) and fix it by hand. A face that should be dressed and isn't? Select it: the inspector
+   that wall (Edit > Bake dressing) and fix it by hand. A face that should be dressed and isn't? Select it: the inspector
    says why each rule skips it ("needs the tag wall (it has walls)").
 9. **Save as style...** moves the level's rules into `styles/hangar.dressing.json` and uses it. The next level picks the
    style under **Styles**, and whatever it changes applies to that level only.
@@ -58,17 +58,22 @@ write the same rules, and Chip reloads the file whenever it changes on disk.
 
 ## In the editor
 
-### Dressing rules window (Tools > Dressing rules, Ctrl+Shift+D)
+### The Dressing tab (Ctrl+Shift+D)
 
+A tab of the dock on the left, stacked top to bottom so it reads in a tall, narrow panel:
+
+- **Top**: *Dressed | Blockout* (what the viewport shows, as `` ` ``), and the ⋯ menu: *Tag colours*, *Open JSON*,
+  *New dressing rules file*, *Open dressing sample*, *Bake dressing*, *Save as style...*.
 - **List**: every rule with a switch, its name over its kind, and how many meshes it made (`error`, `off` or
   `no matches` otherwise). Rules are grouped under *From <style>* and *This level*; "changed here" marks a style's rule
-  this level changes. Hover a rule to tint what it takes. A filter appears once there are more than six rules; drag the
-  divider to widen the list. **+ Add rule** (pinned at the bottom) offers the recipes (below), and **Shared values**
-  sits above it.
-- **Settings** of the selected rule, in words and units: lengths in centimetres, angles in degrees, density per m². The
-  header says what the kind does and which file changes save to; problems with the rule come first, with their fixes.
-  Rename it (its per-mesh overrides and `skip:` tags follow), write a note, and set every parameter of its kind. Fields
-  side by side are labelled inside (`depth`, `height`, `out`, `up`, `min`, `max`, `W` `H` `D`). Every row keeps a column at
+  this level changes. Hover a rule to tint what it takes. A filter appears once there are more than six rules. Under the
+  list, **Shared** (the shared values) and **+ Add rule** (the recipes, below). Drag the bar under them to give the list
+  or the rule more room.
+- **Settings** of the selected rule, under the list, in words and units: lengths in centimetres, angles in degrees,
+  density per m². The header says what the kind does and which file changes save to; problems with the rule come first,
+  with their fixes. Rename it (its per-mesh overrides and `skip:` tags follow), write a note, and set every parameter of
+  its kind. At the dock's usual width each label sits above its field; widen the dock and they move beside it, with the
+  profile preview beside the profile fields rather than under them. Fields side by side are labelled inside (`depth`, `height`, `out`, `up`, `min`, `max`, `W` `H` `D`). Every row keeps a column at
   the right for × (put the style's value back) or $ (the field uses a shared value: click to edit it).
   - *Faces*: tags as chips (+ offers the level's tags or a new one), which way they face, and under *More filters* tags
     to leave out and material globs. *Meshes* (proxies): mesh tags.
@@ -89,12 +94,12 @@ write the same rules, and Chip reloads the file whenever it changes on disk.
   *Shared style* it is locked, since the level's value would still win.
 - **Shared values**: the variables rules use by name (`"$trim"`), with which rules use each; change one and every rule
   using it follows. Lengths show and are typed in cm ("12 cm"; "0.12 m" works too).
-- **Save as style...** (bottom): moves the level's own rules and shared values into a new style file and imports it.
-  The footer also counts rules and problems (click to jump to the first) and says "Saved <file>" after each change.
-- **Open JSON**: the file in your text editor.
+- **Save as style...** (⋯ menu): moves the level's own rules and shared values into a new style file and imports it.
+- **Footer**: counts rules and problems (click to jump to the first) and says "Saved <file>" after each change.
+- **Open JSON** (⋯ menu): the file in your text editor.
 
 Every change is one undo step that rewrites the rules file; Ctrl+Z puts the old file back. Drags commit on release, so
-dragging a value redresses once. With no rules yet the window lists the recipes with what each selects; for an unsaved
+dragging a value redresses once. With no rules yet the tab lists the recipes with what each selects; for an unsaved
 level it offers **Save level...**.
 
 ### Recipes
@@ -136,16 +141,17 @@ meshes themselves. A rule that picks faces only by facing or material has no tag
   don't N rules take this mesh?* (or face, with one face selected): a row per rule that skips it, with why; click one to
   open the rule.
 - **View > Tag colours**: every tagged face tinted by its first tag (mesh tags striped), so untagged surfaces stand out.
-  The rules window's tag chips use the same colours.
+  The Dressing tab's tag chips use the same colours.
 - **Tags** (Ctrl+T, inspector Tags section) still work as before: Dress with is a shortcut for the common case.
 - `` ` `` toggles dressed / blockout (View > Dressed view, the header toggle, the inspector switch). Export always ships
   the dressed level.
-- Tools > New dressing rules file writes a starter (from the recipes) beside a saved level; the first rule added from
-  the window or Dress with does the same. Tools > Open dressing sample opens a room using every kind.
+- *New dressing rules file* (the tab's ⋯ menu, or the command palette) writes a starter (from the recipes) beside a saved
+  level; the first rule added from the tab or Dress with does the same. *Open dressing sample* opens a room using every
+  kind.
 
 ## Rules files
 
-The window writes a canonical layout: top-level keys in a fixed order, each rule's keys as kind, enabled, note, then the
+The Dressing tab writes a canonical layout: top-level keys in a fixed order, each rule's keys as kind, enabled, note, then the
 kind's parameters in table order, one per line, with short values on one line. Comments are not kept (use `note`). Hand-
 and agent-written files may be laid out any way and may contain comments and trailing commas; the first edit from the
 window rewrites them canonically.
@@ -234,9 +240,9 @@ The level's own file, `hangar.dressing.json` (beside `hangar.chip`; a `.chip` ca
 ```
 
 An entry with `kind` defines a rule; one without patches an imported rule (patching an id nothing defines is an error).
-Later imports win; the importing file wins over all. Import cycles are errors. The window writes patches holding only
+Later imports win; the importing file wins over all. Import cycles are errors. The Dressing tab writes patches holding only
 the keys that differ from the style, and removes a key when it is set back to the style's value. A patch merges into the
-style's objects, so it can add or change a selector key but not remove one; the window says so and offers editing the
+style's objects, so it can add or change a selector key but not remove one; the tab says so and offers editing the
 style or duplicating the rule into the level.
 
 **Defaults make the short version work.** `"baseboard": { "kind": "sweep", "faces": { "tags": ["wall"] } }` sweeps a
@@ -326,7 +332,7 @@ Other codes: W310 (bevel wider than half the shortest edge; the mesh is left as 
 applies), E901 (a rule threw on a mesh; that mesh is skipped).
 
 Every diagnostic has a code, file:line:col, JSON path, mesh id when relevant, what happened and a fix. A selector that
-matches nothing is always a warning: it is the commonest mistake. The same diagnostics show under each rule in the window
+matches nothing is always a warning: it is the commonest mistake. The same diagnostics show under each rule in the Dressing tab
 and in the inspector.
 
 ## Code
@@ -360,7 +366,7 @@ public sealed class DressedLevel : IMeshSet
     public Document ForExport();                   // dressed meshes + collision-only blockout stand-ins
 }
 
-/// Editing (the Dressing rules window). A workspace reads the level's file and its styles fresh; edits mark documents
+/// Editing (the Dressing tab). A workspace reads the level's file and its styles fresh; edits mark documents
 /// changed; Changes() gives every file's new text, which the editor writes in one Session step.
 public sealed class RulesWorkspace(IDressingFiles files, string mainPath, string? levelName = null)
 {
@@ -402,7 +408,7 @@ order whatever was rebuilt, so exports are stable.
 - **`JNode`**: a JSON reader that keeps line and column for every value (comments and trailing commas allowed).
 - **`RuleSet`** (`Rules.cs`): imports (relative paths, cycles reported), vars, per-level patches by rule id, rule ids
   checked like tags, kinds looked up with did-you-mean, every parameter typed through **`ParamSpec`** tables
-  (`Params.cs`), which also generate the schema and drive the window (label, unit, choice labels). A rule with errors is
+  (`Params.cs`), which also generate the schema and drive the Dressing tab (label, unit, choice labels). A rule with errors is
   left out; the rest run.
 - **`BevelKind`**: the edges between two matching faces (convex or concave, at `minDeg` or more), bevelled with
   `MeshOps.BevelEdges` on a clone.
@@ -445,19 +451,19 @@ about 30 µs; a drag frame moving one wall about 1.5 ms.
   changes and polls the rules files four times a second (at once after Chip writes them). Reloads say so in the status
   bar; rules with errors show there in red. It also supplies `EditorContext.ViewportTints`: proxy stripes in the blockout
   view, the hovered rule's targets, and tag colours; the renderer draws them as overlay triangles (`FaceTint`).
-- `DressingRulesWindow` (list, styles, shared values, save as style) and `RuleFields` (one rule's parameters: units,
+- `DressingPanel` (the Dressing tab: list, styles, shared values, save as style) and `RuleFields` (one rule's parameters: units,
   Where, tag chips, profile picker and preview, prop editors). Each edit goes through `EditRules`.
-- `DressWithPopup` (Ctrl+Shift+T): rules and recipes for the selection; `Apply` and `ApplyRecipe` are what the window's
+- `DressWithPopup` (Ctrl+Shift+T): rules and recipes for the selection; `Apply` and `ApplyRecipe` are what the tab's
   *Dress selection* and the tests use.
 - `DressingSection` and `DressingOverrides`: the inspector block (view switch, Rules..., selection, per-mesh overrides with
-  Use for all, why rules skip the selection, problems), and Tools > Bake dressing (`DressingBake`).
+  Use for all, why rules skip the selection, problems), and Edit > Bake dressing (`DressingBake`).
 - Renderer: `BeginFrame(..., scene, tints)` draws solid faces from the dressed level when `ShowDressed`; wires, selection
   and overlays stay on the blockout. Picking stays on the blockout: clicking a railing hits its box, which is what you edit.
 - Export (GLB and OBJ) writes `EditorContext.ExportDocument()`: the dressed level when there are rules, even with the
   blockout view showing. Collision stand-ins reuse `CollisionMode.Only` and the collision bake.
 - `Chip --rules-check level.chip [--json]` and `Chip --rules-schema [out.json]` run without a window. Captures:
   `--shot - out.png dressing` (and `dressing-blockout`, `dressing-railing`, `dressing-rules`, `dressing-dresswith`,
-  `dressing-tags`); `CHIP_SHOT_CAMERA` frames close-ups, `CHIP_SHOT_RULE=<id>` (or `vars`) picks what the rules window
+  `dressing-tags`); `CHIP_SHOT_CAMERA` frames close-ups, `CHIP_SHOT_RULE=<id>` (or `vars`) picks what the Dressing tab
   shows, and `CHIP_SHOT_OVERRIDE=1` gives the `dressing-railing` railing a per-mesh override.
 
 ### Tests (through the interface)
@@ -477,7 +483,7 @@ file, taking a face out of one rule leaves the rules sharing its tag, viewport t
 ## Later
 
 Export instancing, height bands (chair rails), more modifiers, a texture running along trims (`uv: along`), prop
-thumbnails in the rules window.
+thumbnails in the Dressing tab.
 
 ## Known limits
 

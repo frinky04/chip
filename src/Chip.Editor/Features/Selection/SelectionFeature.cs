@@ -13,7 +13,7 @@ public sealed class SelectionFeature : IEditorFeature
     public void Register(EditorContext ctx)
     {
         var c = ctx.Commands;
-        var sets = new SelectionSets();
+        var sets = SelectionSets.For(ctx); // drawn under the outliner, in the Scene tab
         var tool = ctx.Tools.OfType<SelectTool>().FirstOrDefault();
         bool EdgesSelected() => ctx.Sel.Mode == SelectMode.Edge && !ctx.Sel.IsEmpty;
         bool ElementsSelected() => ctx.Sel.Mode != SelectMode.Object && !ctx.Sel.IsEmpty;
@@ -51,8 +51,6 @@ public sealed class SelectionFeature : IEditorFeature
         c.AddReference("Select", "Double-click", "connected faces / edge loop / connected vertices");
         c.AddReference("Select", "CapsLock + double-click", "faces on the plane (or Mouse4 / Mouse5)");
         c.AddReference("Select", "Ctrl+Shift + click", "shortest path from the active element");
-
-        ctx.AddSection(new SelectionSetsSection(sets));
     }
 
     static void Report(EditorContext ctx, int added, string none) =>

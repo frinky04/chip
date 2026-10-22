@@ -9,10 +9,11 @@ public sealed class InspectorFeature : IEditorFeature
     public void Register(EditorContext ctx)
     {
         ctx.AddSection(new ToolOptionsSection());
+        ctx.AddSection(new LevelSection());
         ctx.AddSection(new SelectionSection());
+        ctx.AddSection(new ActionsSection());
         ctx.AddSection(new MaterialSection());
         ctx.AddSection(new TextureSection());
-        ctx.AddSection(new ExportSection());
     }
 }
 
@@ -25,7 +26,7 @@ public sealed class ToolOptionsSection : IInspectorSection
 
     public void Draw(EditorContext ctx)
     {
-        Heading(ctx.ActiveTool!.Name);
+        if (!Heading(ctx.ActiveTool!.Name)) return;
         ctx.ActiveTool.DrawOptions(ctx);
     }
 }

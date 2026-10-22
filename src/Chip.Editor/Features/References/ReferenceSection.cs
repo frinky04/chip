@@ -24,7 +24,7 @@ public sealed class ReferenceSection : IInspectorSection
         var e = ctx.Sel.Entities(ctx.Doc)[0];
         int id = e.Id;
         var model = ReferenceModels.ModelOf(e);
-        Heading("Reference", ReferenceModels.DisplayName(model));
+        if (!Heading("Reference", ReferenceModels.DisplayName(model))) return;
 
         RowLabel("Model", "A built-in model or a .glb/.gltf file, drawn exactly where your engine would put it at this origin");
         if (ReferencePicker.Draw($"##model{id}", model, out var chosen))

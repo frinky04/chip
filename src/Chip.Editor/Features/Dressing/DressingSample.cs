@@ -9,7 +9,7 @@ using Chip.Core.Texturing;
 namespace Chip.Editor.Features.Dressing;
 
 /// <summary>
-/// A small tagged level with a rules file, to try dressing (Tools > Open dressing sample) and for captures: an 8 × 6 m room
+/// A small tagged level with a rules file, to try dressing (the Dressing tab's ⋯ menu > Open dressing sample) and for captures: an 8 × 6 m room
 /// of separate wall boxes overlapping at the corners, a doorway, a pillar, a plinth, and a platform with a ramp and two
 /// railing boxes. Rules: baseboards, bevelled pillar corners, a pipe round the plinth, railings, stairs, wall lights and
 /// floor rubble: every kind.

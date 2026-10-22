@@ -20,13 +20,16 @@ public sealed class SceneFeature : IEditorFeature
         ctx.AddPanel(new ClassTracker().Update);
         ctx.AddPanel(groups.Update);
         ctx.AddPanel(EntityOverlay.Draw);
-        ctx.AddPanel(outliner.Draw);
+        ctx.AddDockPanel(outliner);
+        ctx.AddDockPanel(new PlacePanel());
 
         var c = ctx.Commands;
         bool ObjectsSelected() => ctx.Sel.Mode == SelectMode.Object && ctx.Sel.MeshIds().Any(id => SceneOps.IsObject(ctx.Doc, id));
 
-        c.Add("scene.outliner", "Outliner", () => outliner.Open = !outliner.Open, "View", "Ctrl+Shift+O",
-            group: "5-panels", order: 1, isChecked: () => outliner.Open);
+        c.Add("scene.outliner", "Scene", () => ctx.ToggleDock(Outliner.PanelId), "View", "Ctrl+Shift+O",
+            group: "5-panels", order: 1, isChecked: () => ctx.DockShowing(Outliner.PanelId));
+        c.Add("scene.place", "Place", () => ctx.ToggleDock(PlacePanel.PanelId), "View", null,
+            group: "5-panels", order: 2, isChecked: () => ctx.DockShowing(PlacePanel.PanelId));
         c.Add("scene.group", "Group", () => Group(ctx), "Edit", "Ctrl+G", ObjectsSelected, "4-organize", 0);
         c.Add("scene.ungroup", "Ungroup", () => Ungroup(ctx), "Edit", "Ctrl+Alt+G",
             () => ObjectsSelected() && ctx.Sel.MeshIds().Any(id => GroupOps.GroupOf(ctx.Doc, id) != null), "4-organize", 1);

@@ -19,7 +19,7 @@ namespace Chip.Editor.Features.Dressing;
 public sealed class DressWithPopup
 {
     const string PopupId = "##dressWith";
-    bool _openRequested, _focus;
+    bool _openRequested, _focus, _highlighting;
     Vector2 _at;
     string _query = "";
     int _index;
@@ -51,7 +51,10 @@ public sealed class DressWithPopup
         if (!ImGui.BeginPopup(PopupId, ImGuiWindowFlags.NoMove))
         {
             ImGui.PopStyleVar();
-            if (feature.HighlightRule != null && !feature.Window.Open) feature.HighlightRule = null;
+            // However the popup closed (a click outside included), take down the highlight it put up. The Dressing tab
+            // puts its own back next frame if it has one.
+            if (_highlighting) feature.HighlightRule = null;
+            _highlighting = false;
             return;
         }
         bool justOpened = _focus;
@@ -124,6 +127,7 @@ public sealed class DressWithPopup
         KeyHints([("Enter", "dress or take out"), ("Esc", "close")]);
         ImGui.PopStyleColor();
         feature.HighlightRule = hovered ?? (usable > 0 ? rows[_index].Rule?.Id : null);
+        _highlighting = true;
 
         bool toggle = !justOpened && ctx.Commands.Find("dressing.dressWith") is { } self && self.Hotkeys.Any(h => h.IsPressed());
         bool close = toggle || ImGui.IsKeyPressed(ImGuiKey.Escape);
@@ -151,7 +155,7 @@ public sealed class DressWithPopup
 
     static string Tooltip(Row row)
     {
-        if (row.Total == 0) return "Nothing selected can take this rule (see its Faces filter in Dressing rules).";
+        if (row.Total == 0) return "Nothing selected can take this rule (see its Faces filter in the Dressing tab).";
         string tag = row.Tag;
         string shared = row.Shared != null ? $"\nThe tag {tag} also feeds {row.Shared}." : "";
         if (row.Recipe != null) return $"{row.Recipe.Description}\nAdds the rule {row.Recipe.Id} and tags the selection {row.Recipe.Tag}.{shared}";
@@ -246,7 +250,7 @@ public sealed class DressWithPopup
                 () => changed = DressingOps.Dress(ctx.Doc, ctx.Sel, id, recipe.Tag, recipe.MeshTag, faces, true)))
             return false;
         feature.Window.Selected = id;
-        ctx.Status($"Added the rule {id} and tagged {(recipe.MeshTag ? SelectMode.Object : SelectMode.Face).Count(changed)} {recipe.Tag}. Tune it in Dressing rules (Ctrl+Shift+D).");
+        ctx.Status($"Added the rule {id} and tagged {(recipe.MeshTag ? SelectMode.Object : SelectMode.Face).Count(changed)} {recipe.Tag}. Tune it in the Dressing tab (Ctrl+Shift+D).");
         return true;
     }
 

@@ -12,22 +12,40 @@ using static Chip.Editor.UI.Widgets;
 namespace Chip.Editor.Features.Dressing;
 
 /// <summary>
-/// Tools > Dressing rules (Ctrl+Shift+D): the level's rules in a list (switch, name, kind, how much it made), grouped by
-/// the style they come from, and the selected rule's settings beside it. Add rules from recipes, rename, duplicate,
-/// delete, pick styles to build on, edit shared values, save the level's rules as a style. Every change is written to the
-/// rules file as one undo step, so the file stays the source of truth agents and other tools edit. Hovering a rule
-/// highlights what it takes in the viewport.
+/// The Dressing tab of the dock (Ctrl+Shift+D), stacked for a tall, narrow panel: the dressed/blockout switch and the
+/// rules file's commands, the styles the level builds on, the level's rules in a list (switch, name, kind, how much it
+/// made) grouped by the style they come from, and under it the selected rule's settings. Drag the bar between them to
+/// give either more room. Add rules from recipes, rename, duplicate, delete, edit shared values, save the level's rules
+/// as a style. Every change is written to the rules file as one undo step, so the file stays the source of truth agents
+/// and other tools edit. Hovering a rule highlights what it takes in the viewport.
 /// </summary>
-public sealed class DressingRulesWindow(DressingFeature feature)
+public sealed class DressingPanel(DressingFeature feature, EditorContext context) : IDockPanel
 {
-    public bool Open;
-    bool _wasOpen, _editStyle, _highlightSelected, _highlighting;
-    string? _selected;
+    public const string PanelId = "dressing";
+    bool _editStyle, _highlightSelected, _highlighting;
+    string? _selected, _hovered;
     const string VarsRow = "\0vars";
     string _renameDraft = "", _filter = "";
     string? _renameFor, _noteDraft;
-    float _listW;
+    float _listH;
     readonly RuleFields _fields = new(feature);
+
+    public string Id => PanelId;
+    public string Title => "Dressing";
+    public Icon Icon => Icon.Brush;
+    public int Order => 30;
+    public string? Command => "dressing.rules";
+
+    /// <summary>Whether the tab is on screen; setting it opens the dock on it (or collapses the dock).</summary>
+    public bool Open
+    {
+        get => context.DockShowing(PanelId);
+        set
+        {
+            if (value) context.ShowDock(PanelId);
+            else if (Open) context.DockOpen = false;
+        }
+    }
     IReadOnlyList<string> _levelTags = [];
     int _tagsVersion = -1;
 
@@ -51,36 +69,29 @@ public sealed class DressingRulesWindow(DressingFeature feature)
         _selected = id;
     }
 
-    public void Draw(EditorContext ctx)
+    /// <summary>The dock tab. What the list's hovered row is goes to <see cref="Update"/>, which highlights it.</summary>
+    public void Draw(EditorContext ctx) => _hovered = DrawContents(ctx);
+
+    /// <summary>Per frame, after the dock: highlights the hovered (or, with Highlight on, selected) rule while the tab shows.</summary>
+    public void Update(EditorContext ctx)
     {
         if (!Open)
         {
-            _wasOpen = false;
+            _hovered = null;
             if (_highlighting) { feature.HighlightRule = null; _highlighting = false; }
             return;
         }
-        var vp = ctx.ViewportSize;
-        ImGui.SetNextWindowPos(ctx.ViewportOrigin + new Vector2(MathF.Max(Theme.Px(10), vp.X - Theme.Px(760)), Theme.Px(56)), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(Theme.Px(720, 560), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSizeConstraints(Theme.Px(520, 320), new Vector2(float.MaxValue));
-        if (!_wasOpen) ImGui.SetNextWindowFocus();
-        _wasOpen = true;
-        bool open = true;
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Theme.Px(10, 8));
-        bool visible = ImGui.Begin("Dressing rules###dressingRules", ref open, ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoScrollbar);
-        ImGui.PopStyleVar();
-        string? hovered = null;
-        if (visible) hovered = DrawContents(ctx);
-        ImGui.End();
-        if (!open) Open = false;
-        var highlight = hovered ?? (_highlightSelected && _selected != VarsRow ? _selected : null);
+        var highlight = _hovered ?? (_highlightSelected && _selected != VarsRow ? _selected : null);
         if (highlight != null || _highlighting) feature.HighlightRule = highlight;
         _highlighting = highlight != null;
+        _hovered = null;
     }
 
     string? DrawContents(EditorContext ctx)
     {
-        if (feature.Workspace() is not { } ws)
+        var ws = feature.Workspace();
+        TopBar(ctx, ws);
+        if (ws == null)
         {
             Wrapped("Dressing rules live in a file beside the level (level.dressing.json), so save the level first.", Theme.TextDim);
             ImGui.Dummy(Theme.Px(0, 4));
@@ -110,19 +121,19 @@ public sealed class DressingRulesWindow(DressingFeature feature)
         }
         if (_selected == null || (_selected != VarsRow && ws.Find(_selected) == null)) _selected = ws.Rules[0].Id;
 
+        // Stacked: the list on top, the bar, then the selected rule filling the rest above a one-line summary.
         float footer = ImGui.GetFrameHeightWithSpacing();
-        float avail = ImGui.GetContentRegionAvail().X;
-        if (_listW <= 0) _listW = MathF.Min(Theme.Px(250), avail * 0.38f);
-        _listW = Math.Clamp(_listW, Theme.Px(170), avail * 0.6f);
         float bodyH = ImGui.GetContentRegionAvail().Y - footer;
-        string? hovered;
-        ImGui.BeginGroup();
-        hovered = ListPane(ctx, ws, level, new Vector2(_listW, bodyH));
-        ImGui.EndGroup();
-        ImGui.SameLine(0, 0);
-        Splitter(bodyH);
-        ImGui.SameLine(0, 0);
-        if (ImGui.BeginChild("##details", new Vector2(0, bodyH), ImGuiChildFlags.AlwaysUseWindowPadding))
+        float minList = Theme.Px(110), minDetails = Theme.Px(160);
+        if (_listH <= 0) _listH = bodyH * 0.38f;
+        _listH = Math.Clamp(_listH, minList, MathF.Max(minList, bodyH - minDetails));
+        string? hovered = ListPane(ctx, ws, level, new Vector2(ImGui.GetContentRegionAvail().X, _listH));
+        Splitter();
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Bg with { W = 0.35f });
+        bool details = ImGui.BeginChild("##details", new Vector2(0, MathF.Max(Theme.Px(80), ImGui.GetContentRegionAvail().Y - footer)),
+            ImGuiChildFlags.AlwaysUseWindowPadding);
+        ImGui.PopStyleColor();
+        if (details)
         {
             ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Theme.Px(6, 5));
             if (_selected == VarsRow) Vars(ctx, ws);
@@ -140,18 +151,62 @@ public sealed class DressingRulesWindow(DressingFeature feature)
         return hovered;
     }
 
-    /// <summary>A thin bar between the panes; drag it to resize the list.</summary>
-    void Splitter(float height)
+    /// <summary>A thin bar between the list and the rule; drag it to give either more room.</summary>
+    void Splitter()
     {
-        float w = Theme.Px(8);
-        ImGui.InvisibleButton("##split", new Vector2(w, height));
+        float h = Theme.Px(10);
+        ImGui.InvisibleButton("##split", new Vector2(ImGui.GetContentRegionAvail().X, h));
         bool active = ImGui.IsItemActive(), hover = ImGui.IsItemHovered();
-        if (active) _listW += ImGui.GetIO().MouseDelta.X;
-        if (active || hover) ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEW);
+        if (active) _listH += ImGui.GetIO().MouseDelta.Y;
+        if (active || hover) ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeNS);
         var (a, b) = (ImGui.GetItemRectMin(), ImGui.GetItemRectMax());
-        float x = MathF.Round((a.X + b.X) * 0.5f);
-        ImGui.GetWindowDrawList().AddLine(new Vector2(x, a.Y), new Vector2(x, b.Y),
-            ImGui.ColorConvertFloat4ToU32(active || hover ? Theme.FrameActive : Theme.Border), Theme.Px(1));
+        float y = MathF.Round((a.Y + b.Y) * 0.5f);
+        var dl = ImGui.GetWindowDrawList();
+        float cx = (a.X + b.X) * 0.5f, grip = Theme.Px(14);
+        uint col = ImGui.ColorConvertFloat4ToU32(active || hover ? Theme.TextDim : Theme.FrameActive);
+        dl.AddLine(new Vector2(cx - grip, y - Theme.Px(1.5f)), new Vector2(cx + grip, y - Theme.Px(1.5f)), col, Theme.Px(1));
+        dl.AddLine(new Vector2(cx - grip, y + Theme.Px(1.5f)), new Vector2(cx + grip, y + Theme.Px(1.5f)), col, Theme.Px(1));
+    }
+
+    /// <summary>
+    /// Dressed / Blockout (what the viewport shows), then the rules file's commands in a ⋯ menu: open the JSON, a new
+    /// file, the sample, bake, save as a style.
+    /// </summary>
+    void TopBar(EditorContext ctx, RulesWorkspace? ws)
+    {
+        float more = ImGui.GetFrameHeight();
+        if (feature.Current() != null)
+        {
+            int view = TextSegments("##view", [("Dressed", "Show the dressed level; you still edit the blockout  (`)"),
+                ("Blockout", "Show the bare blockout. Export still includes the dressing  (`)")], ctx.ShowDressed ? 0 : 1);
+            if (view >= 0 && (view == 0) != ctx.ShowDressed) ctx.Commands.Execute("view.dressed");
+            ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - more);
+        }
+        else
+        {
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextColored(Theme.TextDim, "No rules yet");
+            ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - more);
+        }
+        if (IconButton("more", Icon.Dots, "Tag colours, and the rules file: open the JSON, new file, the sample, bake, save as a style", more))
+            ImGui.OpenPopup("##dressingMenu");
+        if (ImGui.BeginPopup("##dressingMenu"))
+        {
+            if (ImGui.MenuItem("Tag colours", null, feature.TagColours)) ctx.Commands.Execute("view.tagColours");
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort)) ImGui.SetTooltip("Tint every tagged face by its tag, so untagged surfaces stand out");
+            ImGui.Separator();
+            if (ImGui.MenuItem("Open JSON", null, false, ws is { CanEdit: true } || feature.Current() != null)) feature.Open();
+            if (ws != null && ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort))
+                ImGui.SetTooltip($"{ws.MainPath}\nThe rules as a file, for hand edits and agents. Chip reloads it whenever it changes.\nCheck it headlessly: Chip --rules-check <level>.chip");
+            foreach (var id in new[] { "dressing.new", "dressing.sample", "dressing.bake" })
+                if (ctx.Commands.Find(id) is { } c && ImGui.MenuItem(c.Label, c.HotkeyText, false, c.Enabled)) c.Execute();
+            bool canSave = ws is { CanEdit: true } && ws.Main!.RuleIds.Any(ws.Main.Defines);
+            if (ImGui.MenuItem("Save as style...", null, false, canSave)) SaveAsStyle(ctx, ws!);
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort | ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Move this level's own rules into a new style file and use it, so other levels can share them");
+            ImGui.EndPopup();
+        }
+        ImGui.Dummy(Theme.Px(0, 2));
     }
 
     static void Wrapped(string text, Vector4 color)
@@ -169,7 +224,7 @@ public sealed class DressingRulesWindow(DressingFeature feature)
         ImGui.TextColored(Theme.TextDim, "Styles");
         Tip("Shared rules files this level builds on. Their rules apply here; what you change applies to this level only, unless you choose to edit the shared style.");
         var imports = ws.Main!.Imports;
-        float right = ImGui.GetWindowContentRegionMax().X - (ImGui.CalcTextSize("Open JSON").X + ImGui.GetStyle().FramePadding.X * 2 + ImGui.GetStyle().ItemSpacing.X);
+        float right = ImGui.GetWindowContentRegionMax().X;
         foreach (var (import, i) in imports.Select((s, i) => (s, i)))
         {
             string name = StyleName(import);
@@ -184,8 +239,10 @@ public sealed class DressingRulesWindow(DressingFeature feature)
                 feature.EditRules($"Remove style {name}", w2 => { w2.SetImports(imports.Where((_, j) => j != i)); return true; });
             ImGui.PopID();
         }
+        string add = imports.Count == 0 ? "+ Use a style" : "+";
         ImGui.SameLine();
-        if (ImGui.Button(imports.Count == 0 ? "+ Use a style" : "+")) ImGui.OpenPopup("##styles");
+        if (ImGui.GetCursorPosX() + ImGui.CalcTextSize(add).X + ImGui.GetStyle().FramePadding.X * 2 > right) ImGui.NewLine();
+        if (ImGui.Button(add)) ImGui.OpenPopup("##styles");
         Tip("Build on a shared rules file, so levels share one look");
         if (ImGui.BeginPopup("##styles"))
         {
@@ -206,9 +263,6 @@ public sealed class DressingRulesWindow(DressingFeature feature)
             ImGui.EndPopup();
         }
         if (imports.Count == 0) _editStyle = false;
-        ImGui.SameLine(MathF.Max(ImGui.GetCursorPosX(), right + ImGui.GetStyle().ItemSpacing.X));
-        if (ImGui.Button("Open JSON")) feature.Open();
-        Tip($"{ws.MainPath}\nThe rules as a file, for hand edits and agents. Chip reloads it whenever it changes. Check it headlessly: Chip --rules-check <level>.chip");
     }
 
     void OpenFile(string path)
@@ -300,7 +354,7 @@ public sealed class DressingRulesWindow(DressingFeature feature)
             ImGui.InputTextWithHint("##filter", "Filter rules", ref _filter, 64);
         }
         else _filter = "";
-        float pinned = ImGui.GetFrameHeightWithSpacing() * (ws.Vars.Count > 0 ? 2 : 1);
+        float pinned = ImGui.GetFrameHeightWithSpacing();
         float listH = size.Y - pinned - (ws.Rules.Count > 6 ? ImGui.GetFrameHeightWithSpacing() : 0);
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Bg);
         if (ImGui.BeginChild("##rules", new Vector2(size.X, listH)))
@@ -324,16 +378,18 @@ public sealed class DressingRulesWindow(DressingFeature feature)
         ImGui.EndChild();
         ImGui.PopStyleColor();
 
-        // Pinned under the list, so they never scroll away.
+        // Pinned under the list on one row, so they never scroll away.
+        float half = ws.Vars.Count > 0 ? MathF.Floor((size.X - ImGui.GetStyle().ItemSpacing.X) * 0.5f) : size.X;
         if (ws.Vars.Count > 0)
         {
             bool sel = _selected == VarsRow;
             if (sel) ImGui.PushStyleColor(ImGuiCol.Button, Theme.Raised);
-            if (ImGui.Button($"Shared values ({ws.Vars.Count})", new Vector2(size.X, 0))) _selected = VarsRow;
+            if (ImGui.Button($"Shared ({ws.Vars.Count})", new Vector2(half, 0))) _selected = VarsRow;
             if (sel) ImGui.PopStyleColor();
-            Tip("Values rules use by name, e.g. one trim material for every trim rule");
+            Tip("Shared values: values rules use by name, e.g. one trim material for every trim rule");
+            ImGui.SameLine();
         }
-        if (ImGui.Button("+ Add rule", new Vector2(size.X, 0))) ImGui.OpenPopup("##add");
+        if (ImGui.Button("+ Add rule", new Vector2(ws.Vars.Count > 0 ? -1 : size.X, 0))) ImGui.OpenPopup("##add");
         Tip("Add a rule from a recipe. Or select geometry and use Dress with (Ctrl+Shift+T), which also tags it.");
         if (ImGui.BeginPopup("##add"))
         {
@@ -407,7 +463,13 @@ public sealed class DressingRulesWindow(DressingFeature feature)
 
     // ---- Details ----
 
-    static float LabelW => Theme.Px(108);
+    static float LabelW => Theme.Px(92);
+
+    /// <summary>After a row's label: its field beside it, or on the next line in a narrow panel (<see cref="RuleFields.StackLabels"/>).</summary>
+    static void AfterLabel()
+    {
+        if (!RuleFields.StackLabels(RuleFields.ContentWidth)) ImGui.SameLine(LabelW);
+    }
 
     void Details(EditorContext ctx, RulesWorkspace ws, RuleEntry rule, DressedLevel? level)
     {
@@ -426,9 +488,9 @@ public sealed class DressingRulesWindow(DressingFeature feature)
         {
             ImGui.AlignTextToFramePadding();
             ImGui.TextColored(Theme.TextDim, "Changes to");
-            ImGui.SameLine(LabelW);
+            AfterLabel();
             int target = TextSegments("##target", [("This level", "Changes apply to this level only. Values that differ from the style show in orange."),
-                ($"Shared style ({StyleName(rule.DefinedIn)})", "Changes go to the style file and apply to every level that uses it.")], style ? 1 : 0);
+                ("Shared style", $"Changes go to the style file ({StyleName(rule.DefinedIn)}) and apply to every level that uses it.")], style ? 1 : 0);
             if (target >= 0) _editStyle = target == 1;
         }
         ImGui.TextColored(Theme.TextDisabled, $"Saves to {Path.GetFileName(style ? rule.DefinedIn : ws.MainPath)}");
@@ -457,7 +519,7 @@ public sealed class DressingRulesWindow(DressingFeature feature)
         bool canRename = rule.Local || style;
         ImGui.AlignTextToFramePadding();
         ImGui.TextColored(Theme.TextDim, "Name");
-        ImGui.SameLine(LabelW);
+        AfterLabel();
         if (!canRename) ImGui.BeginDisabled();
         ImGui.SetNextItemWidth(-Theme.Px(24) - ImGui.GetStyle().ItemSpacing.X);
         ImGui.InputText("##name", ref _renameDraft, Core.Geometry.TagSet.MaxLength + 8);
@@ -467,7 +529,7 @@ public sealed class DressingRulesWindow(DressingFeature feature)
             : "A style's rule: choose \"Shared style\" above to rename it (other levels using the style keep the old name)");
         ImGui.AlignTextToFramePadding();
         ImGui.TextColored(Theme.TextDim, "Note");
-        ImGui.SameLine(LabelW);
+        AfterLabel();
         string note = _noteDraft ?? rule.Note ?? "";
         ImGui.SetNextItemWidth(-Theme.Px(24) - ImGui.GetStyle().ItemSpacing.X);
         if (ImGui.InputTextWithHint("##note", "Designer note", ref note, 512)) _noteDraft = note;
@@ -575,7 +637,7 @@ public sealed class DressingRulesWindow(DressingFeature feature)
             ImGui.TextColored(overridden ? Theme.Accent : Theme.TextDim, name);
             Tip((fromStyle ? $"From the style {StyleName(definedIn)}" : overridden ? "This level's value (the style has another)" : "Set in this level")
                 + (users.Count == 0 ? "\nNo rule uses it." : $"\nUsed by {string.Join(", ", users.Select(u => u.Where).Distinct())}"));
-            ImGui.SameLine(LabelW);
+            AfterLabel();
             float w = ImGui.GetContentRegionAvail().X - Theme.Px(24) - ImGui.GetStyle().ItemSpacing.X;
             ImGui.SetNextItemWidth(w);
             double? number = ParamJson.Number(value);
@@ -658,13 +720,6 @@ public sealed class DressingRulesWindow(DressingFeature feature)
             ImGui.SameLine(0, Theme.Px(16));
             ImGui.TextColored(Theme.TextDim, $"Saved {saved.Files}");
         }
-        bool canSave = ws.Main!.RuleIds.Any(ws.Main.Defines);
-        float sw = ImGui.CalcTextSize("Save as style...").X + ImGui.GetStyle().FramePadding.X * 2;
-        ImGui.SameLine(MathF.Max(ImGui.GetCursorPosX(), ImGui.GetWindowContentRegionMax().X - sw));
-        if (!canSave) ImGui.BeginDisabled();
-        if (ImGui.Button("Save as style...")) SaveAsStyle(ctx, ws);
-        if (!canSave) ImGui.EndDisabled();
-        Tip("Move this level's own rules into a new style file and use it, so other levels can share them");
     }
 
     void SaveAsStyle(EditorContext ctx, RulesWorkspace ws)

@@ -191,6 +191,8 @@ public sealed partial class EditorApp
 
         PageGap();
         Widgets.Heading("Panels");
+        PrefRow("Side panel");
+        ImGui.Text($"{s.DockWidth:0} px");
         PrefRow("Tool strip");
         ImGui.Text($"{s.ToolStripWidth:0} px");
         PrefRow("Inspector");

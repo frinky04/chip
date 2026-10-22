@@ -11,7 +11,7 @@ using static Chip.Editor.UI.Widgets;
 namespace Chip.Editor.Features.Dressing;
 
 /// <summary>
-/// The Dressing rules window's fields for one rule: every parameter of its kind in words and units (lengths in cm, angles
+/// The Dressing tab's fields for one rule: every parameter of its kind in words and units (lengths in cm, angles
 /// in degrees), "Where" instead of edges + onto, tags as chips, a profile picker with a preview, prop editors. Values are
 /// read from the rule as written (styles merged, the level's changes laid over) and each change is one undo step written
 /// to the rules file. A value the level changes from its style shows in orange with a reset; a value taken from a shared
@@ -30,11 +30,31 @@ sealed class RuleFields(DressingFeature feature)
     bool _style;
     IReadOnlyList<string> _levelTags = [];
 
-    static float LabelW => Theme.Px(108);
+    static float LabelW => Theme.Px(92);
+    bool _stacked;
+
+    /// <summary>
+    /// Whether a panel this wide puts each label on its own line above a full-width field (the dock at its usual width)
+    /// rather than in a column beside it.
+    /// </summary>
+    public static bool StackLabels(float width) => width < Theme.Px(340);
+
+    /// <summary>The current window's content width, whatever the cursor's position.</summary>
+    public static float ContentWidth => ImGui.GetWindowContentRegionMax().X - ImGui.GetWindowContentRegionMin().X;
+
+    /// <summary>Where fields start: the label column, or the left edge when labels are stacked.</summary>
+    float FieldX => _stacked ? ImGui.GetStyle().WindowPadding.X : LabelW;
+
+    /// <summary>After a row's label: the field goes beside it, or (stacked) on the next line.</summary>
+    void AfterLabel()
+    {
+        if (!_stacked) ImGui.SameLine(LabelW);
+    }
 
     public void Draw(EditorContext ctx, RulesWorkspace ws, RuleEntry rule, bool style, IReadOnlyList<string> levelTags)
     {
         _ctx = ctx; _ws = ws; _rule = rule; _style = style; _levelTags = levelTags;
+        _stacked = StackLabels(ContentWidth);
         if (rule.KindInfo is not { } kind)
         {
             ImGui.TextColored(Theme.Error, rule.Kind == null ? "This rule has no kind." : $"Unknown kind \"{rule.Kind}\".");
@@ -86,7 +106,7 @@ sealed class RuleFields(DressingFeature feature)
         ImGui.AlignTextToFramePadding();
         ImGui.TextColored(changed ? Theme.Accent : Theme.TextDim, spec.DisplayLabel);
         Tip(spec.Description + (spec.Required ? "\nRequired." : "") + (changed ? "\nChanged in this level (orange): × puts the style's value back." : ""));
-        ImGui.SameLine(LabelW);
+        AfterLabel();
     }
 
     static float SideW => Theme.Px(24);
@@ -302,7 +322,7 @@ sealed class RuleFields(DressingFeature feature)
         bool changed = _rule.LevelKeys.Contains("edges") || _rule.LevelKeys.Contains("onto");
         ImGui.TextColored(changed ? Theme.Accent : Theme.TextDim, "Where");
         Tip("Which edges of the faces get it.\n" + string.Join("\n", EdgePlaces.All.Select(p => $"{p.Label}: {p.Tip}")));
-        ImGui.SameLine(LabelW);
+        AfterLabel();
         bool locked = Locked("edges") || Locked("onto");
         if (locked) ImGui.BeginDisabled();
         ImGui.SetNextItemWidth(Avail());
@@ -405,7 +425,7 @@ sealed class RuleFields(DressingFeature feature)
             string text = $"{tags[i]}  ×";
             float w = ImGui.CalcTextSize(text).X + ImGui.GetStyle().FramePadding.X * 2;
             if (i > 0) { ImGui.SameLine(); if (ImGui.GetCursorPosX() + w > right) ImGui.NewLine(); }
-            if (i > 0 && ImGui.GetCursorPosX() < LabelW) ImGui.SetCursorPosX(LabelW);
+            if (i > 0 && ImGui.GetCursorPosX() < FieldX) ImGui.SetCursorPosX(FieldX);
             var c = DressingFeature.TagColour(tags[i]) with { W = 0.35f };
             ImGui.PushStyleColor(ImGuiCol.Button, c);
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, c with { W = 0.55f });
@@ -473,7 +493,9 @@ sealed class RuleFields(DressingFeature feature)
 
         var loaded = feature.Current()?.Rules.Rules.FirstOrDefault(r => r.Id == _rule.Id)?.Values.GetValueOrDefault(spec.Name) as Profile;
         float preview = Theme.Px(84);
-        float fieldW = MathF.Max(Theme.Px(120), w - preview - ImGui.GetStyle().ItemSpacing.X);
+        // Too narrow for the preview beside the fields (the dock): the fields take the width and the preview goes under them.
+        bool below = w - preview - ImGui.GetStyle().ItemSpacing.X < Theme.Px(170);
+        float fieldW = below ? w : MathF.Max(Theme.Px(120), w - preview - ImGui.GetStyle().ItemSpacing.X);
         var previewAt = ImGui.GetCursorScreenPos() + new Vector2(fieldW + ImGui.GetStyle().ItemSpacing.X, 0);
         ImGui.BeginGroup();
         ImGui.SetNextItemWidth(fieldW);
@@ -546,6 +568,12 @@ sealed class RuleFields(DressingFeature feature)
                 break;
         }
         ImGui.EndGroup();
+        if (below)
+        {
+            ImGui.SetCursorPosX(FieldX);
+            DrawProfile(ImGui.GetCursorScreenPos(), MathF.Min(fieldW, Theme.Px(120)), loaded);
+            return;
+        }
         float groupBottom = ImGui.GetItemRectMax().Y;
         float left = ImGui.GetItemRectMin().X;
         DrawProfile(previewAt, preview, loaded);
@@ -662,13 +690,23 @@ sealed class RuleFields(DressingFeature feature)
         }
         float rest = w - kindW - sp - removeW;
         string? missing = null;
+        string browse = "Browse...";
+        float browseW = ImGui.CalcTextSize(browse).X + ImGui.GetStyle().FramePadding.X * 2;
+        // Too narrow for the path beside the kind (the dock): the path and Browse get a line of their own, under it.
+        bool pathBelow = kind == PropKind.File && rest - browseW - sp < Theme.Px(90);
+        if (pathBelow && remove != null)
+        {
+            ImGui.SameLine(x + w - Theme.Px(24));
+            if (ImGui.Button("×##remove", new Vector2(Theme.Px(24), 0))) remove();
+            Tip("Remove this prop");
+            remove = null; // drawn
+        }
         if (kind == PropKind.File)
         {
-            ImGui.SameLine();
-            string browse = "Browse...";
-            float browseW = ImGui.CalcTextSize(browse).X + ImGui.GetStyle().FramePadding.X * 2;
+            if (pathBelow) ImGui.SetCursorPosX(x);
+            else ImGui.SameLine();
             string path = ParamJson.Text(value) ?? "";
-            ImGui.SetNextItemWidth(rest - browseW - sp);
+            ImGui.SetNextItemWidth((pathBelow ? w : rest) - browseW - sp);
             if (TextField("##file", path, "props/thing.glb", out var t))
             {
                 if (ParamJson.IsPropFile(t)) set(JsonValue.Create(t));

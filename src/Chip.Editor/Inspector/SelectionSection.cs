@@ -14,17 +14,12 @@ public sealed class SelectionSection : IInspectorSection
 
     public string Id => "selection";
     public int Order => 100;
-    public bool Visible(EditorContext ctx) => true;
+    public bool Visible(EditorContext ctx) => !ctx.Sel.IsEmpty;
 
     public void Draw(EditorContext ctx)
     {
         var sel = ctx.Sel;
-        Heading("Selection", sel.IsEmpty ? null : sel.Mode.Count(sel.Count));
-        if (sel.IsEmpty)
-        {
-            ImGui.TextColored(Theme.TextDim, $"Click or drag to select {sel.Mode.Plural()}");
-            return;
-        }
+        if (!Heading("Selection", sel.Mode.Count(sel.Count))) return;
         if (!_bounds.IsCurrent(ctx.Session)) _bounds.Store(ctx.Session, ctx.SelectionBounds());
         if (_bounds.Value is not { } b) return;
         var min = b.Min;

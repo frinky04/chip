@@ -16,7 +16,7 @@ public sealed record RuleEntry(string Id, string? Kind, JsonObject Raw, JsonObje
 }
 
 /// <summary>
-/// The level's rules file and the style files it imports, as editable documents, for the Dressing rules window. Edits
+/// The level's rules file and the style files it imports, as editable documents, for the editor's Dressing tab. Edits
 /// go to the level file: a rule the level defines is changed in place, a rule from a style is changed by a patch in the
 /// level file (only the keys that differ; <see cref="Reset"/> removes them). With <c>style: true</c> an edit goes to the
 /// style file that defines the rule instead. <see cref="Changes"/> gives the new text of every file that changed; the

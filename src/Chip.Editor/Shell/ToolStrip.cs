@@ -5,7 +5,7 @@ using static Chip.Editor.UI.Widgets;
 
 namespace Chip.Editor;
 
-/// <summary>Left strip: registered tools, then the gizmo modes of the default tool.</summary>
+/// <summary>The tool strip beside the viewport: registered tools in groups, then the gizmo modes of the default tool.</summary>
 public sealed partial class EditorApp
 {
     static readonly (string Command, Icon Icon)[] TransformButtons =
@@ -24,8 +24,12 @@ public sealed partial class EditorApp
         var btn = new Vector2(side, side);
         float left = MathF.Round((size.X - side) * 0.5f);
 
+        // Tools group by their order's tens: select, create (block, shapes, entity), texture, cut. A hairline between groups.
+        int? group = null;
         foreach (var tool in Ctx.Tools)
         {
+            if (group is { } g && g != tool.Order / 10) StripGap();
+            group = tool.Order / 10;
             // The command's current binding (tooltip only), so a remapped tool shows its new key.
             string hotkey = Ctx.Commands.Find($"tool.{tool.Id}")?.HotkeyText ?? "";
             ImGui.SetCursorPosX(left);

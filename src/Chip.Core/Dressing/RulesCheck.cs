@@ -245,7 +245,7 @@ public static class DressingSchema
         doc.SetRule("baseboard", baseboard);
         var bevel = Recipes.Find("corner-bevel")!.Rule();
         bevel["enabled"] = false;
-        bevel["note"] = "Softens outside corners between wall faces. Switch it on in the Dressing rules window to try it.";
+        bevel["note"] = "Softens outside corners between wall faces. Switch it on in the Dressing tab to try it.";
         doc.SetRule("corner-bevel", bevel);
         return doc.Write();
     }

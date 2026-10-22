@@ -57,7 +57,9 @@ bool bench = args.Length > 0 && args[0] == "--bench";
 bool shot = args.Length >= 3 && args[0] == "--shot";
 var options = WindowOptions.Default with
 {
-    Size = bench ? new Vector2D<int>(1600, 900) : shot ? new Vector2D<int>((int)(1600 * (Chip.Editor.UI.Dpi.Override ?? 1)), (int)(940 * (Chip.Editor.UI.Dpi.Override ?? 1))) : new Vector2D<int>(1600, 940),
+    // Bench and shots scale the backbuffer with CHIP_UI_SCALE, so every scale lays out the same panels (the dock, say).
+    Size = bench ? new Vector2D<int>((int)(1600 * (Chip.Editor.UI.Dpi.Override ?? 1)), (int)(900 * (Chip.Editor.UI.Dpi.Override ?? 1)))
+        : shot ? new Vector2D<int>((int)(1600 * (Chip.Editor.UI.Dpi.Override ?? 1)), (int)(940 * (Chip.Editor.UI.Dpi.Override ?? 1))) : new Vector2D<int>(1600, 940),
     Title = "Chip",
     VSync = !bench,
     API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.ForwardCompatible, new APIVersion(3, 3)),

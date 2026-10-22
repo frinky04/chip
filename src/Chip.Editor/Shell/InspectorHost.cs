@@ -4,7 +4,10 @@ using ImGuiNET;
 
 namespace Chip.Editor;
 
-/// <summary>Right panel: every visible registered inspector section, in order, separated by hairlines.</summary>
+/// <summary>
+/// Right panel: every visible registered inspector section, in order, separated by hairlines. A section's title bar
+/// folds it; folded sections are remembered in settings.
+/// </summary>
 public sealed partial class EditorApp
 {
     void DrawInspector(Vector2 pos, Vector2 size)
@@ -15,6 +18,7 @@ public sealed partial class EditorApp
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Theme.Px(12, 0));
         ImGui.Begin("##inspector", FixedPanel);
         ImGui.PushItemWidth(-1);
+        Widgets.Folded = _settings.Current.CollapsedSections;
         bool first = true;
         foreach (var section in Ctx.Sections)
         {
@@ -23,7 +27,7 @@ public sealed partial class EditorApp
             if (!first) Widgets.SectionDivider();
             first = false;
             ImGui.PushID(section.Id);
-            Widgets.BeginDockSection();
+            Widgets.BeginDockSection(section.Id);
             section.Draw(Ctx);
             Widgets.EndDockSection();
             _bench?.RecordSection(section.Id, started);
@@ -33,5 +37,10 @@ public sealed partial class EditorApp
         ImGui.PopItemWidth();
         ImGui.End();
         ImGui.PopStyleVar();
+        if (Widgets.FoldChanged)
+        {
+            Widgets.FoldChanged = false;
+            _settings.Save();
+        }
     }
 }

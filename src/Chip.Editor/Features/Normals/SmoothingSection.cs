@@ -51,7 +51,7 @@ public sealed class SmoothingSection(NormalsFeature feature) : IInspectorSection
             _counts.Store(ctx.Session, (softCount, totalCount));
         }
         var (soft, total) = _counts.Value;
-        Heading("Smoothing", total == 0 ? null : soft == 0 ? "all hard" : soft == total ? "all soft" : $"{soft} of {total} soft");
+        if (!Heading("Smoothing", total == 0 ? null : soft == 0 ? "all hard" : soft == total ? "all soft" : $"{soft} of {total} soft")) return;
 
         var style = ImGui.GetStyle();
         float w = (ImGui.GetContentRegionAvail().X - style.ItemSpacing.X * 2) / 3;

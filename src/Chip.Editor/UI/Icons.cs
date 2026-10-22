@@ -8,7 +8,9 @@ public enum Icon { Select, Block, Vertex, Edge, Face, Object, Move, Rotate, Scal
     Texture, Repeat, Grid, Coordinates, Photo, Ruler, KeepRatio, TreatAsOne, Lock,
     JustifyLeft, JustifyRight, JustifyTop, JustifyBottom, JustifyCenter, FitBoth, FitWidth, FitHeight,
     // stream H: outliner and entities
-    Folder, EyeOff, LockOpen, MapPin, Bulb, Lamp, User, Target, Flag, Box, Plus, Trash, ListTree, ChevronRight, ChevronDown }
+    Folder, EyeOff, LockOpen, MapPin, Bulb, Lamp, User, Target, Flag, Box, Plus, Trash, ListTree, ChevronRight, ChevronDown,
+    // the side dock and menu bar
+    Palette, Brush, Search, Dots, SidebarCollapse, SidebarExpand, FileExport }
 
 /// <summary>Tool glyphs from the Tabler icon font (MIT), drawn on whole pixels so they stay crisp at small sizes.</summary>
 public static class Icons
@@ -70,6 +72,13 @@ public static class Icons
         [Icon.ListTree] = '﫺',      // list-tree
         [Icon.ChevronRight] = '',  // chevron-right
         [Icon.ChevronDown] = '',   // chevron-down
+        [Icon.Palette] = '',         // palette
+        [Icon.Brush] = '',           // brush
+        [Icon.Search] = '',          // search
+        [Icon.Dots] = '',            // dots
+        [Icon.SidebarCollapse] = '', // layout-sidebar-left-collapse
+        [Icon.SidebarExpand] = '',   // layout-sidebar-left-expand
+        [Icon.FileExport] = '',      // file-export
     };
 
     /// <summary>Codepoints to bake into the icon atlas.</summary>
