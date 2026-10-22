@@ -12,10 +12,10 @@ namespace Chip.Editor.Features.Dressing;
 /// <summary>
 /// The Dressing section's per-mesh controls, for one selected mesh: every rule that takes it, with a switch to turn the
 /// rule off just here and its simple parameters (numbers, choices, on/off, text, pairs) as fields. A value set here
-/// overrides the rules file for this mesh only; it shows in orange with a reset button. Each change is one undo step
-/// (drags commit when released, so the level re-dresses once).
+/// overrides the rules file for this mesh only; it shows in orange with a reset button, and "Apply to rule" moves it into
+/// the rule for every mesh. Each change is one undo step (drags commit when released, so the level re-dresses once).
 /// </summary>
-sealed class DressingOverrides
+sealed class DressingOverrides(DressingFeature feature)
 {
     (int Mesh, string Rule, string Param)? _draftKey;
     Vector2 _draft;
@@ -50,19 +50,24 @@ sealed class DressingOverrides
         }
     }
 
-    static void Header(EditorContext ctx, PolyMesh mesh, Rule rule, bool skipped)
+    void Header(EditorContext ctx, PolyMesh mesh, Rule rule, bool skipped)
     {
         ImGui.AlignTextToFramePadding();
         ImGui.Text(rule.Id);
         ImGui.SameLine();
-        ImGui.TextColored(Theme.TextDim, rule.Kind.Name);
-        bool overridden = mesh.Dressing.OverridesFor(rule.Id) != null;
+        ImGui.TextColored(Theme.TextDim, rule.Kind.DisplayName);
+        var overrides = mesh.Dressing.OverridesFor(rule.Id);
+        bool overridden = overrides != null;
         string toggle = skipped ? "Switch on" : "Switch off";
-        float w = ImGui.CalcTextSize(toggle).X + ImGui.GetStyle().FramePadding.X * 2;
-        float resetW = overridden ? ImGui.CalcTextSize("Reset").X + ImGui.GetStyle().FramePadding.X * 2 + ImGui.GetStyle().ItemSpacing.X : 0;
-        ImGui.SameLine(ImGui.GetContentRegionMax().X - w - resetW);
+        float Width(string s) => ImGui.CalcTextSize(s).X + ImGui.GetStyle().FramePadding.X * 2 + ImGui.GetStyle().ItemSpacing.X;
+        float w = Width(toggle) - ImGui.GetStyle().ItemSpacing.X;
+        float extraW = overridden ? Width("Reset") + Width("Apply to rule") : 0;
+        ImGui.SameLine(ImGui.GetContentRegionMax().X - w - extraW);
         if (overridden)
         {
+            if (ImGui.Button("Apply to rule")) ApplyToRule(ctx, mesh, rule, overrides!);
+            Tip($"Put this mesh's values into {rule.Id} itself, so every mesh it dresses gets them");
+            ImGui.SameLine();
             if (ImGui.Button("Reset")) Edit(ctx, mesh.Id, "Reset dressing overrides", d => d.WithoutOverrides(rule.Id));
             Tip($"Go back to the rules file's values for {rule.Id} on this mesh");
             ImGui.SameLine();
@@ -75,25 +80,28 @@ sealed class DressingOverrides
     {
         bool overridden = over != null;
         float avail = ImGui.GetContentRegionAvail().X;
-        float labelW = MathF.Min(avail * 0.45f, ImGui.CalcTextSize(spec.Name).X + Theme.Px(10));
+        float labelW = MathF.Min(avail * 0.45f, ImGui.CalcTextSize(spec.DisplayLabel).X + Theme.Px(10));
         float resetW = Theme.Px(22);
         ImGui.AlignTextToFramePadding();
-        ImGui.TextColored(overridden ? Theme.Accent : Theme.TextDim, spec.Name);
+        ImGui.TextColored(overridden ? Theme.Accent : Theme.TextDim, spec.DisplayLabel);
         Tip(spec.Description + (overridden ? "\nSet for this mesh only." : ""));
         ImGui.SameLine(MathF.Max(labelW, avail * 0.45f));
         ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - resetW - ImGui.GetStyle().ItemSpacing.X);
         var key = (mesh.Id, rule.Id, spec.Name);
         string id = $"##{spec.Name}";
-        void Set(JsonNode? value) => Edit(ctx, mesh.Id, $"Dressing: {rule.Id} {spec.Name}", d => d.WithParam(rule.Id, spec.Name, value));
+        void Set(JsonNode? value) => Edit(ctx, mesh.Id, $"Dressing: {rule.Id} {spec.DisplayLabel}", d => d.WithParam(rule.Id, spec.Name, value));
+        // Lengths show in centimetres, as in the Dressing rules window; the file keeps metres.
+        float scale = spec.Unit == ParamUnit.Length ? 100 : 1;
+        string fmt = spec.Unit switch { ParamUnit.Length => "%.1f cm", ParamUnit.Degrees => "%.0f°", ParamUnit.PerM2 => "%.2f per m²", ParamUnit.Scale => "%.2f×", _ => "%.3f" };
 
         switch (spec.Type)
         {
             case ParamType.Number:
             {
-                float v = _draftKey == key ? _draft.X : over is JsonValue jv ? (float)jv.GetValue<double>() : rule.Values[spec.Name] is float f ? f : 0;
-                float min = (float)Math.Max(spec.Min, -1e6), max = (float)Math.Min(spec.Max, 1e6);
-                if (ImGui.DragFloat(id, ref v, MathF.Max(0.001f, MathF.Abs(v) * 0.01f), min, max, "%.3f")) { _draftKey = key; _draft.X = v; }
-                if (ImGui.IsItemDeactivatedAfterEdit() && _draftKey == key) { _draftKey = null; Set(JsonValue.Create(Math.Round(_draft.X, 4))); }
+                float v = _draftKey == key ? _draft.X : (over is JsonValue jv ? (float)jv.GetValue<double>() : rule.Values[spec.Name] is float f ? f : 0) * scale;
+                float min = (float)Math.Max(spec.Min * scale, -1e6), max = (float)Math.Min(spec.Max * scale, 1e6);
+                if (ImGui.DragFloat(id, ref v, MathF.Max(0.001f, MathF.Abs(v) * 0.01f), min, max, fmt)) { _draftKey = key; _draft.X = v; }
+                if (ImGui.IsItemDeactivatedAfterEdit() && _draftKey == key) { _draftKey = null; Set(JsonValue.Create(Math.Round(_draft.X / scale, 5))); }
                 break;
             }
             case ParamType.Int:
@@ -106,10 +114,10 @@ sealed class DressingOverrides
             }
             case ParamType.Pair:
             {
-                var v = _draftKey == key ? _draft : over is JsonArray { Count: 2 } ja ? new Vector2((float)ja[0]!.GetValue<double>(), (float)ja[1]!.GetValue<double>())
-                    : rule.Values[spec.Name] is Vector2 p ? p : Vector2.Zero;
-                if (ImGui.DragFloat2(id, ref v, 0.01f, -1e4f, 1e4f, "%.2f")) { _draftKey = key; _draft = v; }
-                if (ImGui.IsItemDeactivatedAfterEdit() && _draftKey == key) { _draftKey = null; Set(new JsonArray(Math.Round(_draft.X, 4), Math.Round(_draft.Y, 4))); }
+                var v = _draftKey == key ? _draft : (over is JsonArray { Count: 2 } ja ? new Vector2((float)ja[0]!.GetValue<double>(), (float)ja[1]!.GetValue<double>())
+                    : rule.Values[spec.Name] is Vector2 p ? p : Vector2.Zero) * scale;
+                if (ImGui.DragFloat2(id, ref v, 0.01f * scale, -1e4f, 1e4f, fmt.Replace("%.3f", "%.2f"))) { _draftKey = key; _draft = v; }
+                if (ImGui.IsItemDeactivatedAfterEdit() && _draftKey == key) { _draftKey = null; Set(new JsonArray(Math.Round(_draft.X / scale, 5), Math.Round(_draft.Y / scale, 5))); }
                 break;
             }
             case ParamType.Bool:
@@ -121,10 +129,10 @@ sealed class DressingOverrides
             case ParamType.Choice:
             {
                 string v = over is JsonValue jv ? jv.GetValue<string>() : rule.Values[spec.Name] as string ?? "";
-                if (ImGui.BeginCombo(id, v))
+                if (ImGui.BeginCombo(id, spec.ChoiceLabel(v)))
                 {
                     foreach (var choice in spec.Choices!)
-                        if (ImGui.Selectable(choice, choice == v) && choice != v) Set(JsonValue.Create(choice));
+                        if (ImGui.Selectable(spec.ChoiceLabel(choice), choice == v) && choice != v) Set(JsonValue.Create(choice));
                     ImGui.EndCombo();
                 }
                 break;
@@ -149,6 +157,16 @@ sealed class DressingOverrides
             Tip("Back to the rules file's value");
         }
         else ImGui.Dummy(new Vector2(resetW, 0));
+    }
+
+    /// <summary>Moves the mesh's overrides for <paramref name="rule"/> into the rule (this level's file), in one undo step.</summary>
+    void ApplyToRule(EditorContext ctx, PolyMesh mesh, Rule rule, string overrides)
+    {
+        if (JsonNode.Parse(overrides) is not JsonObject values) return;
+        int id = mesh.Id;
+        if (feature.EditRules($"Apply {mesh.Name}'s values to {rule.Id}", w => values.All(kv => w.Set(rule.Id, kv.Key, kv.Value?.DeepClone())), [id],
+                () => { if (ctx.Doc.Find(id) is { } m) m.Dressing = m.Dressing.WithoutOverrides(rule.Id); }))
+            ctx.Status($"{rule.Id} now uses {mesh.Name}'s values everywhere");
     }
 
     /// <summary>One undo step changing the mesh's dressing overrides.</summary>

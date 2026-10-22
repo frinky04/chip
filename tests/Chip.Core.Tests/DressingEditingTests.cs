@@ -127,6 +127,18 @@ public class DressingEditingTests
     }
 
     [Fact]
+    public void A_level_patch_cant_take_a_key_out_of_a_style_selector_and_says_so()
+    {
+        var files = Files();
+        var ws = new RulesWorkspace(files, Level);
+        Assert.False(ws.Set("debris", "faces", new JsonObject { ["tags"] = new JsonArray("rubble") })); // drops "facing"
+        Assert.Contains("can't take \"facing\" out", ws.Problem);
+        Assert.Empty(ws.Changes());
+        Assert.True(ws.Set("debris", "faces", new JsonObject { ["facing"] = "up", ["tags"] = new JsonArray("rubble") })); // adding is fine
+        Assert.True(ws.Set("debris", "faces", new JsonObject { ["tags"] = new JsonArray("rubble") }, style: true));    // and the style can
+    }
+
+    [Fact]
     public void Style_mode_edits_the_style_file_and_switching_off_patches_the_level()
     {
         var files = Files();

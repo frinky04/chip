@@ -15,7 +15,8 @@ namespace Chip.Editor.Features.Dressing;
 public sealed class DressingSection(DressingFeature feature) : IInspectorSection
 {
     const int MaxProblems = 6;
-    readonly DressingOverrides _overrides = new();
+    readonly DressingOverrides _overrides = new(feature);
+    bool _whyOpen;
 
     public string Id => "dressing";
     public int Order => 160; // right after Tags: what the rules select by, then what they do
@@ -31,10 +32,10 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
         int view = TextSegments("##dressView", [("Dressed", "Show the level as shipped  (`)"), ("Blockout", "Show only the blockout. Export still includes the dressing  (`)")], ctx.ShowDressed ? 0 : 1);
         if (view >= 0 && (view == 0) != ctx.ShowDressed) ctx.Commands.Execute("view.dressed");
         ImGui.SameLine();
-        float openW = ImGui.CalcTextSize("Open rules").X + ImGui.GetStyle().FramePadding.X * 2;
+        float openW = ImGui.CalcTextSize("Rules...").X + ImGui.GetStyle().FramePadding.X * 2;
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0, ImGui.GetContentRegionAvail().X - openW));
-        if (ImGui.Button("Open rules")) ctx.Commands.Execute("dressing.open");
-        Tip($"{feature.RulesPath}\nChip reloads it whenever it changes. Check it headlessly: Chip --rules-check <level>.chip");
+        if (ImGui.Button("Rules...")) feature.Window.Open = true;
+        Tip($"Edit the rules (Ctrl+Shift+D). They live in {Path.GetFileName(feature.RulesPath)}, which agents can edit too; Chip reloads it whenever it changes.");
 
         // What touches the selection.
         var meshes = ctx.Sel.MeshIds();
@@ -49,15 +50,22 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
             }
         }
 
-        // What each rule made.
-        foreach (var s in level.Stats)
-            Line(s.Rule, !s.Enabled ? "off" : s.Outputs == 0 ? "nothing yet"
-                    : $"{s.Outputs} mesh{(s.Outputs == 1 ? "" : "es")} from {s.Targets} {s.TargetNoun}{(s.Targets == 1 ? "" : s.TargetNoun == "mesh" ? "es" : "s")}",
-                Theme.TextDim, $"{s.Rule}: {s.Kind} ({s.Stage.ToString().ToLowerInvariant()}){(s.Enabled ? $", {s.Ms:0.0} ms" : "")}", dim: !s.Enabled);
-        foreach (var id in level.Rules.Broken) Line(id, "not run: errors below", Theme.Error, null);
+        // What each rule made (the whole level, when nothing is selected).
+        if (meshes.Count == 0)
+        {
+            foreach (var s in level.Stats)
+                Line(s.Rule, !s.Enabled ? "off" : s.Outputs == 0 ? "nothing yet"
+                        : $"{s.Outputs} mesh{(s.Outputs == 1 ? "" : "es")} from {s.Targets} {s.TargetNoun}{(s.Targets == 1 ? "" : s.TargetNoun == "mesh" ? "es" : "s")}",
+                    Theme.TextDim, $"{s.Rule}: {s.Kind} ({s.Stage.ToString().ToLowerInvariant()}){(s.Enabled ? $", {s.Ms:0.0} ms" : "")}", dim: !s.Enabled);
+            foreach (var id in level.Rules.Broken) Line(id, "not run: errors below", Theme.Error, null);
+        }
 
-        // One mesh selected: its per-mesh switches and overrides.
-        if (meshes.Count == 1 && ctx.Doc.Find(meshes.First()) is { } single) _overrides.Draw(ctx, level, single);
+        // One mesh selected: its per-mesh switches and overrides, and why the other rules leave it alone.
+        if (meshes.Count == 1 && ctx.Doc.Find(meshes.First()) is { } single)
+        {
+            _overrides.Draw(ctx, level, single);
+            Why(ctx, level, single);
+        }
 
         // Problems: the selection's first, then the level's.
         var problems = level.Diagnostics
@@ -86,6 +94,36 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
         }
         if (problems.Count > MaxProblems)
             ImGui.TextColored(Theme.TextDim, $"and {problems.Count - MaxProblems} more. Chip --rules-check lists them all.");
+    }
+
+    /// <summary>
+    /// "Why isn't this dressed?": for the selected face (one face in face mode) or mesh, each rule that leaves it alone and
+    /// why (a missing tag, the wrong facing, switched off), with the closest tag it has when that looks like a typo.
+    /// </summary>
+    void Why(EditorContext ctx, DressedLevel level, Core.Geometry.PolyMesh mesh)
+    {
+        int face = ctx.Sel.Mode == SelectMode.Face && ctx.Sel.Count == 1 ? ctx.Sel.Items.First().A : -1;
+        var reasons = level.Explain(mesh, face).Where(r => r.Reason != null).ToList();
+        if (reasons.Count == 0) return;
+        ImGui.Dummy(Theme.Px(0, 2));
+        if (ImGui.SmallButton(_whyOpen ? $"Hide rules that skip this {(face >= 0 ? "face" : "mesh")}" : $"Why don't {reasons.Count} rule{(reasons.Count == 1 ? "" : "s")} take this {(face >= 0 ? "face" : "mesh")}?"))
+            _whyOpen = !_whyOpen;
+        if (!_whyOpen) return;
+        float wrap = ImGui.GetContentRegionAvail().X;
+        foreach (var (rule, reason) in reasons)
+        {
+            ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + wrap);
+            ImGui.Text(rule.Id);
+            ImGui.SameLine();
+            ImGui.TextColored(Theme.TextDim, reason!);
+            ImGui.PopTextWrapPos();
+            if (ImGui.IsItemHovered() && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            {
+                feature.Window.Open = true;
+                feature.Window.Selected = rule.Id;
+            }
+            Tip("Click to open the rule");
+        }
     }
 
     static string Clip(string s, int n) => s.Length <= n ? s : s[..(n - 1)] + "…";

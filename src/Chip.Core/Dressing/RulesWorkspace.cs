@@ -155,6 +155,7 @@ public sealed class RulesWorkspace
     /// </summary>
     public bool Set(string id, string key, JsonNode? value, bool style = false)
     {
+        Problem = null;
         if (Main == null || Find(id) is not { } rule) return false;
         if (rule.Local) Main.SetValue(id, key, value);
         else if (style)
@@ -167,11 +168,23 @@ public sealed class RulesWorkspace
             var baseValue = rule.Base[key];
             bool same = value == null ? baseValue == null : baseValue != null && JsonNode.DeepEquals(baseValue, value);
             if (same) Main.SetValue(id, key, null);
-            else Main.SetValue(id, key, value ?? DefaultJson(rule, key));
+            else
+            {
+                // A patch merges into the style's object, so it can add and change keys but never take one away.
+                if (value is JsonObject v && baseValue is JsonObject b && b.Select(kv => kv.Key).FirstOrDefault(k => !v.ContainsKey(k)) is { } gone)
+                {
+                    Problem = $"A level can't take \"{gone}\" out of the style's {key}. Edit the style, or duplicate the rule into the level.";
+                    return false;
+                }
+                Main.SetValue(id, key, value ?? DefaultJson(rule, key));
+            }
         }
         Changed();
         return true;
     }
+
+    /// <summary>Why the last edit couldn't be made, for the status bar (null when it could, or failed for no user-facing reason).</summary>
+    public string? Problem { get; private set; }
 
     /// <summary>Switches a rule on or off (for a style's rule, in this level only unless <paramref name="style"/>).</summary>
     public bool SetEnabled(string id, bool on, bool style = false)
