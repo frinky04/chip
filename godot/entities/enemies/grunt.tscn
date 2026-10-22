@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://bvf8iabb2j2a"]
+
+[ext_resource type="Script" path="res://entities/enemies/grunt.gd" id="1"]
+
+[node name="grunt" type="CharacterBody3D"]
+script = ExtResource("1")
+metadata/chip_bounds = AABB(-0.4, 0, -0.4, 0.8, 1.8, 0.8)

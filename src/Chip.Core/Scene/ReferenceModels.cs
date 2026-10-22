@@ -45,18 +45,34 @@ public static class ReferenceModels
     /// <summary>Changes whenever a model loads, reloads or drops, so caches of drawn or picked shapes can rebuild.</summary>
     public static int Revision { get; private set; }
 
+    /// <summary>Changes whenever what an entity draws as could: a model loads, or the classes (boxes, previews) change.</summary>
+    public static int DrawRevision => unchecked(Revision * 7919 + EntityClasses.Revision);
+
     sealed record Entry(long Stamp, ReferenceModel? Model, string? Error);
     static readonly Dictionary<string, Entry> Cache = new(StringComparer.OrdinalIgnoreCase);
     static readonly object Gate = new();
 
+    /// <summary>The class in every catalog. The box is only used while the model can't load; a loaded model's own bounds replace it (<see cref="EntityOps.Box"/>).</summary>
+    public static EntityClass Class { get; } = new()
+    {
+        Name = ClassName, Label = "Reference model", EditorOnly = true,
+        Doc = "A model drawn in the level to fit holes and judge scale. Editor only unless exported as a marker",
+        BoxMin = new(-0.3f, 0, -0.3f), BoxMax = new(0.3f, 1.8f, 0.3f),
+        Props =
+        [
+            new PropSpec { Name = ModelKey, Type = PropType.String, Default = EntityValues.Of(DefaultModel) },
+            new PropSpec { Name = MarkerKey, Type = PropType.Bool, Default = EntityValues.Of(false) },
+        ],
+    };
+
     public static bool Is(Entity e) => e.ClassName == ClassName;
 
     /// <summary>The entity's model value (the default when the key is missing).</summary>
-    public static string ModelOf(Entity e) => e.Properties.TryGetValue(ModelKey, out var m) ? m.Trim() : DefaultModel;
+    public static string ModelOf(Entity e) => e.Properties.TryGetValue(ModelKey, out var m) ? EntityValues.Text(m).Trim() : DefaultModel;
 
     /// <summary>Whether the entity exports as a marker node. Only reference models can opt out.</summary>
     public static bool Exports(Entity e) =>
-        !Is(e) || (e.Properties.TryGetValue(MarkerKey, out var v) && v.Trim() is "1" or "true" or "yes" or "on");
+        !Is(e) || (e.Properties.TryGetValue(MarkerKey, out var v) && EntityValues.Bool(v) == true);
 
     /// <summary>A built-in name has no folder and no extension.</summary>
     public static bool IsBuiltInName(string model) =>
@@ -101,7 +117,12 @@ public static class ReferenceModels
         return Path.GetRelativePath(dir, file).Replace('\\', '/');
     }
 
-    public static (ReferenceModel? Model, string? Error) Get(Entity e) => Is(e) ? Get(ModelOf(e)) : (null, null);
+    /// <summary>
+    /// The model drawn for the entity: a reference model's file, or the preview of its class's scene (meshes the engine
+    /// addon exported, see <see cref="EntityClass.Preview"/>). Null for entities drawn as a box.
+    /// </summary>
+    public static (ReferenceModel? Model, string? Error) Get(Entity e) =>
+        Is(e) ? Get(ModelOf(e)) : EntityClasses.Current.Find(e.ClassName)?.Preview is { } preview ? Get(preview) : (null, null);
 
     /// <summary>The loaded model, or null with a reason. Loads on first use; later calls hit the cache.</summary>
     public static (ReferenceModel? Model, string? Error) Get(string model)

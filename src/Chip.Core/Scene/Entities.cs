@@ -1,56 +1,135 @@
 using System.Numerics;
+using System.Text.Json;
 using Chip.Core.Picking;
 
 namespace Chip.Core.Scene;
 
 /// <summary>
-/// A built-in point entity class: its display name, the box drawn and picked around the origin (entity space, metres)
-/// and the key-values a new entity starts with.
+/// The entity classes in use: the Godot project's (found by walking up from the level or its export path to
+/// <c>project.godot</c>, read from the manifest the Chip import addon keeps in <c>.chip/entities.json</c>), else the
+/// built-in ones. <see cref="Track"/> follows the project and reloads the manifest when it changes; a manifest that
+/// can't be read keeps the last good classes and says why in <see cref="Problem"/>.
 /// </summary>
-public sealed record EntityClass(string Name, string Label, Vector3 BoxMin, Vector3 BoxMax, IReadOnlyDictionary<string, string> Defaults);
-
-/// <summary>The classes the entity tool offers. Any other class name is a generic point entity.</summary>
 public static class EntityClasses
 {
-    static readonly Dictionary<string, string> None = new();
+    static readonly EntityClassTracker Tracker = new();
 
-    public static readonly IReadOnlyList<EntityClass> BuiltIn =
-    [
-        // Origin at the feet, like Source and Godot character scenes; about a person's size.
-        new("info_player_start", "Player start", new(-0.3f, 0, -0.3f), new(0.3f, 1.8f, 0.3f), None),
-        new("light_point", "Point light", new(-0.15f), new(0.15f), new Dictionary<string, string>
-        {
-            ["color"] = "255 255 255", ["energy"] = "1", ["range"] = "10",
-        }),
-        new("light_spot", "Spot light", new(-0.15f), new(0.15f), new Dictionary<string, string>
-        {
-            ["color"] = "255 255 255", ["energy"] = "1", ["range"] = "10", ["angle"] = "45",
-        }),
-        new("info_target", "Target", new(-0.15f), new(0.15f), None),
-        new("prop_marker", "Prop marker", new(-0.25f, 0, -0.25f), new(0.25f, 0.5f, 0.25f), new Dictionary<string, string> { ["model"] = "" }),
-        new("trigger_marker", "Trigger marker", new(-0.5f), new(0.5f), new Dictionary<string, string> { ["event"] = "" }),
-        // The box is only used while the model can't load; a loaded model's own bounds replace it (EntityOps.Box).
-        new(ReferenceModels.ClassName, "Reference model", new(-0.3f, 0, -0.3f), new(0.3f, 1.8f, 0.3f), new Dictionary<string, string>
-        {
-            [ReferenceModels.ModelKey] = ReferenceModels.DefaultModel, [ReferenceModels.MarkerKey] = "0",
-        }),
-    ];
+    public static EntityCatalog Current => Tracker.Current;
+    /// <summary>Changes whenever <see cref="Current"/> does, so caches of class boxes can rebuild.</summary>
+    public static int Revision => Tracker.Revision;
+    /// <summary>The Godot project folder the level is in, or null.</summary>
+    public static string? ProjectRoot => Tracker.ProjectRoot;
+    /// <summary>Why the project's classes aren't in use (no manifest yet, or one that can't be read); null when they are.</summary>
+    public static string? Problem => Tracker.Problem;
 
-    /// <summary>Any class name not in <see cref="BuiltIn"/>.</summary>
-    public static EntityClass Generic(string name) => new(name, name, new(-0.2f), new(0.2f), None);
+    /// <inheritdoc cref="EntityClassTracker.Track"/>
+    public static bool Track(params string?[] near) => Tracker.Track(near);
 
-    public static EntityClass Get(string className) =>
-        BuiltIn.FirstOrDefault(c => c.Name == className) ?? Generic(className);
+    /// <summary>Uses <paramref name="catalog"/> until the next <see cref="Track"/> that finds a change (tests).</summary>
+    public static void Use(EntityCatalog catalog) => Tracker.Use(catalog);
 
-    public static bool IsBuiltIn(string className) => BuiltIn.Any(c => c.Name == className);
+    /// <summary>Back to the built-in classes (tests).</summary>
+    public static void Reset() => Tracker.Use(EntityCatalog.BuiltIn);
 
-    /// <summary>A new entity of the class with its default key-values (id assigned by <see cref="Document.Add(Entity)"/>).</summary>
+    public static IReadOnlyList<EntityClass> All => Current.Classes;
+
+    /// <summary>The class, or a generic one (<see cref="EntityClass.Known"/> false) for a name the catalog doesn't define.</summary>
+    public static EntityClass Get(string className) => Current.Find(className) ?? Generic(className);
+
+    public static bool IsKnown(string className) => Current.Find(className) != null;
+
+    public static EntityClass Generic(string name) => new() { Name = name, Label = name, Known = false };
+
+    /// <summary>A new entity of the class (id assigned by <see cref="Document.Add(Entity)"/>). It sets no properties: every one has its class default until changed.</summary>
     public static Entity Create(string className, Vector3 position, float yawDegrees = 0) => new()
     {
         ClassName = className, Position = position, Rotation = new Vector3(0, yawDegrees, 0),
-        Properties = new Dictionary<string, string>(Get(className).Defaults),
     };
 }
+
+/// <summary>Follows the Godot project a level is in and the entity classes its manifest declares (see <see cref="EntityClasses"/>).</summary>
+public sealed class EntityClassTracker
+{
+    /// <summary>Where the addon writes the manifest, relative to the project folder.</summary>
+    public static readonly string ManifestPath = Path.Combine(".chip", "entities.json");
+
+    public EntityCatalog Current { get; private set; } = EntityCatalog.BuiltIn;
+    public int Revision { get; private set; }
+    public string? ProjectRoot { get; private set; }
+    public string? Problem { get; private set; }
+
+    /// <summary>The folder holding <c>project.godot</c> at or above <paramref name="path"/> (a file or folder), or null.</summary>
+    public static string? FindProject(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        try
+        {
+            var dir = Path.GetFullPath(path);
+            if (!Directory.Exists(dir)) dir = Path.GetDirectoryName(dir);
+            for (; dir != null; dir = Path.GetDirectoryName(dir))
+                if (File.Exists(Path.Combine(dir, "project.godot"))) return dir;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
+        return null;
+    }
+
+    string? _manifest;
+    long _stamp;
+
+    /// <summary>
+    /// Uses the project found from the first of <paramref name="near"/> that is inside one (the level's export path,
+    /// then the level), reloading its manifest when it changed on disk. True when the classes changed.
+    /// </summary>
+    public bool Track(params string?[] near)
+    {
+        string? root = near.Select(FindProject).FirstOrDefault(r => r != null);
+        string? manifest = root != null ? Path.Combine(root, ManifestPath) : null;
+        long stamp = manifest != null ? Stamp(manifest) : 0;
+        if (manifest == _manifest && stamp == _stamp) return false;
+        _manifest = manifest;
+        _stamp = stamp;
+        ProjectRoot = root;
+        if (root == null) Set(EntityCatalog.BuiltIn, null);
+        else if (stamp == 0)
+            Set(EntityCatalog.BuiltIn, $"{Path.GetFileName(root)} has no entity classes yet. Enable the Chip import plugin in Godot " +
+                "(Project > Project Settings > Plugins); until then Chip offers its built-in classes");
+        else
+            try { Set(EntityCatalog.Parse(File.ReadAllText(manifest!), manifest), null); }
+            catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException)
+            {
+                // Keep the project's last good classes (the addon may be mid-write; the next change reloads).
+                Set(Current.Source == manifest ? Current : EntityCatalog.BuiltIn,
+                    $"Can't read the entity classes in {Path.Combine(Path.GetFileName(root), ManifestPath)}: {e.Message}");
+            }
+        return true;
+    }
+
+    /// <summary>Uses <paramref name="catalog"/> until the next <see cref="Track"/> that finds a change.</summary>
+    public void Use(EntityCatalog catalog)
+    {
+        _manifest = catalog.Source;
+        _stamp = catalog.Source != null ? Stamp(catalog.Source) : 0;
+        ProjectRoot = catalog.Source != null ? FindProject(catalog.Source) : null;
+        Set(catalog, null);
+    }
+
+    void Set(EntityCatalog catalog, string? problem)
+    {
+        Current = catalog;
+        Problem = problem;
+        Revision++;
+    }
+
+    static long Stamp(string path)
+    {
+        try { return File.Exists(path) ? File.GetLastWriteTimeUtc(path).Ticks ^ new FileInfo(path).Length : 0; }
+        catch (IOException) { return 0; }
+        catch (UnauthorizedAccessException) { return 0; }
+    }
+}
+
+/// <summary>A point on an entity's surface, with the outward normal facing the ray (world space).</summary>
+public readonly record struct EntitySurfaceHit(Entity Entity, float Distance, Vector3 Point, Vector3 Normal);
 
 /// <summary>Entity orientation, frames and hit-testing. Forward is -Z (glTF and Godot), up is +Y.</summary>
 public static class EntityOps
@@ -93,19 +172,29 @@ public static class EntityOps
 
     // ---- Edits (run inside a Session step) ----
 
-    /// <summary>Changes the class, adding the new class's default keys the entity doesn't have yet (existing values stay).</summary>
-    public static void SetClass(Entity e, string className)
-    {
-        e.ClassName = className.Trim();
-        foreach (var (k, v) in EntityClasses.Get(e.ClassName).Defaults) e.Properties.TryAdd(k, v);
-    }
+    /// <summary>Changes the class. Values stay, so changing back loses nothing; ones the new class doesn't have are listed as unused.</summary>
+    public static void SetClass(Entity e, string className) => e.ClassName = className.Trim();
 
-    /// <summary>Sets or adds a key-value. Returns an error message (and changes nothing) when the key is blank.</summary>
-    public static string? SetProperty(Entity e, string key, string value)
+    /// <summary>Sets or adds a value. Returns an error message (and changes nothing) when the key is blank.</summary>
+    public static string? SetProperty(Entity e, string key, JsonElement value)
     {
         key = key.Trim();
         if (key.Length == 0) return "Type a key for the property";
         e.Properties[key] = value;
+        return null;
+    }
+
+    public static string? SetProperty(Entity e, string key, string value) => SetProperty(e, key, EntityValues.Of(value));
+
+    /// <summary>
+    /// Sets a class property, checked against its type. A value equal to the class default is removed instead, so the
+    /// entity follows the default if the engine changes it later.
+    /// </summary>
+    public static string? SetProperty(Entity e, PropSpec p, JsonElement value)
+    {
+        if (EntityValues.Coerce(p, value, out var error) is not { } ok) return error;
+        if (EntityValues.Same(ok, p.Default)) e.Properties.Remove(p.Name);
+        else e.Properties[p.Name] = ok;
         return null;
     }
 
@@ -183,6 +272,69 @@ public static class EntityOps
             if (tmin > tmax) return null;
         }
         return tmin;
+    }
+
+    /// <summary>
+    /// Where the ray meets the entity's surface, to place something on it: a loaded model's nearest triangle, else the
+    /// face of its box the ray enters. The normal is in world space and faces the ray. Null on a miss, or when the ray
+    /// starts inside the box (there's no outside surface to stand on).
+    /// </summary>
+    public static EntitySurfaceHit? SurfaceHit(Entity e, Ray ray)
+    {
+        var rotation = Orientation(e);
+        var inv = Quaternion.Conjugate(rotation);
+        var local = new Ray(Vector3.Transform(ray.Origin - e.Position, inv), Vector3.Transform(ray.Dir, inv));
+        Vector3 normal;
+        float t;
+        if (ReferenceModels.Get(e).Model is { } model)
+        {
+            float? best = null;
+            normal = default;
+            var tris = model.Triangles;
+            for (int i = 0; i + 2 < tris.Length; i += 3)
+            {
+                if (!Picker.RayTriangle(local, tris[i], tris[i + 1], tris[i + 2], out float hit) || (best is { } b && hit >= b)) continue;
+                best = hit;
+                normal = Vector3.Cross(tris[i + 1] - tris[i], tris[i + 2] - tris[i]);
+            }
+            if (best is not { } bt || normal.LengthSquared() < 1e-12f) return null;
+            t = bt;
+            normal = Vector3.Normalize(normal);
+        }
+        else
+        {
+            var (min, max) = Box(e);
+            float near = float.MinValue, far = float.MaxValue;
+            int axis = -1;
+            for (int a = 0; a < 3; a++)
+            {
+                float o = local.Origin[a], d = local.Dir[a];
+                if (MathF.Abs(d) < 1e-9f) { if (o < min[a] || o > max[a]) return null; continue; }
+                float t1 = (min[a] - o) / d, t2 = (max[a] - o) / d;
+                if (t1 > t2) (t1, t2) = (t2, t1);
+                if (t1 > near) { near = t1; axis = a; }
+                far = MathF.Min(far, t2);
+                if (near > far) return null;
+            }
+            if (axis < 0 || near < 0) return null; // inside, or behind
+            t = near;
+            normal = axis == 0 ? Vector3.UnitX : axis == 1 ? Vector3.UnitY : Vector3.UnitZ;
+        }
+        normal = Vector3.Transform(normal, rotation);
+        if (Vector3.Dot(normal, ray.Dir) > 0) normal = -normal;
+        return new EntitySurfaceHit(e, t, ray.At(t), normal);
+    }
+
+    /// <summary>The nearest visible entity surface along the ray (see <see cref="SurfaceHit"/>), skipping <paramref name="ignore"/>.</summary>
+    public static EntitySurfaceHit? FirstSurface(Document doc, Ray ray, Entity? ignore = null)
+    {
+        EntitySurfaceHit? best = null;
+        foreach (var e in doc.Entities)
+        {
+            if (e.Hidden || e == ignore) continue;
+            if (SurfaceHit(e, ray) is { } hit && (best is not { } b || hit.Distance < b.Distance)) best = hit;
+        }
+        return best;
     }
 
     /// <summary>Nearest triangle hit, from either side, in model space.</summary>

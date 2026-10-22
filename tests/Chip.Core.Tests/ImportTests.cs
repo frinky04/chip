@@ -131,14 +131,16 @@ public class ImportTests
         var lib = Lib();
         var doc = new Document { ExportScale = 100 };
         var e = doc.Add(new Entity { ClassName = "light_spot", Name = "lamp", Position = new Vector3(1, 2, 3), Rotation = new Vector3(-30, 45, 10) });
-        e.Properties["energy"] = "2.5";
+        e.Properties["light_energy"] = EntityValues.Of(2.5);
+        e.Properties["light_color"] = EntityValues.Color(new Vector4(1, 0.5f, 0, 1));
         var r = RoundTrip(doc, lib, scale: 1 / 100f);
         var back = Assert.Single(r.Entities);
         Assert.Equal("light_spot", back.ClassName);
         Assert.Equal("lamp", back.Name);
         Assert.True(Vector3.Distance(e.Position, back.Position) < 1e-4f);
         Assert.True(Vector3.Distance(e.Rotation, back.Rotation) < 1e-2f, $"{back.Rotation}");
-        Assert.Equal("2.5", back.Properties["energy"]);
+        Assert.Equal(2.5, back.Properties["light_energy"].GetDouble());
+        Assert.Equal(new Vector4(1, 0.5f, 0, 1), EntityValues.Color(back.Properties["light_color"]));
     }
 
     [Theory]

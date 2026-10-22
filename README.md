@@ -43,6 +43,8 @@ The UI follows the monitor's display scale (Windows DPI). Override it with `CHIP
 
 Godot: drop the `.glb` into the project. With static collision on, Chip bakes the world collision into `chip_world_collision_N-colonly` nodes that Godot turns into colliders (File > Export settings).
 
+**Entity classes** come from Godot: with the `godot/addons/chip_import` addon enabled, every scene under `res://entities/` is a class Chip can place, its `@export` vars are the properties the inspector edits, and on import each entity becomes an instance of its scene. Save or export the level inside the Godot project and Chip picks the classes up (and reloads them as you change the scenes). See `docs/entities.md`. Headless export: `Chip.exe --export level.chip [out.glb]`.
+
 See `SPEC.md` for the full Scythe/S2 feature map, the v1 scope, and the review log.
 
 ## Frame benchmark

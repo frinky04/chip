@@ -49,10 +49,9 @@ public static class EntityDraw
         "light_point" => (Icon.Bulb, Rgb(0xF2C94C)),
         "light_spot" => (Icon.Lamp, Rgb(0xF2C94C)),
         "info_target" => (Icon.Target, Rgb(0xE5484D)),
-        "prop_marker" => (Icon.Box, Rgb(0x3E8EED)),
-        "trigger_marker" => (Icon.Flag, Rgb(0xB07CE8)),
         ReferenceModels.ClassName => (Icon.Ruler, Rgb(0xA3B1C2)),
-        _ => (Icon.MapPin, Rgb(0xA0A0A8)),
+        // The project's own scenes, and names no class defines.
+        _ => EntityClasses.IsKnown(className) ? (Icon.Box, Rgb(0x3E8EED)) : (Icon.MapPin, Rgb(0xA0A0A8)),
     };
 
     static uint Rgb(uint hex) => ImGui.ColorConvertFloat4ToU32(Theme.Rgb(hex));

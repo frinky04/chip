@@ -44,16 +44,22 @@ public class EntityTests
     }
 
     [Fact]
-    public void New_entities_get_their_class_defaults_and_unique_ids()
+    public void New_entities_have_class_defaults_without_storing_them_and_unique_ids()
     {
         var doc = new Document();
         var mesh = doc.Add(Box(Vector3.Zero, Vector3.One));
         var light = doc.Add(EntityClasses.Create("light_point", new Vector3(1, 2, 3)));
         Assert.NotEqual(mesh.Id, light.Id);
-        Assert.Equal("10", light.Properties["range"]);
-        light.Properties["range"] = "4";
-        Assert.Equal("10", EntityClasses.Get("light_point").Defaults["range"]); // defaults aren't shared
-        Assert.Equal(new Vector3(-0.2f), EntityClasses.Get("my_custom").BoxMin);
+        Assert.Empty(light.Properties);
+        var range = EntityClasses.Get("light_point").Prop("omni_range")!;
+        Assert.Equal(5, EntityValues.Effective(light, range).GetDouble()); // Godot's OmniLight3D default
+        light.Properties["omni_range"] = EntityValues.Of(4.0);
+        Assert.Equal(4, EntityValues.Effective(light, range).GetDouble());
+        Assert.Equal(5, range.Default.GetDouble());
+
+        var custom = EntityClasses.Get("my_custom");
+        Assert.False(custom.Known);
+        Assert.Equal(new Vector3(-0.2f), custom.BoxMin);
     }
 
     [Fact]
@@ -64,7 +70,7 @@ public class EntityTests
         var e = doc.Add(EntityClasses.Create("light_spot", new Vector3(1, 2, 3), 45));
         e.Name = "lamp";
         e.Locked = true;
-        e.Properties["angle"] = "30";
+        e.Properties["spot_angle"] = EntityValues.Of(30.0);
         var outer = GroupOps.Create(doc, [mesh.Id, e.Id], "room")!;
         var inner = GroupOps.Create(doc, [e.Id], "lights")!;
         inner.Hidden = true;
@@ -74,7 +80,7 @@ public class EntityTests
         Assert.Equal("lamp", be.Name);
         Assert.True(be.Locked);
         Assert.Equal(new Vector3(0, 45, 0), be.Rotation);
-        Assert.Equal("30", be.Properties["angle"]);
+        Assert.Equal(30, be.Properties["spot_angle"].GetDouble());
         Assert.Equal(2, back.Groups.Count);
         var bi = back.FindGroup(inner.Id)!;
         Assert.Equal(outer.Id, bi.Parent);
@@ -255,5 +261,36 @@ public class EntityTests
         Assert.Null(EntityOps.RayHit(e, beside));
         e.Rotation = new Vector3(0, 0, 90); // lying on its side: now 1.8 m along X
         Assert.NotNull(EntityOps.RayHit(e, new Ray(new Vector3(-1.5f, 10, 0), -Vector3.UnitY)));
+    }
+
+    [Fact]
+    public void Placing_on_an_entity_lands_on_the_box_face_the_ray_enters()
+    {
+        var crate = EntityClasses.Create("info_player_start", new Vector3(2, 0, 0)); // box 0.6 x 1.8 x 0.6 from the feet up
+        var top = EntityOps.SurfaceHit(crate, new Ray(new Vector3(2.1f, 5, 0.1f), -Vector3.UnitY))!.Value;
+        AssertNear(new Vector3(2.1f, 1.8f, 0.1f), top.Point);
+        AssertNear(Vector3.UnitY, top.Normal);
+        Assert.Equal(3.2f, top.Distance, 3);
+
+        crate.Rotation = new Vector3(0, 90, 0); // turned: the side the ray meets still faces the ray
+        var side = EntityOps.SurfaceHit(crate, new Ray(new Vector3(10, 1, 0), -Vector3.UnitX))!.Value;
+        AssertNear(Vector3.UnitX, side.Normal);
+        AssertNear(new Vector3(2.3f, 1, 0), side.Point);
+
+        Assert.Null(EntityOps.SurfaceHit(crate, new Ray(new Vector3(2, 1, 0), Vector3.UnitY))); // from inside: nothing to stand on
+        Assert.Null(EntityOps.SurfaceHit(crate, new Ray(new Vector3(5, 5, 0), -Vector3.UnitY)));
+    }
+
+    [Fact]
+    public void The_first_surface_is_the_nearest_visible_entity()
+    {
+        var doc = new Document();
+        var low = doc.Add(EntityClasses.Create("info_player_start", Vector3.Zero));
+        var high = doc.Add(EntityClasses.Create("info_target", new Vector3(0, 3, 0)));
+        var down = new Ray(new Vector3(0, 10, 0), -Vector3.UnitY);
+        Assert.Same(high, EntityOps.FirstSurface(doc, down)!.Value.Entity);
+        high.Hidden = true;
+        Assert.Same(low, EntityOps.FirstSurface(doc, down)!.Value.Entity);
+        Assert.Null(EntityOps.FirstSurface(doc, down, ignore: low));
     }
 }

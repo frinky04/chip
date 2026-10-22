@@ -49,7 +49,7 @@ public class GltfValidatorTests(ITestOutputHelper output)
         doc.Add(MeshOps.CreateBox(new Vector3(5, 0, 0), new Vector3(6, 1, 1), "missing_tex", TextureMapping.Default)).Collision = CollisionMode.ConvexOnly;
         doc.Add(MeshOps.CreateBox(new Vector3(7, 0, 0), new Vector3(8, 1, 1), "brick", TextureMapping.Default)).Collision = CollisionMode.Only;
         var light = doc.Add(new Entity { ClassName = "light_spot", Position = new Vector3(1, 3, 1), Rotation = new Vector3(-60, 30, 0) });
-        light.Properties["energy"] = "2";
+        light.Properties["light_energy"] = EntityValues.Of(2.0);
         doc.Add(new Entity { ClassName = "info_player_start", Name = "spawn" });
         doc.Export.MaterialRemap["brick"] = "res://materials/brick.tres";
         return doc;

@@ -11,10 +11,13 @@ namespace Chip.Core.IO;
 /// Versioned JSON for <c>.chip</c> files. Vectors are float arrays so files stay readable and diffable.
 /// v2 adds per-corner UVs, soft edges, per-mesh lock/collision and entities; every v2 field is optional, so v1 loads as is.
 /// Later additive v2 fields (also optional, omitted when default): per-face <c>dominant</c> (dominant normals).
+/// v3 stores entity properties as typed JSON values (numbers, bools, arrays) and only the ones an entity sets; v2 values
+/// were all strings, which still read through their class's types. v2's built-in lights are migrated to the Godot
+/// property names their classes now use (<c>range</c> → <c>omni_range</c>, see <see cref="MigrateV2Entity"/>).
 /// </summary>
 public static partial class DocumentSerializer
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     static readonly JsonSerializerOptions Options = new()
     {
@@ -64,7 +67,7 @@ public static partial class DocumentSerializer
     }
 
     sealed record EntityDto(int Id, string ClassName, string Name, float[] Position, float[] Rotation, bool Hidden,
-        Dictionary<string, string>? Properties,
+        Dictionary<string, JsonElement>? Properties,
         bool Locked = false); // stream H
 
     // stream H: a group's direct members are object ids; Parent 0 = top level.
@@ -137,12 +140,14 @@ public static partial class DocumentSerializer
         if (dto.Entities != null)
             foreach (var e in dto.Entities)
             {
-                doc.Entities.Add(new Entity
+                var entity = new Entity
                 {
                     Id = e.Id, ClassName = e.ClassName, Name = e.Name, Position = Vec(e.Position), Rotation = Vec(e.Rotation),
-                    Hidden = e.Hidden, Properties = e.Properties ?? new(),
+                    Hidden = e.Hidden, Properties = e.Properties?.ToDictionary(kv => kv.Key, kv => kv.Value.Clone()) ?? new(),
                     Locked = e.Locked,
-                });
+                };
+                if (dto.Version < 3) MigrateV2Entity(entity);
+                doc.Entities.Add(entity);
                 doc.NextId = Math.Max(doc.NextId, e.Id + 1);
             }
         if (dto.Groups != null) // stream H
@@ -152,6 +157,36 @@ public static partial class DocumentSerializer
                 doc.NextId = Math.Max(doc.NextId, g.Id + 1);
             }
         return doc;
+    }
+
+    /// <summary>
+    /// v2 lights used Chip's own keys (and the aliases the old Godot addon read); v3 lights are the addon's light scenes,
+    /// whose properties are Godot's. Built-in classes' values are then typed, and ones equal to the default dropped.
+    /// </summary>
+    static void MigrateV2Entity(Entity e)
+    {
+        string range = e.ClassName == "light_spot" ? "spot_range" : "omni_range";
+        Dictionary<string, string>? renames = e.ClassName switch
+        {
+            "light_point" or "light_spot" => new()
+            {
+                ["color"] = "light_color", ["_light"] = "light_color", ["energy"] = "light_energy", ["brightness"] = "light_energy",
+                ["range"] = range, ["radius"] = range, ["shadows"] = "shadow_enabled",
+                ["angle"] = "spot_angle", ["cone"] = "spot_angle",
+            },
+            _ => null,
+        };
+        if (renames != null)
+            foreach (var (from, to) in renames)
+                if (e.Properties.Remove(from, out var v)) e.Properties.TryAdd(to, v);
+        if (e.ClassName == "light_point") e.Properties.Remove("spot_angle");
+        if (EntityCatalog.BuiltIn.Find(e.ClassName) is not { EditorOnly: false } cls) return;
+        foreach (var p in cls.Props)
+            if (e.Properties.TryGetValue(p.Name, out var v) && EntityValues.Coerce(p, v, out _) is { } typed)
+            {
+                if (EntityValues.Same(typed, p.Default)) e.Properties.Remove(p.Name);
+                else e.Properties[p.Name] = typed;
+            }
     }
 
     public static void Save(Document doc, string path) => AtomicFile.Write(path, System.Text.Encoding.UTF8.GetBytes(Serialize(doc)));

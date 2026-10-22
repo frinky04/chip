@@ -51,7 +51,7 @@ public class EntityCommandTests
         Assert.Equal(new Vector3(0, 90, 0), e.Rotation);
         Assert.Equal(SelectMode.Object, ctx.Sel.Mode);
         Assert.Equal([ElementRef.Object(e.Id)], ctx.Sel.Items);
-        Assert.Equal("Place Player start", ctx.Session.UndoLabel);
+        Assert.Equal("Place Info player start", ctx.Session.UndoLabel);
         ctx.Commands.Execute("edit.undo");
         Assert.Single(ctx.Doc.Entities);
     }
@@ -61,33 +61,54 @@ public class EntityCommandTests
     {
         var ctx = RegistryTests.Headless(Level(out _, out var light));
         int id = light.Id;
-        Assert.True(EntitySection.Edit(ctx, id, "Edit Property", e => EntityOps.SetProperty(e, "range", "25")));
-        Assert.True(EntitySection.Edit(ctx, id, "Rename Property", e => EntityOps.RenameProperty(e, "range", "radius")));
+        Assert.True(EntitySection.Edit(ctx, id, "Edit Property", e => EntityOps.SetProperty(e, "note", "25")));
+        Assert.True(EntitySection.Edit(ctx, id, "Rename Property", e => EntityOps.RenameProperty(e, "note", "memo")));
+        Assert.True(EntitySection.Edit(ctx, id, "Edit Property", e => EntityOps.SetProperty(e, "other", "x")));
         var live = ctx.Doc.FindEntity(id)!;
-        Assert.Equal("25", live.Properties["radius"]);
-        Assert.False(live.Properties.ContainsKey("range"));
+        Assert.Equal("25", EntityValues.Text(live.Properties["memo"]));
+        Assert.False(live.Properties.ContainsKey("note"));
 
-        int version = ctx.Session.Version;
-        Assert.False(EntitySection.Edit(ctx, id, "Rename Property", e => EntityOps.RenameProperty(e, "radius", "color")));
+        Assert.False(EntitySection.Edit(ctx, id, "Rename Property", e => EntityOps.RenameProperty(e, "memo", "other")));
         Assert.True(ctx.StatusIsError);
-        Assert.Equal("Rename Property", ctx.Session.UndoLabel); // the refused edit left no step
-        Assert.Equal("25", ctx.Doc.FindEntity(id)!.Properties["radius"]);
+        Assert.Equal("Edit Property", ctx.Session.UndoLabel); // the refused edit left no step
+        Assert.Equal("25", EntityValues.Text(ctx.Doc.FindEntity(id)!.Properties["memo"]));
 
         ctx.Commands.Execute("edit.undo");
-        Assert.Equal("25", ctx.Doc.FindEntity(id)!.Properties["range"]);
         ctx.Commands.Execute("edit.undo");
-        Assert.Equal("10", ctx.Doc.FindEntity(id)!.Properties["range"]);
+        Assert.Equal("25", EntityValues.Text(ctx.Doc.FindEntity(id)!.Properties["note"]));
+        ctx.Commands.Execute("edit.undo");
+        Assert.Empty(ctx.Doc.FindEntity(id)!.Properties);
     }
 
     [Fact]
-    public void Changing_class_adds_the_new_defaults_and_keeps_values()
+    public void Class_properties_are_typed_and_a_default_value_is_not_stored()
     {
         var ctx = RegistryTests.Headless(Level(out _, out var light));
+        int id = light.Id;
+        var range = EntityClasses.Get("light_point").Prop("omni_range")!;
+        Assert.True(EntitySection.Edit(ctx, id, "Set Omni range", e => EntityOps.SetProperty(e, range, EntityValues.Of("12"))));
+        Assert.Equal(12, ctx.Doc.FindEntity(id)!.Properties["omni_range"].GetDouble()); // typed text becomes a number
+
+        Assert.False(EntitySection.Edit(ctx, id, "Set Omni range", e => EntityOps.SetProperty(e, range, EntityValues.Of("far"))));
+        Assert.True(ctx.StatusIsError);
+        Assert.Equal(12, ctx.Doc.FindEntity(id)!.Properties["omni_range"].GetDouble());
+
+        // Setting the class default removes the value, so the entity follows the default if Godot changes it.
+        Assert.True(EntitySection.Edit(ctx, id, "Set Omni range", e => EntityOps.SetProperty(e, range, range.Default)));
+        Assert.False(ctx.Doc.FindEntity(id)!.Properties.ContainsKey("omni_range"));
+        Assert.Equal(range.Default.GetDouble(), EntityValues.Effective(ctx.Doc.FindEntity(id)!, range).GetDouble());
+    }
+
+    [Fact]
+    public void Changing_class_keeps_values()
+    {
+        var ctx = RegistryTests.Headless(Level(out _, out var light));
+        light.Properties["light_energy"] = EntityValues.Of(3.0);
         EntitySection.Edit(ctx, light.Id, "Change Entity Class", e => { EntityOps.SetClass(e, "light_spot"); return null; });
         var live = ctx.Doc.FindEntity(light.Id)!;
         Assert.Equal("light_spot", live.ClassName);
-        Assert.Equal("45", live.Properties["angle"]);
-        Assert.Equal("10", live.Properties["range"]);
+        Assert.Equal(3, live.Properties["light_energy"].GetDouble());
+        Assert.Single(live.Properties); // no defaults copied in
     }
 
     [Fact]

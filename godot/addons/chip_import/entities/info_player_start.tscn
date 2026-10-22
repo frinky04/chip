@@ -1,0 +1,4 @@
+[gd_scene format=3 uid="uid://ds5u7j0w1mcxu"]
+
+[node name="info_player_start" type="Marker3D" groups=["chip_spawn"]]
+metadata/chip_bounds = AABB(-0.3, 0, -0.3, 0.6, 1.8, 0.6)

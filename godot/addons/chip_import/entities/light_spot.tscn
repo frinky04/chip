@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://b4j47xho7y0fd"]
+
+[node name="light_spot" type="SpotLight3D"]
+metadata/chip_expose = PackedStringArray("light_color", "light_energy", "spot_range", "spot_angle", "shadow_enabled")
+metadata/chip_bounds = AABB(-0.15, -0.15, -0.15, 0.3, 0.3, 0.3)

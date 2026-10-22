@@ -57,10 +57,10 @@ public static class EntityOverlay
         bool objectMode = sel.Mode == SelectMode.Object;
         int? hovered = objectMode && ctx.Hover is { } h && doc.FindEntity(h.Mesh) != null ? h.Mesh : null;
         var geometry = GeometryCache.GetValue(ctx, _ => new Rendering.FrameCache<(int, Dictionary<int, EntityDrawGeometry>)>(selection: false));
-        if (!geometry.IsCurrent(ctx.Session) || geometry.Value.Revision != ReferenceModels.Revision)
+        if (!geometry.IsCurrent(ctx.Session) || geometry.Value.Revision != ReferenceModels.DrawRevision)
         {
             var boxes = doc.Entities.ToDictionary(e => e.Id, EntityDrawGeometry.Build);
-            geometry.Store(ctx.Session, (ReferenceModels.Revision, boxes)); // read after building: a first load bumps it
+            geometry.Store(ctx.Session, (ReferenceModels.DrawRevision, boxes)); // read after building: a first load bumps it
         }
         var visibility = VisibilityCache.GetValue(ctx, _ => new EntityVisibilityFrameCache());
         bool occlusion = !BenchmarkSkipOcclusion && doc.Entities.Count <= OcclusionLimit;

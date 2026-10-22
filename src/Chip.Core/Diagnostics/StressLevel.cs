@@ -47,7 +47,7 @@ public static class StressLevel
             doc.Add(mesh);
         }
 
-        string[] classes = ["info_player_start", "light_point", "light_spot", "prop_marker"];
+        string[] classes = ["info_player_start", "light_point", "light_spot", "info_target"];
         for (int i = 0; i < entities; i++)
         {
             var at = new Vector3(rng.NextSingle() * side * cell, rng.NextSingle() * 4, rng.NextSingle() * side * cell);

@@ -74,7 +74,7 @@ public class DataModelV2Tests
         box.Collision = CollisionMode.Only;
         box.SoftEdges.Add(box.Edges().First());
         var e = doc.Add(new Entity { ClassName = "info_player_start", Name = "spawn", Position = new(1, 0, 2), Rotation = new(0, 90, 0) });
-        e.Properties["team"] = "blue";
+        e.Properties["team"] = EntityValues.Of("blue");
 
         var back = DocumentSerializer.Deserialize(DocumentSerializer.Serialize(doc));
         var m = back.Meshes[0];
@@ -84,7 +84,7 @@ public class DataModelV2Tests
         var be = Assert.Single(back.Entities);
         Assert.Equal("info_player_start", be.ClassName);
         Assert.Equal(new Vector3(0, 90, 0), be.Rotation);
-        Assert.Equal("blue", be.Properties["team"]);
+        Assert.Equal("blue", be.Properties["team"].GetString());
         Assert.NotEqual(m.Id, be.Id);
         Assert.True(back.NextId > Math.Max(m.Id, be.Id));
     }
@@ -105,7 +105,7 @@ public class DataModelV2Tests
         Assert.Equal(CollisionMode.Default, m.Collision);
         Assert.Empty(m.SoftEdges);
         Assert.Empty(doc.Entities);
-        Assert.Contains("\"version\": 2", DocumentSerializer.Serialize(doc));
+        Assert.Contains($"\"version\": {DocumentSerializer.CurrentVersion}", DocumentSerializer.Serialize(doc));
     }
 
     [Fact]

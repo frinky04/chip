@@ -1,0 +1,13 @@
+; Development project for the Chip import addon: sample entity classes and the addon's tests.
+; Run the tests with scripts/godot-test.ps1.
+
+config_version=5
+
+[application]
+
+config/name="Chip addon dev"
+config/features=PackedStringArray("4.3")
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/chip_import/plugin.cfg")

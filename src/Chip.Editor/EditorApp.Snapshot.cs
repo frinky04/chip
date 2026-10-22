@@ -100,6 +100,10 @@ public sealed partial class EditorApp
                 ctx.SetMode(SelectMode.Object);
                 ctx.Sel.Add(ElementRef.Object(reference.Id));
                 break;
+            case "entity" when doc.Entities.Find(e => !Core.Scene.EntityClasses.Get(e.ClassName).EditorOnly) is { } entity: // its class's properties
+                ctx.SetMode(SelectMode.Object);
+                ctx.Sel.Add(ElementRef.Object(entity.Id));
+                break;
             case "faces" when doc.Meshes.Count > 0:
                 ctx.SetMode(SelectMode.Face);
                 var floor = doc.Meshes[0];

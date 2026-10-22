@@ -97,7 +97,7 @@ public class UndoDeltaTests
                 var entity = doc.Entities[0];
                 entity.Position += Vector3.One;
                 entity.Rotation += new Vector3(0, 45, 0);
-                entity.Properties["custom"] = step.ToString();
+                entity.Properties["custom"] = EntityValues.Of(step.ToString());
                 entity.ClassName = "light_point";
                 entity.Hidden = !entity.Hidden;
                 entity.Locked = !entity.Locked;

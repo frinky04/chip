@@ -25,6 +25,7 @@ public static class PipelineActions
         if (r.Collision is { } c)
             parts.Add($"Collision {c.InputTriangles:N0} → {c.OutputTriangles:N0} triangles" + (c.ConvexPieces > 0 ? $", {c.ConvexPieces} hulls" : ""));
         if (r.Tessellated is { } t) parts.Add($"render {t.Before:N0} → {t.After:N0} triangles");
+        if (r.Warnings.Count > 0) parts.Add(r.Warnings.Count == 1 ? r.Warnings[0] : $"{r.Warnings[0]} (and {r.Warnings.Count - 1} more)");
         return parts.Count == 0 ? "" : $". {string.Join("; ", parts)}";
     }
 
@@ -111,7 +112,7 @@ public static class PipelineActions
         {
             ctx.Sel.Clear();
             foreach (var m in result.Meshes) ctx.Sel.Add(ElementRef.Object(ctx.Doc.Add(m).Id));
-            foreach (var e in result.Entities) ctx.Doc.Add(e);
+            SceneOps.AddEntities(ctx.Doc, result.Entities);
         });
         if (result.Meshes.Count > 0) ctx.Focus();
 

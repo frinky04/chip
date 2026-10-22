@@ -409,11 +409,21 @@ public static class Widgets
 
     public static void Tip(string text)
     {
-        if (ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort | ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip(text);
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort | ImGuiHoveredFlags.AllowWhenDisabled)) ShowTip(text);
     }
 
     static void TipFor(bool hovered, string text)
     {
-        if (hovered && ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort)) ImGui.SetTooltip(text);
+        if (hovered && ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort)) ShowTip(text);
+    }
+
+    /// <summary>Tooltips wrap at a readable width (engine docs can be paragraphs) and show text as is, so "50%" survives.</summary>
+    static void ShowTip(string text)
+    {
+        ImGui.BeginTooltip();
+        ImGui.PushTextWrapPos(Theme.Px(380));
+        ImGui.TextUnformatted(text);
+        ImGui.PopTextWrapPos();
+        ImGui.EndTooltip();
     }
 }

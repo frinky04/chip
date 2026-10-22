@@ -1,0 +1,20 @@
+{
+  "version": 3,
+  "exportScale": 1,
+  "exportPath": "demo.glb",
+  "exportCollision": true,
+  "nextId": 6,
+  "texelDensity": 512,
+  "meshes": [
+    {"id": 1, "name": "floor", "hidden": false, "positions": [[0, -0.25, 0], [8, -0.25, 0], [0, 0, 0], [8, 0, 0], [0, -0.25, 8], [8, -0.25, 8], [0, 0, 8], [8, 0, 8]], "faces": [{"verts": [0, 4, 6, 2], "material": "dev_measurewall01a", "u": [0, 0, 1], "v": [0, -1, 0], "shift": [0, 0], "scale": [0.001953125, 0.001953125], "rotation": 0}, {"verts": [1, 3, 7, 5], "material": "dev_measurewall01a", "u": [0, 0, -1], "v": [0, -1, 0], "shift": [0, 0], "scale": [0.001953125, 0.001953125], "rotation": 0}, {"verts": [0, 1, 5, 4], "material": "dev_measurewall01a", "u": [-1, 0, 0], "v": [0, 0, 1], "shift": [0, 0], "scale": [0.001953125, 0.001953125], "rotation": 0}, {"verts": [2, 6, 7, 3], "material": "dev_measurewall01a", "u": [1, 0, 0], "v": [0, 0, 1], "shift": [0, 0], "scale": [0.001953125, 0.001953125], "rotation": 0}, {"verts": [0, 2, 3, 1], "material": "dev_measurewall01a", "u": [-1, 0, 0], "v": [0, -1, 0], "shift": [0, 0], "scale": [0.001953125, 0.001953125], "rotation": 0}, {"verts": [4, 5, 7, 6], "material": "dev_measurewall01a", "u": [1, 0, 0], "v": [0, -1, 0], "shift": [0, 0], "scale": [0.001953125, 0.001953125], "rotation": 0}], "locked": false, "collision": "default"}
+  ],
+  "entities": [
+    {"id": 2, "className": "door", "name": "front_door", "position": [4, 0, 2], "rotation": [0, 0, 0], "hidden": false,
+     "properties": {"mode": "slide", "open_angle": 120, "tint": [0.3, 0.6, 1, 1], "partner": {"entity": 3}, "retired_key": "old"}},
+    {"id": 3, "className": "door", "name": "back_door", "position": [4, 0, 6], "rotation": [0, 180, 0], "hidden": false},
+    {"id": 4, "className": "enemies/grunt", "name": "", "position": [2, 0, 4], "rotation": [0, 90, 0], "hidden": false,
+     "properties": {"mood": 5, "target": {"entity": 2}}},
+    {"id": 5, "className": "light_point", "name": "lamp", "position": [6, 2.5, 4], "rotation": [0, 0, 0], "hidden": false,
+     "properties": {"light_color": [1, 0.75, 0.4, 1], "omni_range": 8}}
+  ]
+}

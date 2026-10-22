@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Numerics;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Chip.Core.Geometry;
 using Chip.Core.Scene;
@@ -95,12 +96,15 @@ public static class GltfImporter
                 Matrix4x4.Decompose(world, out _, out var rot, out var pos);
                 var e = new Entity
                 {
+                    // The id it had in the exporting level, so references between imported entities can follow
+                    // (SceneOps.AddEntities gives it a fresh one).
+                    Id = extras["chip_id"] is JsonValue idValue && idValue.TryGetValue<int>(out var chipId) ? chipId : 0,
                     ClassName = cls, Name = extras["chip_name"]?.GetValue<string>() ?? "",
                     Position = pos * scale, Rotation = EntityEuler(rot),
                 };
                 if (extras["properties"] is JsonObject props)
                     foreach (var (k, v) in props)
-                        e.Properties[k] = v is JsonValue jv && jv.TryGetValue<string>(out var str) ? str : v?.ToJsonString() ?? "";
+                        e.Properties[k] = v == null ? EntityValues.Null : JsonSerializer.SerializeToElement(v);
                 entities.Add(e);
             }
             if (node["children"] is JsonArray children)

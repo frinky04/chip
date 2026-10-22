@@ -17,6 +17,7 @@ public sealed class SceneFeature : IEditorFeature
         ctx.AddTool(new EntityTool());
         ViewSettings.Of(ctx).ConstructionTools.Add("entity");
         ctx.AddSection(new EntitySection());
+        ctx.AddPanel(new ClassTracker().Update);
         ctx.AddPanel(groups.Update);
         ctx.AddPanel(EntityOverlay.Draw);
         ctx.AddPanel(outliner.Draw);

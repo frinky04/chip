@@ -1,0 +1,4 @@
+.godot/
+.chip/
+tests/out/
+levels/*.glb

@@ -157,7 +157,7 @@ public sealed unsafe class Renderer : IDisposable
         if (!ReferenceEquals(session, _builtSession) || session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc) || !ReferenceEquals(scene, _builtScene))
             SyncScene(session, scene);
         _edgeMode = session.Sel.Mode == SelectMode.Edge;
-        if (!_refCache.IsCurrent(session) || _refRevision != ReferenceModels.Revision) SyncReferences(session);
+        if (!_refCache.IsCurrent(session) || _refRevision != ReferenceModels.DrawRevision) SyncReferences(session);
         if (_overlayCache.IsCurrent(session) && hover == _overlayHover && showNormals == _overlayNormals && ReferenceEquals(proxies, _overlayProxies)) return;
         _overlay = BuildOverlay(session, hover, showNormals, proxies, _overlay);
         _overlayCache.Store(session, _overlay);
@@ -445,7 +445,7 @@ public sealed unsafe class Renderer : IDisposable
         _refTriVerts = tris.Count / 7;
         _refWireVerts = wires.Count / 7;
         _refCache.Store(session, 0);
-        _refRevision = ReferenceModels.Revision; // read after loading: a first load bumps it
+        _refRevision = ReferenceModels.DrawRevision; // read after loading: a first load bumps it
     }
 
     // ---- Scene buffers (per mesh, dirty-tracked) ----

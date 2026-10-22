@@ -53,7 +53,7 @@ public class ReferenceModelTests : IDisposable
     static Entity Reference(string model, Vector3 position = default, float yaw = 0)
     {
         var e = EntityClasses.Create(ReferenceModels.ClassName, position, yaw);
-        e.Properties[ReferenceModels.ModelKey] = model;
+        e.Properties[ReferenceModels.ModelKey] = EntityValues.Of(model);
         return e;
     }
 
@@ -108,6 +108,18 @@ public class ReferenceModelTests : IDisposable
     }
 
     [Fact]
+    public void Placing_on_a_model_lands_on_its_triangles_not_its_box()
+    {
+        var figure = Reference(ReferenceModels.DefaultModel, new Vector3(3, 0, 0));
+        var model = ReferenceModels.Get(figure).Model!;
+        var hit = EntityOps.SurfaceHit(figure, new Ray(new Vector3(3, 10, 0), -Vector3.UnitY))!.Value;
+        Assert.InRange(hit.Point.Y, model.Max.Y - 0.05f, model.Max.Y + 1e-3f); // the top of the head
+        Assert.True(hit.Normal.Y > 0.5f, $"{hit.Normal}");
+        // Past the figure's side, inside its bounds: the box would be hit, the model isn't.
+        Assert.Null(EntityOps.SurfaceHit(figure, new Ray(new Vector3(3 + model.Max.X - 0.01f, 10, model.Max.Z - 0.01f), -Vector3.UnitY)));
+    }
+
+    [Fact]
     public void A_missing_file_falls_back_to_the_class_box_with_a_reason()
     {
         var e = Reference(Path.Combine(_dir, "gone.glb"));
@@ -156,7 +168,7 @@ public class ReferenceModelTests : IDisposable
         doc.Add(Box(new(-1, -0.1f, -1), new(1, 0, 1)));
         var figure = doc.Add(EntityClasses.Create(ReferenceModels.ClassName, Vector3.Zero));
         var door = doc.Add(Reference(WriteDoor("main_door.glb"), new Vector3(2, 0, 0), 90));
-        door.Properties[ReferenceModels.MarkerKey] = "1";
+        door.Properties[ReferenceModels.MarkerKey] = EntityValues.Of(true);
 
         var result = GlbExporter.Build(doc, new MaterialLibrary(), null);
         Assert.Equal(1, result.Entities);
@@ -226,7 +238,7 @@ public class ReferenceModelTests : IDisposable
     {
         var doc = new Document();
         var e = doc.Add(Reference("../props/door.glb", new Vector3(1, 0, 2), 90));
-        e.Properties[ReferenceModels.MarkerKey] = "1";
+        e.Properties[ReferenceModels.MarkerKey] = EntityValues.Of("1"); // v2 levels stored "1"; still reads as on
         var path = Path.Combine(_dir, "level.chip");
         DocumentSerializer.Save(doc, path);
         var back = DocumentSerializer.Load(path).Entities.Single();

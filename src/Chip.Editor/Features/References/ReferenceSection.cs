@@ -37,7 +37,7 @@ public sealed class ReferenceSection : IInspectorSection
         if (Toggle($"marker{id}", Icon.MapPin, "Export as marker",
                 $"On: exports an empty node called {node} here, to put the real asset on in your engine. Off: editor only", marker))
             EntitySection.Edit(ctx, id, marker ? "Stop Exporting Marker" : "Export Marker",
-                x => EntityOps.SetProperty(x, ReferenceModels.MarkerKey, marker ? "0" : "1"));
+                x => EntityOps.SetProperty(x, ReferenceModels.MarkerKey, EntityValues.Of(!marker)));
         ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
         ImGui.TextWrapped(marker ? $"Exports as the empty node {node}" : "Editor only: not exported");
         ImGui.PopStyleColor();

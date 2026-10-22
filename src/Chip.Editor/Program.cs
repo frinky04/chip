@@ -16,6 +16,35 @@ if (args.Length >= 2 && args[0] == "--rules-check")
         return 4;
     }
 }
+// Headless export: Chip --export level.chip [out.glb] (default: the level's export path). Entity classes come from the
+// Godot project the output or the level is in, as in the editor. Dressing rules aren't applied.
+if (args.Length >= 2 && args[0] == "--export")
+{
+    try
+    {
+        var levelPath = Path.GetFullPath(args[1]);
+        var level = Chip.Core.IO.DocumentSerializer.Load(levelPath);
+        string? output = args.Length >= 3 ? Path.GetFullPath(args[2])
+            : level.ExportPath is { Length: > 0 } p ? Path.GetFullPath(Path.Combine(Path.GetDirectoryName(levelPath)!, p)) : null;
+        if (output == null)
+        {
+            Console.Error.WriteLine($"{args[1]} has no export path; pass one: --export {args[1]} out.glb");
+            return 2;
+        }
+        Chip.Core.Scene.EntityClasses.Track(output, levelPath);
+        if (Chip.Core.Scene.EntityClasses.Problem is { } problem) Console.Error.WriteLine(problem);
+        var materials = Chip.Core.Scene.MaterialLibrary.LoadFolder(Path.Combine(AppContext.BaseDirectory, "assets", "textures"));
+        var r = Chip.Core.IO.GlbExporter.Export(level, materials, output);
+        foreach (var w in r.Warnings) Console.Error.WriteLine(w);
+        Console.WriteLine($"Exported {r.Meshes} meshes and {r.Entities} entities to {output}");
+        return 0;
+    }
+    catch (Exception e) when (e is IOException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine($"can't export {args[1]}: {e.Message}");
+        return 4;
+    }
+}
 if (args.Length >= 1 && args[0] == "--rules-schema")
 {
     var schema = Chip.Core.Dressing.DressingSchema.Generate();

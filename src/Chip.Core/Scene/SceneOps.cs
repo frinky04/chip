@@ -43,35 +43,68 @@ public static class SceneOps
 
     /// <summary>
     /// Copies meshes and entities, returning the copies' ids. Whole groups in the selection are copied as new groups;
-    /// other copies join their original's group.
+    /// other copies join their original's group. References between copied entities point at the copies (a duplicated
+    /// pair of doors stays a pair); references to anything else are kept.
     /// </summary>
     public static List<int> Duplicate(Document doc, IEnumerable<int> ids)
     {
         var (groups, loose) = GroupOps.Cover(doc, ids);
         var copies = new List<int>();
-        foreach (var g in groups) CopyGroup(doc, g, GroupOps.ParentOf(doc, g)?.Id ?? 0, copies);
+        var map = new Dictionary<int, int>();
+        foreach (var g in groups) CopyGroup(doc, g, GroupOps.ParentOf(doc, g)?.Id ?? 0, copies, map);
         foreach (var id in loose)
-            if (CopyObject(doc, id) is { } copy)
+            if (CopyObject(doc, id, map) is { } copy)
             {
                 copies.Add(copy);
                 if (GroupOps.GroupOf(doc, id) is { } g) g.Members.Add(copy);
             }
+        RemapReferences(map.Values.Select(doc.FindEntity).OfType<Entity>(), map, dropOthers: false);
         return copies;
     }
 
-    static void CopyGroup(Document doc, Group src, int parent, List<int> copies)
+    static void CopyGroup(Document doc, Group src, int parent, List<int> copies, Dictionary<int, int> map)
     {
         var dst = doc.Add(new Group { Name = src.Name, Parent = parent });
         foreach (var id in src.Members)
-            if (CopyObject(doc, id) is { } copy) { dst.Members.Add(copy); copies.Add(copy); }
-        foreach (var child in doc.Groups.Where(c => c.Parent == src.Id && c != dst).ToList()) CopyGroup(doc, child, dst.Id, copies);
+            if (CopyObject(doc, id, map) is { } copy) { dst.Members.Add(copy); copies.Add(copy); }
+        foreach (var child in doc.Groups.Where(c => c.Parent == src.Id && c != dst).ToList()) CopyGroup(doc, child, dst.Id, copies, map);
     }
 
-    static int? CopyObject(Document doc, int id)
+    static int? CopyObject(Document doc, int id, Dictionary<int, int> map)
     {
         if (doc.Find(id) is { } m) return doc.Add(m.Clone()).Id;
-        if (doc.FindEntity(id) is { } e) return doc.Add(e.Clone()).Id;
+        if (doc.FindEntity(id) is { } e) return map[id] = doc.Add(e.Clone()).Id;
         return null;
+    }
+
+    /// <summary>
+    /// Adds entities that refer to each other by the ids they had elsewhere (an imported file): each gets a fresh id and
+    /// its references follow. References to ids outside the batch are removed, since here they'd name something else.
+    /// </summary>
+    public static void AddEntities(Document doc, IEnumerable<Entity> entities)
+    {
+        var added = new List<Entity>();
+        var map = new Dictionary<int, int>();
+        foreach (var e in entities)
+        {
+            int old = e.Id;
+            doc.Add(e);
+            map.TryAdd(old, e.Id);
+            added.Add(e);
+        }
+        RemapReferences(added, map, dropOthers: true);
+    }
+
+    /// <summary>Points <c>{ "entity": id }</c> values through <paramref name="map"/>; unmapped ones stay, or go when <paramref name="dropOthers"/>.</summary>
+    public static void RemapReferences(IEnumerable<Entity> entities, IReadOnlyDictionary<int, int> map, bool dropOthers)
+    {
+        foreach (var e in entities)
+            foreach (var (key, value) in e.Properties.ToList())
+                if (EntityValues.RefId(value) is { } target)
+                {
+                    if (map.TryGetValue(target, out var to)) e.Properties[key] = EntityValues.Ref(to);
+                    else if (dropOthers) e.Properties.Remove(key);
+                }
     }
 
     public static void SetHidden(Document doc, IEnumerable<int> ids, bool hidden)

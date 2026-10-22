@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "generator": "chip_import",
+  "godot": "4.7",
+  "classes": {
+    "info_player_start": {
+      "scene": "res://addons/chip_import/entities/info_player_start.tscn",
+      "label": "Info player start",
+      "base": "Marker3D",
+      "uid": "uid://ds5u7j0w1mcxu",
+      "props": [],
+      "bounds": [
+        [
+          -0.3,
+          0.0,
+          -0.3
+        ],
+        [
+          0.3,
+          1.8,
+          0.3
+        ]
+      ]
+    },
+    "info_target": {
+      "scene": "res://addons/chip_import/entities/info_target.tscn",
+      "label": "Info target",
+      "base": "Marker3D",
+      "uid": "uid://cohdwy4hbk4o4",
+      "props": [],
+      "bounds": [
+        [
+          -0.15,
+          -0.15,
+          -0.15
+        ],
+        [
+          0.15,
+          0.15,
+          0.15
+        ]
+      ]
+    },
+    "light_point": {
+      "scene": "res://addons/chip_import/entities/light_point.tscn",
+      "label": "Light point",
+      "base": "OmniLight3D",
+      "uid": "uid://bispswiantj25",
+      "props": [
+        {
+          "name": "light_color",
+          "type": "color",
+          "default": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "group": "Light"
+        },
+        {
+          "name": "light_energy",
+          "type": "float",
+          "range": [
+            0.0,
+            16.0,
+            0.001
+          ],
+          "or_greater": true,
+          "default": 1.0,
+          "group": "Light"
+        },
+        {
+          "name": "shadow_enabled",
+          "type": "bool",
+          "default": false,
+          "group": "Shadow"
+        },
+        {
+          "name": "omni_range",
+          "type": "float",
+          "range": [
+            0.0,
+            4096.0,
+            0.001
+          ],
+          "or_greater": true,
+          "suffix": "m",
+          "default": 5.0,
+          "group": "Omni"
+        }
+      ],
+      "bounds": [
+        [
+          -0.15,
+          -0.15,
+          -0.15
+        ],
+        [
+          0.15,
+          0.15,
+          0.15
+        ]
+      ]
+    },
+    "light_spot": {
+      "scene": "res://addons/chip_import/entities/light_spot.tscn",
+      "label": "Light spot",
+      "base": "SpotLight3D",
+      "uid": "uid://b4j47xho7y0fd",
+      "props": [
+        {
+          "name": "light_color",
+          "type": "color",
+          "default": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "group": "Light"
+        },
+        {
+          "name": "light_energy",
+          "type": "float",
+          "range": [
+            0.0,
+            16.0,
+            0.001
+          ],
+          "or_greater": true,
+          "default": 1.0,
+          "group": "Light"
+        },
+        {
+          "name": "shadow_enabled",
+          "type": "bool",
+          "default": false,
+          "group": "Shadow"
+        },
+        {
+          "name": "spot_range",
+          "type": "float",
+          "range": [
+            0.0,
+            4096.0,
+            0.001
+          ],
+          "or_greater": true,
+          "suffix": "m",
+          "default": 5.0,
+          "group": "Spot"
+        },
+        {
+          "name": "spot_angle",
+          "type": "float",
+          "range": [
+            0.0,
+            180.0,
+            0.01
+          ],
+          "default": 45.0,
+          "group": "Spot"
+        }
+      ],
+      "bounds": [
+        [
+          -0.15,
+          -0.15,
+          -0.15
+        ],
+        [
+          0.15,
+          0.15,
+          0.15
+        ]
+      ]
+    }
+  }
+}

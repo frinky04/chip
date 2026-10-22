@@ -252,7 +252,7 @@ public sealed class PickCache(Session session)
     public Entity? PickEntity(ViewInfo view, Vector2 mouse, float pixelScale = 1, float? surfaceDistance = null)
     {
         // Entities are few and mutable independently of mesh revisions. Read their current transforms and flags.
-        // Avoid EntityClasses.Get's LINQ/unknown-class allocations in this per-frame path.
+        // Avoid EntityClasses.Get's unknown-class allocation in this per-frame path.
         var ray = view.ScreenRay(mouse);
         float limit = surfaceDistance is { } s ? s * 1.02f + 0.02f : float.MaxValue;
         Entity? best = null;
@@ -261,11 +261,7 @@ public sealed class PickCache(Session session)
         {
             if (e.Hidden || e.Locked) continue;
             Vector3 min = new(-0.2f), max = new(0.2f);
-            for (int i = 0; i < EntityClasses.BuiltIn.Count; i++)
-            {
-                var c = EntityClasses.BuiltIn[i];
-                if (c.Name == e.ClassName) { min = c.BoxMin; max = c.BoxMax; break; }
-            }
+            if (EntityClasses.Current.Find(e.ClassName) is { } c) { min = c.BoxMin; max = c.BoxMax; }
             var inv = Quaternion.Conjugate(EntityOps.Orientation(e));
             var localRay = new Ray(Vector3.Transform(ray.Origin - e.Position, inv), Vector3.Transform(ray.Dir, inv));
             float? t = EntityBoxHit(localRay, min, max);

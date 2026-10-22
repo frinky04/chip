@@ -14,6 +14,8 @@ public sealed record ExportResult(byte[] Data, IReadOnlyList<SideFile> SideFiles
     public CollisionBakeStats? Collision { get; init; }
     /// <summary>Render triangles before and after tessellation, when <see cref="ExportSettings.Tessellate"/> ran.</summary>
     public (int Before, int After)? Tessellated { get; init; }
+    /// <summary>Entity values left out of the file, and why.</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
 }
 
 /// <summary>
@@ -28,7 +30,8 @@ public sealed record ExportResult(byte[] Data, IReadOnlyList<SideFile> SideFiles
 /// <c>name_trigger-colonly</c> with <c>extras.chip_tool = "trigger"</c>.
 /// Mesh nodes carry <c>extras.chip_mesh</c>/<c>chip_id</c> (and <c>chip_remap</c>, material name to path, for the remaps
 /// they use); remapped materials carry <c>extras.godot_path</c>. Entities
-/// follow as empty nodes (translation, rotation) with <c>extras = { chip_class, chip_id, chip_name?, properties }</c>.
+/// follow as empty nodes (translation, rotation) with <c>extras = { chip_class, chip_id, chip_uid?, chip_scene?,
+/// chip_name?, properties }</c>: the class's engine scene, and the values the entity sets, typed by its class.
 /// </summary>
 public static class GlbExporter
 {
@@ -57,6 +60,7 @@ public static class GlbExporter
         var meshes = new JsonArray();
         var nodes = new JsonArray();
         var sideFiles = new List<SideFile>();
+        var warnings = new List<string>();
         float s = doc.ExportScale;
         int meshCount = 0, entityCount = 0;
 
@@ -187,20 +191,22 @@ public static class GlbExporter
                 AddNode($"chip_hull_{hull.SourceMeshId}", "-convcolonly", CollisionPrimitive(hull.Points, hull.Triangles), tag());
         }
 
+        bool ExportsEntity(Entity e) => (!e.Hidden || opt.IncludeHidden) && ReferenceModels.Exports(e); // reference models are editor-only unless exported as markers
+        var exportedIds = doc.Entities.Where(ExportsEntity).Select(e => e.Id).ToHashSet();
         foreach (var e in doc.Entities)
         {
-            if (e.Hidden && !opt.IncludeHidden) continue;
-            if (!ReferenceModels.Exports(e)) continue; // reference models are editor-only unless exported as markers
+            if (!ExportsEntity(e)) continue;
             var node = new JsonObject { ["name"] = EntityNodeName(e) };
             var t = e.Position * s;
             if (t != Vector3.Zero) node["translation"] = new JsonArray(t.X, t.Y, t.Z);
             var q = EntityRotation(e.Rotation);
             if (q != Quaternion.Identity) node["rotation"] = new JsonArray(q.X, q.Y, q.Z, q.W);
-            var props = new JsonObject();
-            foreach (var (k, v) in e.Properties.OrderBy(kv => kv.Key, StringComparer.Ordinal)) props[k] = v;
+            var cls = EntityClasses.Get(e.ClassName);
             var extras = new JsonObject { ["chip_class"] = e.ClassName, ["chip_id"] = e.Id };
+            if (cls.Uid != null) extras["chip_uid"] = cls.Uid;
+            if (cls.Scene != null) extras["chip_scene"] = cls.Scene;
             if (e.Name.Length > 0) extras["chip_name"] = e.Name;
-            extras["properties"] = props;
+            extras["properties"] = EntityProperties(e, cls, exportedIds, warnings);
             node["extras"] = extras;
             nodes.Add(node);
             entityCount++;
@@ -321,9 +327,40 @@ public static class GlbExporter
         w.Flush();
         return new ExportResult(outStream.ToArray(), sideFiles, meshCount, entityCount)
         {
+            Warnings = warnings,
             Collision = collisionStats,
             Tessellated = opt.Tessellate ? (tessBefore, tessAfter) : null,
         };
+    }
+
+    /// <summary>
+    /// The values the entity sets, typed by its class (a v2 string "10" for a float goes out as 10). Values the class
+    /// can't read, and references to entities that aren't exported, are left out with a warning, so the engine keeps
+    /// the scene's value. Properties the class doesn't declare go out as they are.
+    /// </summary>
+    static JsonObject EntityProperties(Entity e, EntityClass cls, HashSet<int> exportedIds, List<string> warnings)
+    {
+        var props = new JsonObject();
+        foreach (var (k, v) in e.Properties.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            var value = v;
+            if (cls.Prop(k) is { } spec)
+            {
+                if (EntityValues.Coerce(spec, v, out var error) is not { } typed)
+                {
+                    warnings.Add($"{SceneOps.DisplayName(e)}: {error}; left out");
+                    continue;
+                }
+                value = typed;
+            }
+            if (EntityValues.RefId(value) is { } target && !exportedIds.Contains(target))
+            {
+                warnings.Add($"{SceneOps.DisplayName(e)}: {k} points at an entity that isn't exported; left out");
+                continue;
+            }
+            props[k] = JsonNode.Parse(value.GetRawText());
+        }
+        return props;
     }
 
     /// <summary>The entity's node name: its name, else <c>class_id</c> (a reference model's marker: <c>model_id</c>).</summary>

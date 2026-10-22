@@ -49,8 +49,9 @@ public class ExportTests
         doc.Export.BakeCollision = false; // the per-mesh collider path (baking is covered in CollisionBakeExportTests)
         doc.Add(Box(Vector3.Zero, Vector3.One));
         var light = doc.Add(new Entity { ClassName = "light_point", Position = new Vector3(1, 2, 3), Rotation = new Vector3(0, 90, 0) });
-        light.Properties["color"] = "255 128 0";
-        light.Properties["range"] = "8";
+        light.Properties["light_color"] = EntityValues.Of("255 128 0"); // text a v2 level could hold: exported typed
+        light.Properties["omni_range"] = EntityValues.Of("8");
+        light.Properties["note"] = EntityValues.Of("kept"); // not a light_point property: goes out as it is
         var spawn = doc.Add(new Entity { ClassName = "info_player_start", Name = "start" });
 
         var json = Glb.Json(GlbExporter.Build(doc, new MaterialLibrary()));
@@ -65,8 +66,14 @@ public class ExportTests
         Assert.Equal(0, q[0], 5); Assert.Equal(MathF.Sqrt(0.5f), q[1], 5); Assert.Equal(0, q[2], 5); Assert.Equal(MathF.Sqrt(0.5f), q[3], 5);
         Assert.Equal("light_point", n["extras"]!["chip_class"]!.GetValue<string>());
         Assert.Equal(light.Id, n["extras"]!["chip_id"]!.GetValue<int>());
-        Assert.Equal("255 128 0", n["extras"]!["properties"]!["color"]!.GetValue<string>());
-        Assert.Equal("8", n["extras"]!["properties"]!["range"]!.GetValue<string>());
+        var props = n["extras"]!["properties"]!;
+        var color = props["light_color"]!.AsArray().Select(x => x!.GetValue<double>()).ToArray();
+        Assert.Equal([1, 128 / 255.0, 0, 1], color, (a, b) => Math.Abs(a - b) < 1e-6);
+        Assert.Equal(8, props["omni_range"]!.GetValue<double>());
+        Assert.Equal("kept", props["note"]!.GetValue<string>());
+        // The class's scene, so the addon can instance it.
+        Assert.Equal("res://addons/chip_import/entities/light_point.tscn", n["extras"]!["chip_scene"]!.GetValue<string>());
+        Assert.StartsWith("uid://", n["extras"]!["chip_uid"]!.GetValue<string>());
 
         var s = nodes[2]!;
         Assert.Equal("start", s["name"]!.GetValue<string>());

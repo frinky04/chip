@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3 uid="uid://dlm1osw5eeb10"]
+
+[ext_resource type="Script" path="res://entities/door.gd" id="1"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_door"]
+size = Vector3(1, 2, 0.1)
+
+[node name="door" type="Node3D"]
+script = ExtResource("1")
+open_angle = 100.0
+
+[node name="Panel" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+mesh = SubResource("BoxMesh_door")

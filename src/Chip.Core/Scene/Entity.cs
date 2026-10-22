@@ -1,10 +1,12 @@
 using System.Numerics;
+using System.Text.Json;
 
 namespace Chip.Core.Scene;
 
 /// <summary>
-/// A point entity (player start, light, generic marker). Engine-agnostic: a class name plus string key-values,
-/// exported as an empty glTF node with the key-values in <c>extras</c>.
+/// A point entity (player start, light, an engine scene). A class name from <see cref="EntityClasses"/> plus the property
+/// values this entity sets (typed JSON, see <see cref="EntityValues"/>); a property it doesn't set has its class default.
+/// Exported as an empty glTF node with the values in <c>extras</c>.
 /// </summary>
 public sealed class Entity
 {
@@ -17,11 +19,12 @@ public sealed class Entity
     public bool Hidden;
     /// <summary>Locked entities draw but can't be picked or selected (like <c>PolyMesh.Locked</c>).</summary>
     public bool Locked;
-    public Dictionary<string, string> Properties = new();
+    /// <summary>Only the values this entity sets. Elements are immutable, so a shallow copy is a full copy.</summary>
+    public Dictionary<string, JsonElement> Properties = new();
 
     public Entity Clone() => new()
     {
         Id = Id, ClassName = ClassName, Name = Name, Position = Position, Rotation = Rotation, Hidden = Hidden, Locked = Locked,
-        Properties = new Dictionary<string, string>(Properties),
+        Properties = new Dictionary<string, JsonElement>(Properties),
     };
 }

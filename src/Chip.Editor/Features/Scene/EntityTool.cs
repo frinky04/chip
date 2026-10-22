@@ -1,4 +1,5 @@
 using System.Numerics;
+using Chip.Core.Picking;
 using Chip.Core.Scene;
 using Chip.Editor.Framework;
 using Chip.Editor.Tools.Block;
@@ -10,6 +11,7 @@ namespace Chip.Editor.Features.Scene;
 
 /// <summary>
 /// Entity tool (Shift+E): click a surface or the grid to place a point entity of the class picked in the Tool section.
+/// Other entities are surfaces too (a pickup on a crate) unless the tool is set to place on meshes only.
 /// The point snaps to the grid on the surface's plane, and the entity's box is pushed out of the surface so a light on
 /// the floor sits on it and a player start on a wall stands clear of it. The new entity becomes the selection; the tool
 /// stays active for the next one.
@@ -18,7 +20,7 @@ public sealed class EntityTool : IViewportTool
 {
     readonly ConstructionPlane _plane = new();
     (Vector3 Position, float Yaw, string? Fit)? _cursor;
-    string _custom = "";
+    string _custom = "", _filter = "";
 
     public string Id => "entity";
     public string Name => "Entity";
@@ -34,6 +36,8 @@ public sealed class EntityTool : IViewportTool
     public float Yaw { get; set; }
     /// <summary>Model of the next reference model (a built-in name or a file path, see <see cref="ReferenceModels"/>).</summary>
     public string Model { get; set; } = ReferenceModels.DefaultModel;
+    /// <summary>Whether entities are surfaces to place on (a pickup on a crate), or clicks go through them to the meshes.</summary>
+    public bool OnEntities { get; set; } = true;
 
     bool PlacingReference => ClassName.Trim() == ReferenceModels.ClassName;
     string Label => PlacingReference ? ReferenceModels.DisplayName(Model) : EntityClasses.Get(ClassName).Label;
@@ -57,7 +61,7 @@ public sealed class EntityTool : IViewportTool
     Entity Probe(Vector3 position, float yaw)
     {
         var e = EntityClasses.Create(ClassName.Trim(), position, yaw);
-        if (PlacingReference) e.Properties[ReferenceModels.ModelKey] = Model;
+        if (PlacingReference) e.Properties[ReferenceModels.ModelKey] = EntityValues.Of(Model);
         return e;
     }
 
@@ -67,6 +71,13 @@ public sealed class EntityTool : IViewportTool
     /// </summary>
     (Vector3, float, string?)? Placement(EditorContext ctx)
     {
+        var ray = ctx.MouseRay();
+        if (OnEntities && EntityOps.FirstSurface(ctx.Doc, ray) is { } on
+            && (ctx.Picks.RaycastFace(ray, ctx.Backfaces) is not { } face || on.Distance < face.Distance))
+        {
+            if (ctx.Sel.Mode == SelectMode.Object) ctx.Hover = ElementRef.Object(on.Entity.Id); // shows what it lands on
+            return OnEntity(ctx, on);
+        }
         if (PlacingReference && ReferenceModels.Get(Model).Model is { } model && ctx.Picks.RaycastFace(ctx.MouseRay(), ctx.Backfaces) is { } hit
             && ReferencePlacement.IsWall(hit.Normal))
         {
@@ -86,6 +97,26 @@ public sealed class EntityTool : IViewportTool
         if (Vector3.Dot(normal, ctx.MouseRay().Dir) > 0) normal = -normal; // a back face, or the grid seen from below: stay on the camera's side
         float below = EntityOps.BoxCorners(Probe(Vector3.Zero, Yaw)).Min(c => Vector3.Dot(c, normal));
         return (below < 0 ? point - normal * below : point, Yaw, null);
+    }
+
+    /// <summary>
+    /// On another entity's surface (its model, else its box), lifted clear of it like on a mesh. Snapping moves the point
+    /// along the surface only, and only while it stays on the entity: a crate can be smaller than a grid step.
+    /// </summary>
+    (Vector3, float, string?) OnEntity(EditorContext ctx, EntitySurfaceHit on)
+    {
+        var n = on.Normal;
+        var p = on.Point;
+        if (ctx.Snap)
+        {
+            var axis = Core.Texturing.TextureMapping.DominantAxis(n);
+            float S(float v, float a) => a != 0 ? v : Core.Geometry.MeshOps.Snap(v, ctx.Grid);
+            var q = new Vector3(S(p.X, axis.X), S(p.Y, axis.Y), S(p.Z, axis.Z));
+            q -= n * Vector3.Dot(q - p, n); // back onto the surface's plane
+            if (EntityOps.SurfaceHit(on.Entity, new Ray(q + n * 0.01f, -n)) is { Distance: < 0.05f }) p = q;
+        }
+        float below = EntityOps.BoxCorners(Probe(Vector3.Zero, Yaw)).Min(c => Vector3.Dot(c, n));
+        return (below < 0 ? p - n * below : p, Yaw, $"on {SceneOps.DisplayName(on.Entity)}");
     }
 
     /// <summary>How the model sits in the wall, for the status bar: "12.5 cm deep in a 20 cm wall".</summary>
@@ -129,19 +160,18 @@ public sealed class EntityTool : IViewportTool
 
     public void DrawOptions(EditorContext ctx)
     {
-        foreach (var c in EntityClasses.BuiltIn)
+        // Long lists (a project's scenes) get a filter.
+        if (EntityClasses.All.Count > 8)
         {
-            var (icon, col) = EntityDraw.Style(c.Name);
-            bool active = ClassName == c.Name;
-            var p = ImGui.GetCursorScreenPos();
-            if (ImGui.Selectable($"##{c.Name}", active, ImGuiSelectableFlags.None, new Vector2(0, ImGui.GetFrameHeight())))
-                ClassName = c.Name;
-            Tip(c.Name);
-            var dl = ImGui.GetWindowDrawList();
-            float h = ImGui.GetFrameHeight();
-            Icons.Draw(dl, icon, p + new Vector2(Theme.Px(4) + Fonts.IconSize * 0.5f, h * 0.5f), col);
-            float textY = MathF.Round(p.Y + (h - ImGui.GetTextLineHeight()) * 0.5f);
-            dl.AddText(new Vector2(p.X + Theme.Px(10) + Fonts.IconSize, textY), ImGui.ColorConvertFloat4ToU32(Theme.Text), c.Label);
+            ImGui.SetNextItemWidth(-1);
+            ImGui.InputTextWithHint("##classFilter", "Filter classes", ref _filter, 64);
+        }
+        if (ClassPicker.Draw(ClassName, _filter) is { } picked) ClassName = picked;
+        if (EntityClasses.Problem is { } problem)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
+            ImGui.TextWrapped(problem);
+            ImGui.PopStyleColor();
         }
 
         ImGui.Dummy(Theme.Px(0, 2));
@@ -152,10 +182,16 @@ public sealed class EntityTool : IViewportTool
             References.ReferencePicker.Summary(Model);
         }
         RowLabel("Class", "Any class name your engine understands; a name that isn't listed above is a generic point entity");
-        if (!EntityClasses.IsBuiltIn(ClassName) && _custom.Length == 0) _custom = ClassName;
+        if (!EntityClasses.IsKnown(ClassName) && _custom.Length == 0) _custom = ClassName;
         if (ImGui.InputTextWithHint("##customClass", "custom_class", ref _custom, 64) && _custom.Trim().Length > 0)
             ClassName = _custom.Trim();
         if (ImGui.IsItemActivated() && _custom.Trim().Length > 0) ClassName = _custom.Trim();
+
+        RowLabel("On", "What a click places the entity on");
+        int surfaces = TextSegments("##placeOn",
+            [("Everything", "Meshes and entities: a pickup lands on the crate under the mouse"), ("Meshes", "Meshes only: clicks go through entities to the level")],
+            OnEntities ? 0 : 1);
+        if (surfaces >= 0) OnEntities = surfaces == 0;
 
         RowLabel("Yaw", "Facing of new entities in degrees (0 faces -Z)");
         float yaw = Yaw;

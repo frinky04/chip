@@ -1,0 +1,35 @@
+{
+  "version": 3,
+  "exportScale": 1,
+  "exportCollision": true,
+  "nextId": 4,
+  "meshes": [],
+  "entities": [
+    {
+      "id": 1,
+      "className": "light_point",
+      "name": "lamp",
+      "position": [0, 3, 0],
+      "rotation": [0, 0, 0],
+      "hidden": false,
+      "properties": { "light_color": [1, 0.5, 0, 1], "omni_range": 8 }
+    },
+    {
+      "id": 2,
+      "className": "door",
+      "name": "front_door",
+      "position": [2, 0, 0],
+      "rotation": [0, 90, 0],
+      "hidden": false,
+      "properties": { "mode": "slide", "tint": [1, 0, 0, 1], "keys_needed": 2, "partner": { "entity": 1 } }
+    },
+    {
+      "id": 3,
+      "className": "info_player_start",
+      "name": "",
+      "position": [0, 0, 4],
+      "rotation": [0, 180, 0],
+      "hidden": false
+    }
+  ]
+}

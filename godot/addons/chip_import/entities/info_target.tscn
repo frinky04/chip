@@ -1,0 +1,4 @@
+[gd_scene format=3 uid="uid://cohdwy4hbk4o4"]
+
+[node name="info_target" type="Marker3D"]
+metadata/chip_bounds = AABB(-0.15, -0.15, -0.15, 0.3, 0.3, 0.3)
