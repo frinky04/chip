@@ -108,6 +108,105 @@ public static partial class MeshOps
     }
 
     /// <summary>
+    /// Clips only <paramref name="faces"/> of <paramref name="m"/>, in place (Scythe's clip on a face selection); the
+    /// other faces are left alone apart from gaining the cut points on edges they share with clipped faces. Keep
+    /// Front/Back deletes the selected faces (or parts) on the other side. Both keeps every piece but unwelds the back
+    /// side along the cut, so the two halves come apart. Each closed cut outline is capped as in <see cref="Split"/>.
+    /// Returns the new face indices (pieces and caps), or null (mesh untouched) when the plane doesn't cross the faces.
+    /// </summary>
+    public static List<int>? ClipFaces(PolyMesh m, IReadOnlyCollection<int> faces, Vector3 point, Vector3 normal,
+        ClipKeep keep, string? capMaterial = null)
+    {
+        var n = Vector3.Normalize(normal);
+        var selected = faces.ToHashSet();
+        var d = m.Positions.Select(p => Vector3.Dot(p - point, n)).ToArray();
+        int Side(int v) => v >= d.Length ? 0 : d[v] > PlaneEpsilon ? 1 : d[v] < -PlaneEpsilon ? -1 : 0;
+        var region = selected.SelectMany(f => m.Faces[f].Verts).ToList();
+        if (!region.Any(v => Side(v) > 0) || !region.Any(v => Side(v) < 0)) return null;
+
+        var points = new EdgePoints(m);
+        var cuts = new Dictionary<Edge, int>();
+        int Cut(int a, int b, float t)
+        {
+            var e = new Edge(a, b);
+            if (!cuts.TryGetValue(e, out var x))
+            {
+                cuts[e] = x = m.Positions.Count;
+                m.Positions.Add(Vector3.Lerp(m.Positions[a], m.Positions[b], t));
+                points.Register(x, a, b, t);
+            }
+            return x;
+        }
+        var onPlane = new HashSet<int>(region.Where(v => Side(v) == 0));
+        var front = new List<Face>();
+        var back = new List<Face>();
+        foreach (int f in selected.Order())
+        {
+            var face = m.Faces[f];
+            var v = face.Verts;
+            bool hasFront = v.Any(i => Side(i) > 0), hasBack = v.Any(i => Side(i) < 0);
+            if (!hasFront && !hasBack) { (Vector3.Dot(m.FaceNormal(f), n) < 0 ? front : back).Add(face.Clone()); continue; }
+            if (!hasBack) { front.Add(face.Clone()); continue; }
+            if (!hasFront) { back.Add(face.Clone()); continue; }
+
+            var fv = new List<int>(); var bv = new List<int>();
+            var fuv = new List<Vector2>(); var buv = new List<Vector2>();
+            var uvs = face.UVs;
+            for (int i = 0; i < v.Length; i++)
+            {
+                int a = v[i], b = v[(i + 1) % v.Length];
+                var uvA = uvs != null ? uvs[i] : default;
+                if (Side(a) >= 0) { fv.Add(a); fuv.Add(uvA); }
+                if (Side(a) <= 0) { bv.Add(a); buv.Add(uvA); }
+                if (Side(a) * Side(b) >= 0) continue;
+                float t = d[a] / (d[a] - d[b]);
+                int x = Cut(a, b, t);
+                onPlane.Add(x);
+                var uvX = uvs != null ? Vector2.Lerp(uvA, uvs[(i + 1) % v.Length], t) : default;
+                fv.Add(x); fuv.Add(uvX);
+                bv.Add(x); buv.Add(uvX);
+            }
+            if (fv.Count >= 3) { var piece = face.Derive(fv.ToArray()); piece.UVs = uvs != null ? fuv.ToArray() : null; piece.Dominant = face.Dominant; front.Add(piece); }
+            if (bv.Count >= 3) { var piece = face.Derive(bv.ToArray()); piece.UVs = uvs != null ? buv.ToArray() : null; piece.Dominant = face.Dominant; back.Add(piece); }
+        }
+
+        var kept = keep switch { ClipKeep.Front => front, ClipKeep.Back => back, _ => front.Concat(back).ToList() };
+        var rest = Enumerable.Range(0, m.Faces.Count).Where(f => !selected.Contains(f)).Select(f => m.Faces[f]).ToList();
+        int firstNew = rest.Count;
+        m.Faces = rest.Concat(kept).ToList();
+        // Untouched neighbours take the cut points too, so no T-junctions; cut soft edges stay soft on both halves.
+        points.InsertIntoFaces();
+        points.SplitSoftEdges();
+
+        var backPlane = onPlane;
+        if (keep == ClipKeep.Both)
+        {
+            // The back pieces get their own copies of the vertices on the plane, so the halves no longer share an edge.
+            var copy = new Dictionary<int, int>();
+            foreach (var face in back)
+                for (int i = 0; i < face.Verts.Length; i++)
+                {
+                    int v = face.Verts[i];
+                    if (!onPlane.Contains(v)) continue;
+                    if (!copy.TryGetValue(v, out int c)) { c = m.Positions.Count; m.Positions.Add(m.Positions[v]); copy[v] = c; }
+                    face.Verts[i] = c;
+                }
+            var original = copy.ToDictionary(p => p.Value, p => p.Key);
+            int Original(int v) => original.TryGetValue(v, out int o) ? o : v;
+            foreach (var face in back)
+                foreach (var e in face.Edges())
+                    if (m.SoftEdges.Contains(new Edge(Original(e.A), Original(e.B)))) m.SoftEdges.Add(e);
+            backPlane = copy.Values.ToHashSet();
+        }
+
+        var added = Enumerable.Range(firstNew, kept.Count).ToList();
+        if (keep != ClipKeep.Back) added.AddRange(CapPlanarHoles(m, onPlane.Contains, -n, capMaterial));
+        if (keep != ClipKeep.Front) added.AddRange(CapPlanarHoles(m, backPlane.Contains, n, capMaterial));
+        RemoveUnusedVertices(m);
+        return added;
+    }
+
+    /// <summary>
     /// Closes open borders whose vertices all satisfy <paramref name="onPlane"/> with world-aligned cap faces facing
     /// <paramref name="capNormal"/>. Inner loops (holes) are bridged into the loop around them. Returns the new face indices.
     /// </summary>

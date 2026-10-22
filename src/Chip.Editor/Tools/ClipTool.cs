@@ -12,7 +12,8 @@ namespace Chip.Editor.Tools;
 /// <summary>
 /// Hammer's clipping tool: click (or drag) two points to draw a line; the clip plane runs through that line,
 /// perpendicular to the surface it was drawn on (or along the view). Tab cycles keep front / back / both, Enter clips
-/// the selected meshes, or every visible mesh the plane crosses when nothing is selected. Cuts are capped.
+/// the selected faces in face mode (as Scythe does), else the selected meshes, or every visible mesh the plane crosses
+/// when nothing is selected. Cuts are capped.
 /// </summary>
 public sealed class ClipTool : IViewportTool
 {
@@ -105,6 +106,7 @@ public sealed class ClipTool : IViewportTool
     public int Apply(EditorContext ctx, Vector3 point, Vector3 normal)
     {
         string? cap = CapWithActive ? ctx.ActiveMaterial : null;
+        if (OnFaces(ctx)) return ApplyToFaces(ctx, point, normal, cap);
         var cuts = new List<(PolyMesh Mesh, PolyMesh Front, PolyMesh Back)>();
         foreach (var m in CutSnap.TargetMeshes(ctx))
             if (MeshOps.Split(m, point, normal, cap) is ({ } f, { } b)) cuts.Add((m, f, b));
@@ -137,6 +139,41 @@ public sealed class ClipTool : IViewportTool
         return cuts.Count;
     }
 
+    /// <summary>Face mode with faces selected: Scythe clips just those faces, not their whole meshes.</summary>
+    static bool OnFaces(EditorContext ctx) => ctx.Sel.Mode == SelectMode.Face && !ctx.Sel.IsEmpty;
+
+    /// <summary>What the plane acts on: the selected faces in face mode (Faces set), else whole meshes (Faces null).</summary>
+    static List<(PolyMesh Mesh, List<int>? Faces)> Targets(EditorContext ctx) => OnFaces(ctx)
+        ? ctx.Sel.FaceSets(ctx.Doc).Where(p => !p.Key.Hidden && !p.Key.Locked).Select(p => (p.Key, (List<int>?)p.Value)).ToList()
+        : CutSnap.TargetMeshes(ctx).Select(m => (m, (List<int>?)null)).ToList();
+
+    int ApplyToFaces(EditorContext ctx, Vector3 point, Vector3 normal, string? cap)
+    {
+        var cuts = new List<(PolyMesh Mesh, PolyMesh Result, List<int> Faces)>();
+        foreach (var (m, faces) in Targets(ctx))
+        {
+            var result = m.Clone();
+            if (MeshOps.ClipFaces(result, faces!, point, normal, Keep, cap) is { } added) cuts.Add((m, result, added));
+        }
+        if (cuts.Count == 0)
+        {
+            ctx.Status("The clip plane doesn't cross the selected faces. Draw the line across them or clear the selection.", error: true);
+            return 0;
+        }
+
+        ctx.Session.Do("Clip", cuts.Select(c => c.Mesh.Id), () =>
+        {
+            ctx.Sel.Clear();
+            foreach (var (m, result, added) in cuts)
+            {
+                Assign(m, result);
+                foreach (var f in added) ctx.Sel.Add(ElementRef.Face(m.Id, f));
+            }
+        });
+        ctx.Status(Keep == ClipKeep.Both ? "Split the selected faces in two" : "Clipped the selected faces");
+        return cuts.Count;
+    }
+
     static void Assign(PolyMesh target, PolyMesh from)
     {
         target.Positions = from.Positions;
@@ -156,9 +193,9 @@ public sealed class ClipTool : IViewportTool
 
         if (Plane(v.Eye) is { } pl)
         {
-            var targets = CutSnap.TargetMeshes(ctx);
+            var targets = Targets(ctx);
             DrawPlane(dl, origin, v, targets, pl.Point, pl.Normal);
-            foreach (var m in targets) DrawSection(dl, origin, v, m, pl.Point, pl.Normal);
+            foreach (var (m, faces) in targets) DrawSection(dl, origin, v, m, faces, pl.Point, pl.Normal);
             if (_stage == Stage.Ready) DrawKeepArrows(dl, origin, v, pl.Normal);
         }
         CutDraw.Stroke(dl, origin, v, _a, _b, Theme.AccentU32, Theme.Px(2));
@@ -167,11 +204,12 @@ public sealed class ClipTool : IViewportTool
     }
 
     /// <summary>The plane, trimmed to the targets' bounds, as a translucent sheet.</summary>
-    static void DrawPlane(ImDrawListPtr dl, Vector2 origin, ViewInfo v, List<PolyMesh> targets, Vector3 p0, Vector3 n)
+    static void DrawPlane(ImDrawListPtr dl, Vector2 origin, ViewInfo v, List<(PolyMesh Mesh, List<int>? Faces)> targets, Vector3 p0, Vector3 n)
     {
-        if (targets.Count == 0) return;
-        var min = targets.Select(m => m.Bounds().Min).Aggregate(Vector3.Min) - new Vector3(0.25f);
-        var max = targets.Select(m => m.Bounds().Max).Aggregate(Vector3.Max) + new Vector3(0.25f);
+        var corners = targets.SelectMany(t => t.Faces == null ? t.Mesh.Positions : t.Faces.SelectMany(f => t.Mesh.Faces[f].Verts).Select(i => t.Mesh.Positions[i])).ToList();
+        if (corners.Count == 0) return;
+        var min = corners.Aggregate(Vector3.Min) - new Vector3(0.25f);
+        var max = corners.Aggregate(Vector3.Max) + new Vector3(0.25f);
         var pts = new List<Vector3>();
         for (int i = 0; i < 8; i++)
             for (int axis = 0; axis < 3; axis++)
@@ -202,13 +240,13 @@ public sealed class ClipTool : IViewportTool
     static Vector3 Corner(Vector3 min, Vector3 max, int i) =>
         new((i & 1) == 0 ? min.X : max.X, (i & 2) == 0 ? min.Y : max.Y, (i & 4) == 0 ? min.Z : max.Z);
 
-    /// <summary>Where the plane cuts the mesh surface: the outline of the cap.</summary>
-    static void DrawSection(ImDrawListPtr dl, Vector2 origin, ViewInfo v, PolyMesh m, Vector3 p0, Vector3 n)
+    /// <summary>Where the plane cuts the mesh surface (or just <paramref name="faces"/>): the outline of the cap.</summary>
+    static void DrawSection(ImDrawListPtr dl, Vector2 origin, ViewInfo v, PolyMesh m, List<int>? faces, Vector3 p0, Vector3 n)
     {
         var d = m.Positions.Select(p => Vector3.Dot(p - p0, n)).ToArray();
         if (d.All(x => x > 0) || d.All(x => x < 0)) return;
         var hits = new List<Vector3>();
-        for (int f = 0; f < m.Faces.Count; f++)
+        foreach (int f in faces ?? Enumerable.Range(0, m.Faces.Count))
         {
             var verts = m.Faces[f].Verts;
             hits.Clear();
@@ -249,7 +287,7 @@ public sealed class ClipTool : IViewportTool
         [
             (Icon.KeepFront, "Front", "Keep the side the arrow points to (Tab cycles)"),
             (Icon.KeepBack, "Back", "Keep the other side (Tab cycles)"),
-            (Icon.KeepBoth, "Both", "Split each mesh in two (Tab cycles)"),
+            (Icon.KeepBoth, "Both", "Split in two: meshes into two meshes, selected faces into two unwelded halves (Tab cycles)"),
         ], (int)Keep);
         if (keep >= 0) Keep = (ClipKeep)keep;
 
@@ -267,7 +305,8 @@ public sealed class ClipTool : IViewportTool
 
         ImGui.Dummy(Theme.Px(0, 2));
         ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
-        ImGui.TextWrapped(ctx.Sel.IsEmpty ? "Clips every visible mesh the plane crosses." : "Clips the selected meshes.");
+        ImGui.TextWrapped(ctx.Sel.IsEmpty ? "Clips every visible mesh the plane crosses."
+            : OnFaces(ctx) ? "Clips only the selected faces." : "Clips the selected meshes.");
         ImGui.PopStyleColor();
     }
 }

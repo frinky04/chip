@@ -136,6 +136,50 @@ public class ClipTests
         Assert.Equal(6, s.Doc.Meshes[0].Faces.Count);
     }
 
+    [Fact]
+    public void Clipping_selected_faces_splits_them_in_two_and_leaves_the_rest_of_the_mesh_alone()
+    {
+        var m = Box(Vector3.Zero, new Vector3(4, 2, 1));
+        MeshOps.MergeMeshes(m, [Box(new Vector3(0, 0, 3), new Vector3(4, 2, 4))]);
+        var other = m.Faces.Skip(6).Select(f => f.Verts.Select(v => m.Positions[v]).ToArray()).ToList();
+
+        var added = MeshOps.ClipFaces(m, Enumerable.Range(0, 6).ToList(), new Vector3(2, 0, 0), Vector3.UnitX, ClipKeep.Both);
+
+        Assert.NotNull(added);
+        Assert.Equal(6 + 12, m.Faces.Count); // the other box, plus two closed halves (5 pieces and a cap each)
+        Assert.Equal(12, added!.Count);
+        Assert.True(IsConsistentlyWound(m));
+        Assert.Equal(16f, MeshOps.Volume(m), 3);
+        Assert.Equal(other, m.Faces.Take(6).Select(f => f.Verts.Select(v => m.Positions[v]).ToArray()).ToList());
+        // The halves are unwelded: no vertex is shared between a piece left of the plane and one right of it.
+        var left = added.Where(f => m.FaceCenter(f).X < 2).SelectMany(f => m.Faces[f].Verts).ToHashSet();
+        var right = added.Where(f => m.FaceCenter(f).X > 2).SelectMany(f => m.Faces[f].Verts).ToHashSet();
+        Assert.Empty(left.Intersect(right));
+    }
+
+    [Fact]
+    public void Clipping_one_face_threads_the_cut_points_into_its_neighbours()
+    {
+        var box = Box(Vector3.Zero, new Vector3(2, 2, 2));
+        int side = Enumerable.Range(0, 6).Single(f => box.FaceNormal(f).Z > 0.9f);
+
+        var added = MeshOps.ClipFaces(box, [side], new Vector3(1, 1, 1), Vector3.UnitX, ClipKeep.Front);
+
+        var piece = box.Faces[Assert.Single(added!)];
+        Assert.All(piece.Verts, v => Assert.True(box.Positions[v].X > 0.99f));
+        Assert.Equal(6, box.Faces.Count); // an open chain is not capped
+        Assert.Equal(2, box.Faces.Count(f => f.Verts.Length == 5)); // top and bottom now hold the cut points
+    }
+
+    [Fact]
+    public void Clipping_faces_the_plane_misses_changes_nothing()
+    {
+        var box = Box(Vector3.Zero, Vector3.One);
+        Assert.Null(MeshOps.ClipFaces(box, [0, 1], new Vector3(0, 5, 0), Vector3.UnitY, ClipKeep.Both));
+        Assert.Equal(6, box.Faces.Count);
+        Assert.Equal(8, box.Positions.Count);
+    }
+
     /// <summary>A square ring: outer side <paramref name="outer"/>, square hole <paramref name="inner"/>, height <paramref name="h"/>.</summary>
     internal static PolyMesh Tube(float outer, float inner, float h)
     {

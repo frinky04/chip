@@ -66,6 +66,27 @@ public class CutToolsTests
     }
 
     [Fact]
+    public void Clip_in_face_mode_only_cuts_the_selected_faces()
+    {
+        var ctx = WithBox(out var box);
+        MeshOps.MergeMeshes(box, [MeshOps.CreateBox(new Vector3(0, 0, 3), new Vector3(2, 2, 5), "dev_a", TextureMapping.Default)]);
+        ctx.SetMode(SelectMode.Face);
+        for (int f = 0; f < 6; f++) ctx.Sel.Add(ElementRef.Face(box.Id, f));
+        var clip = Tool<ClipTool>(ctx);
+        clip.Keep = ClipKeep.Both;
+
+        Assert.Equal(1, clip.Apply(ctx, new Vector3(1, 1, 1), Vector3.UnitX));
+
+        var m = Assert.Single(ctx.Doc.Meshes);
+        Assert.Equal(18, m.Faces.Count); // the unselected box is whole; the selected one is two capped halves
+        Assert.Equal(12, ctx.Sel.Count);
+        Assert.All(ctx.Sel.Items, i => Assert.True(i.A >= 6));
+        Assert.Equal("Clip", ctx.Session.UndoLabel);
+        ctx.Commands.Execute("edit.undo");
+        Assert.Equal(12, ctx.Doc.Meshes[0].Faces.Count);
+    }
+
+    [Fact]
     public void A_clip_that_misses_reports_an_error_and_adds_no_undo_step()
     {
         var ctx = WithBox(out _);
