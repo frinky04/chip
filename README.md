@@ -39,6 +39,8 @@ Layout: the left strip holds tools (select, block, move/rotate/scale). The viewp
 
 The UI follows the monitor's display scale (Windows DPI). Override it with `CHIP_UI_SCALE=1.25` if it looks off.
 
+**Reference models** (Tools > Reference model): show a `.glb` in the level, such as your door or the built-in 1.78 m figure, to size holes and check scale. Click a wall and a door sits inside it. Turn on "Export as marker" to export an empty node where the real asset goes; otherwise references stay in the editor.
+
 Godot: drop the `.glb` into the project. With static collision on, Chip bakes the world collision into `chip_world_collision_N-colonly` nodes that Godot turns into colliders (File > Export settings).
 
 See `SPEC.md` for the full Scythe/S2 feature map, the v1 scope, and the review log.

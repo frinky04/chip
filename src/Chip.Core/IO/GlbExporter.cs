@@ -190,6 +190,7 @@ public static class GlbExporter
         foreach (var e in doc.Entities)
         {
             if (e.Hidden && !opt.IncludeHidden) continue;
+            if (!ReferenceModels.Exports(e)) continue; // reference models are editor-only unless exported as markers
             var node = new JsonObject { ["name"] = EntityNodeName(e) };
             var t = e.Position * s;
             if (t != Vector3.Zero) node["translation"] = new JsonArray(t.X, t.Y, t.Z);
@@ -325,8 +326,11 @@ public static class GlbExporter
         };
     }
 
-    /// <summary>The entity's node name: its name, else <c>class_id</c>.</summary>
-    public static string EntityNodeName(Entity e) => e.Name.Length > 0 ? e.Name : $"{e.ClassName}_{e.Id}";
+    /// <summary>The entity's node name: its name, else <c>class_id</c> (a reference model's marker: <c>model_id</c>).</summary>
+    public static string EntityNodeName(Entity e) =>
+        e.Name.Length > 0 ? e.Name
+        : ReferenceModels.Is(e) && ReferenceModels.DisplayName(ReferenceModels.ModelOf(e)) is { Length: > 0 } model ? $"{model}_{e.Id}"
+        : $"{e.ClassName}_{e.Id}";
 
     /// <summary><see cref="Entity.Rotation"/> (degrees; yaw Y, then pitch X, then roll Z) as a unit quaternion.</summary>
     public static Quaternion EntityRotation(Vector3 degrees)

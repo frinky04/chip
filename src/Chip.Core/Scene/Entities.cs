@@ -29,6 +29,11 @@ public static class EntityClasses
         new("info_target", "Target", new(-0.15f), new(0.15f), None),
         new("prop_marker", "Prop marker", new(-0.25f, 0, -0.25f), new(0.25f, 0.5f, 0.25f), new Dictionary<string, string> { ["model"] = "" }),
         new("trigger_marker", "Trigger marker", new(-0.5f), new(0.5f), new Dictionary<string, string> { ["event"] = "" }),
+        // The box is only used while the model can't load; a loaded model's own bounds replace it (EntityOps.Box).
+        new(ReferenceModels.ClassName, "Reference model", new(-0.3f, 0, -0.3f), new(0.3f, 1.8f, 0.3f), new Dictionary<string, string>
+        {
+            [ReferenceModels.ModelKey] = ReferenceModels.DefaultModel, [ReferenceModels.MarkerKey] = "0",
+        }),
     ];
 
     /// <summary>Any class name not in <see cref="BuiltIn"/>.</summary>
@@ -123,37 +128,49 @@ public static class EntityOps
 
     public static Vector3 Up(Entity e) => Vector3.Transform(Vector3.UnitY, Orientation(e));
 
-    /// <summary>World-space centre of the class box (where the glyph is drawn).</summary>
-    public static Vector3 Center(Entity e)
+    /// <summary>The entity's box in entity space: a loaded reference model's bounds, else the class box.</summary>
+    public static (Vector3 Min, Vector3 Max) Box(Entity e)
     {
+        if (ReferenceModels.Get(e).Model is { } model) return (model.Min, model.Max);
         var c = EntityClasses.Get(e.ClassName);
-        return Vector3.Transform((c.BoxMin + c.BoxMax) * 0.5f, World(e));
+        return (c.BoxMin, c.BoxMax);
     }
 
-    /// <summary>The class box's eight corners in world space (bit 0 = x, bit 1 = y, bit 2 = z).</summary>
+    /// <summary>World-space centre of the box (where the glyph is drawn).</summary>
+    public static Vector3 Center(Entity e)
+    {
+        var (min, max) = Box(e);
+        return Vector3.Transform((min + max) * 0.5f, World(e));
+    }
+
+    /// <summary>The box's eight corners in world space (bit 0 = x, bit 1 = y, bit 2 = z).</summary>
     public static Vector3[] BoxCorners(Entity e)
     {
-        var c = EntityClasses.Get(e.ClassName);
+        var (min, max) = Box(e);
         var w = World(e);
         var result = new Vector3[8];
         for (int i = 0; i < 8; i++)
-            result[i] = Vector3.Transform(new Vector3((i & 1) == 0 ? c.BoxMin.X : c.BoxMax.X, (i & 2) == 0 ? c.BoxMin.Y : c.BoxMax.Y,
-                (i & 4) == 0 ? c.BoxMin.Z : c.BoxMax.Z), w);
+            result[i] = Vector3.Transform(new Vector3((i & 1) == 0 ? min.X : max.X, (i & 2) == 0 ? min.Y : max.Y,
+                (i & 4) == 0 ? min.Z : max.Z), w);
         return result;
     }
 
-    /// <summary>Distance along the ray to the entity's oriented class box (slab test in entity space), or null on a miss.</summary>
+    /// <summary>
+    /// Distance along the ray to the entity, or null on a miss: a loaded reference model by its triangles (so clicks go
+    /// through a doorway), anything else by its oriented box (slab test in entity space).
+    /// </summary>
     public static float? RayHit(Entity e, Ray ray)
     {
-        var c = EntityClasses.Get(e.ClassName);
+        var (min, max) = Box(e);
         var inv = Quaternion.Conjugate(Orientation(e));
         var o = Vector3.Transform(ray.Origin - e.Position, inv);
         var d = Vector3.Transform(ray.Dir, inv);
+        if (ReferenceModels.Get(e).Model is { } model) return ModelHit(model, new Ray(o, d));
         float tmin = 0, tmax = float.MaxValue;
         for (int a = 0; a < 3; a++)
         {
             float oa = a == 0 ? o.X : a == 1 ? o.Y : o.Z, da = a == 0 ? d.X : a == 1 ? d.Y : d.Z;
-            float lo = a == 0 ? c.BoxMin.X : a == 1 ? c.BoxMin.Y : c.BoxMin.Z, hi = a == 0 ? c.BoxMax.X : a == 1 ? c.BoxMax.Y : c.BoxMax.Z;
+            float lo = a == 0 ? min.X : a == 1 ? min.Y : min.Z, hi = a == 0 ? max.X : a == 1 ? max.Y : max.Z;
             if (MathF.Abs(da) < 1e-9f)
             {
                 if (oa < lo || oa > hi) return null;
@@ -166,5 +183,18 @@ public static class EntityOps
             if (tmin > tmax) return null;
         }
         return tmin;
+    }
+
+    /// <summary>Nearest triangle hit, from either side, in model space.</summary>
+    static float? ModelHit(ReferenceModel model, Ray ray)
+    {
+        float? best = null;
+        var t = model.Triangles;
+        for (int i = 0; i + 2 < t.Length; i += 3)
+        {
+            if (!Picker.RayTriangle(ray, t[i], t[i + 1], t[i + 2], out float hit)) continue;
+            if (best is not { } b || hit < b) best = hit;
+        }
+        return best;
     }
 }

@@ -226,7 +226,8 @@ public static class Picker
             if (e.Hidden || e.Locked) continue;
             float? t = EntityOps.RayHit(e, ray);
             var center = EntityOps.Center(e);
-            if (t == null && view.Project(center, out var sc) && Vector2.Distance(sc, mouse) < EntityGlyphRadius * pixelScale)
+            // A loaded reference model has no glyph: its own surface is the target, and a doorway stays clickable.
+            if (t == null && ReferenceModels.Get(e).Model == null && view.Project(center, out var sc) && Vector2.Distance(sc, mouse) < EntityGlyphRadius * pixelScale)
                 t = MathF.Max(0, Vector3.Dot(center - ray.Origin, ray.Dir));
             if (t is not { } d || d > limit || d >= bestT) continue;
             bestT = d;

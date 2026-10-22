@@ -96,6 +96,10 @@ public sealed partial class EditorApp
                 ctx.SetMode(SelectMode.Object);
                 ctx.Sel.Add(ElementRef.Object(doc.Meshes[2].Id));
                 break;
+            case "reference" when doc.Entities.Find(Core.Scene.ReferenceModels.Is) is { } reference: // its inspector and dimensions
+                ctx.SetMode(SelectMode.Object);
+                ctx.Sel.Add(ElementRef.Object(reference.Id));
+                break;
             case "faces" when doc.Meshes.Count > 0:
                 ctx.SetMode(SelectMode.Face);
                 var floor = doc.Meshes[0];

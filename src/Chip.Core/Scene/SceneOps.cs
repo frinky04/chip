@@ -15,8 +15,11 @@ public static class SceneOps
     public static string? NameOf(Document doc, int id) =>
         doc.Find(id)?.Name ?? (doc.FindEntity(id) is { } e ? DisplayName(e) : doc.FindGroup(id)?.Name);
 
-    /// <summary>The entity's name, or its class when unnamed.</summary>
-    public static string DisplayName(Entity e) => string.IsNullOrWhiteSpace(e.Name) ? e.ClassName : e.Name;
+    /// <summary>The entity's name, or when unnamed its class (a reference model: its model's name).</summary>
+    public static string DisplayName(Entity e) =>
+        !string.IsNullOrWhiteSpace(e.Name) ? e.Name
+        : ReferenceModels.Is(e) && ReferenceModels.DisplayName(ReferenceModels.ModelOf(e)) is { Length: > 0 } model ? model
+        : e.ClassName;
 
     /// <summary>Renames a mesh, entity or group. Returns false when the id is unknown.</summary>
     public static bool Rename(Document doc, int id, string name)

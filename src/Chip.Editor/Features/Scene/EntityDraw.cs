@@ -51,6 +51,7 @@ public static class EntityDraw
         "info_target" => (Icon.Target, Rgb(0xE5484D)),
         "prop_marker" => (Icon.Box, Rgb(0x3E8EED)),
         "trigger_marker" => (Icon.Flag, Rgb(0xB07CE8)),
+        ReferenceModels.ClassName => (Icon.Ruler, Rgb(0xA3B1C2)),
         _ => (Icon.MapPin, Rgb(0xA0A0A8)),
     };
 
@@ -76,6 +77,21 @@ public static class EntityDraw
         geometry ??= EntityDrawGeometry.Build(e);
         var c = geometry.Corners;
         ReadOnlySpan<int> edges = [0, 1, 2, 3, 4, 5, 6, 7, 0, 2, 1, 3, 4, 6, 5, 7, 0, 4, 1, 5, 2, 6, 3, 7];
+
+        // A loaded reference model is drawn by the renderer; here it only gets its bounds when hovered, selected or being
+        // placed, its origin (where the engine's node goes) and its label. No arrow: the model shows which way it faces.
+        if (ReferenceModels.Get(e).Model != null)
+        {
+            if (look == EntityLook.Normal) return;
+            for (int i = 0; i < edges.Length; i += 2) Line(dl, origin, v, c[edges[i]], c[edges[i + 1]], Fade(col, 0.7f), Theme.Px(1.25f));
+            if (!v.Project(e.Position, out var ro)) return;
+            dl.AddCircleFilled(origin + ro, Theme.Px(3.5f), Shadow);
+            dl.AddCircleFilled(origin + ro, Theme.Px(2.5f), col);
+            if (look is EntityLook.Hovered or EntityLook.Selected && v.Project(c[7], out var top))
+                Label(dl, origin + new Vector2(ro.X, MathF.Min(ro.Y, top.Y) - Theme.Px(18)), SceneOps.DisplayName(e), col);
+            return;
+        }
+
         for (int i = 0; i < edges.Length; i += 2) Line(dl, origin, v, c[edges[i]], c[edges[i + 1]], col, w);
 
         // Forward arrow from the box centre, at least half a metre so it reads on small markers.

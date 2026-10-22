@@ -71,6 +71,14 @@ public sealed unsafe class Renderer : IDisposable
     bool _overlayNormals;
     IReadOnlyList<(int SourceId, string Rule, string Kind)>? _overlayProxies;
 
+    /// <summary>Reference models (pos + colour, lighting baked in) and their hard edges, rebuilt when entities or files change.</summary>
+    readonly uint _refVao, _refVbo, _refWireVao, _refWireVbo;
+    int _refTriVerts, _refWireVerts, _refSelectedWireFirst, _refRevision = -1;
+    readonly FrameCache<int> _refCache = new();
+    /// <summary>Reference models read as clay, apart from every dev texture and from the orange selection.</summary>
+    static readonly Vector4 Clay = Theme.Rgb(0xA3B1C2);
+    static readonly Vector3 ClayLight = Vector3.Normalize(new Vector3(0.35f, 0.9f, 0.25f));
+
     /// <summary>Stripe tint for a proxy kind in the blockout view (unknown kinds get a neutral one).</summary>
     static Vector4 ProxyTint(string kind) => kind switch
     {
@@ -93,6 +101,8 @@ public sealed unsafe class Renderer : IDisposable
 
         (_overlayVao, _overlayVbo) = VertexArray(7, [3, 4]);
         (_gridVao, _gridVbo) = VertexArray(3, [3]);
+        (_refVao, _refVbo) = VertexArray(7, [3, 4]);
+        (_refWireVao, _refWireVbo) = VertexArray(7, [3, 4]);
         Upload(_gridVbo, [-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0], BufferUsageARB.StaticDraw);
 
         _missingTex = Checker();
@@ -147,6 +157,7 @@ public sealed unsafe class Renderer : IDisposable
         if (!ReferenceEquals(session, _builtSession) || session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc) || !ReferenceEquals(scene, _builtScene))
             SyncScene(session, scene);
         _edgeMode = session.Sel.Mode == SelectMode.Edge;
+        if (!_refCache.IsCurrent(session) || _refRevision != ReferenceModels.Revision) SyncReferences(session);
         if (_overlayCache.IsCurrent(session) && hover == _overlayHover && showNormals == _overlayNormals && ReferenceEquals(proxies, _overlayProxies)) return;
         _overlay = BuildOverlay(session, hover, showNormals, proxies, _overlay);
         _overlayCache.Store(session, _overlay);
@@ -223,6 +234,14 @@ public sealed unsafe class Renderer : IDisposable
                     _gl.DrawArrays(PrimitiveType.Triangles, first, (uint)count);
                 }
             }
+            if (_refTriVerts > 0)
+            {
+                // Imported files don't promise consistent winding; reference models draw from both sides.
+                _gl.Disable(EnableCap.CullFace);
+                SetColorUniforms(_colorProg, view, 0);
+                _gl.BindVertexArray(_refVao);
+                _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)_refTriVerts);
+            }
         }
 
         _gl.Disable(EnableCap.CullFace);
@@ -254,6 +273,14 @@ public sealed unsafe class Renderer : IDisposable
             int boundaryFirst = gpu.EdgeVerts + gpu.SoftVerts;
             if (s.BoundaryEdges) DrawLines(gpu.WireVao, boundaryFirst, gpu.BoundaryVerts, 1.75f, 1, BoundaryColor, dash: 7 * Theme.Scale);
             else DrawLines(gpu.WireVao, boundaryFirst, gpu.BoundaryVerts, wire ? 1.25f : 1.0f, 1, wire ? WireframeColor : WireColor);
+        }
+        DrawLines(_refWireVao, 0, _refWireVerts, wire ? 1.25f : 1.0f, 1, wire ? Clay : WireColor);
+        if (_refWireVerts > _refSelectedWireFirst)
+        {
+            // A selected reference's hidden edges, dashed: a door set into a wall still shows the outline of its hole.
+            _gl.DepthFunc(DepthFunction.Greater);
+            DrawLines(_refWireVao, _refSelectedWireFirst, _refWireVerts - _refSelectedWireFirst, 1.25f, 0.8f, Accent, dash: 4 * Theme.Scale);
+            _gl.DepthFunc(DepthFunction.Lequal);
         }
 
         // Overlay: tinted faces, then lines/points twice: depth-tested, then a faint x-ray pass.
@@ -367,6 +394,58 @@ public sealed unsafe class Renderer : IDisposable
         _gl.Uniform1(Loc(prog, "uPull"), pull);
         _gl.Uniform1(Loc(prog, "uPointSize"), 1f);
         _gl.Uniform1(Loc(prog, "uAlpha"), 1f);
+    }
+
+    // ---- Reference models ----
+
+    /// <summary>
+    /// Every visible reference model as flat-shaded clay in world space (selected ones tinted toward the accent), plus
+    /// their hard edges, the selected ones' last so their hidden edges can be drawn too. A few hundred triangles each, so
+    /// one rebuild per change is cheap even mid-drag.
+    /// </summary>
+    void SyncReferences(Session session)
+    {
+        var tris = new List<float>();
+        var wires = new List<float>();
+        var selectedWires = new List<float>();
+        var loop = new List<int>();
+        var sel = session.Sel;
+        foreach (var e in session.Doc.Entities)
+        {
+            if (e.Hidden || ReferenceModels.Get(e).Model is not { } model) continue;
+            var mesh = model.Mesh;
+            var world = EntityOps.World(e);
+            var rotation = EntityOps.Orientation(e);
+            bool selected = sel.Mode == SelectMode.Object && sel.Items.Contains(ElementRef.Object(e.Id));
+            var tone = selected ? Vector4.Lerp(Clay, Accent, 0.4f) : Clay;
+            for (int f = 0; f < mesh.Faces.Count; f++)
+            {
+                var n = Vector3.Transform(mesh.FaceNormal(f), rotation);
+                float shade = 0.62f + 0.38f * Vector3.Dot(n, ClayLight); // wrapped, so faces turned away stay readable
+                var c = new Vector4(tone.X * shade, tone.Y * shade, tone.Z * shade, 1);
+                loop.Clear();
+                Triangulator.Triangulate(mesh, f, loop);
+                var verts = mesh.Faces[f].Verts;
+                foreach (var i in loop) Vertex(tris, Vector3.Transform(mesh.Positions[verts[i]], world), c);
+            }
+            var into = selected ? selectedWires : wires;
+            foreach (var edge in mesh.Edges())
+            {
+                if (mesh.SoftEdges.Contains(edge)) continue;
+                Vertex(into, Vector3.Transform(mesh.Positions[edge.A], world), White);
+                Vertex(into, Vector3.Transform(mesh.Positions[edge.B], world), White);
+            }
+        }
+        _refSelectedWireFirst = wires.Count / 7;
+        wires.AddRange(selectedWires);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _refVbo);
+        _gl.BufferData<float>(BufferTargetARB.ArrayBuffer, CollectionsMarshal.AsSpan(tris), BufferUsageARB.DynamicDraw);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _refWireVbo);
+        _gl.BufferData<float>(BufferTargetARB.ArrayBuffer, CollectionsMarshal.AsSpan(wires), BufferUsageARB.DynamicDraw);
+        _refTriVerts = tris.Count / 7;
+        _refWireVerts = wires.Count / 7;
+        _refCache.Store(session, 0);
+        _refRevision = ReferenceModels.Revision; // read after loading: a first load bumps it
     }
 
     // ---- Scene buffers (per mesh, dirty-tracked) ----
@@ -714,7 +793,7 @@ public sealed unsafe class Renderer : IDisposable
         _meshes.Clear();
         foreach (var t in _targets) t.Dispose();
         foreach (var p in new[] { _meshProg, _colorProg, _lineProg, _gridProg }) _gl.DeleteProgram(p);
-        foreach (var b in new[] { _overlayVbo, _gridVbo }) _gl.DeleteBuffer(b);
-        foreach (var a in new[] { _overlayVao, _gridVao }) _gl.DeleteVertexArray(a);
+        foreach (var b in new[] { _overlayVbo, _gridVbo, _refVbo, _refWireVbo }) _gl.DeleteBuffer(b);
+        foreach (var a in new[] { _overlayVao, _gridVao, _refVao, _refWireVao }) _gl.DeleteVertexArray(a);
     }
 }

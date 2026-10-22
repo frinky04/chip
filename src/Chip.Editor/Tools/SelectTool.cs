@@ -303,7 +303,7 @@ public sealed class SelectTool : IViewportTool
     public void Draw(EditorContext ctx, ImDrawListPtr dl, Vector2 origin)
     {
         if (ViewSettings.Of(ctx) is { ShowDimensions: true } view && !ctx.Sel.IsEmpty && ctx.SelectionBounds() is { } bounds)
-            DrawDimensions(ctx, dl, origin, view.DimensionMode, bounds);
+            DrawDimensions(ctx, dl, origin, view.DimensionMode, WithReferenceModels(ctx, bounds));
         if (ctx.SelectionPivot() is { } pivot) ctx.Gizmo.Draw(dl, origin, ctx.View, pivot);
         if (_gesture != null && ctx.Gizmo.Dragging) DrawReadout(ctx, dl, origin);
         if (!_marquee) return;
@@ -318,6 +318,16 @@ public sealed class SelectTool : IViewportTool
     /// (two stacked wall faces: their combined height). Overall alone still falls back to the edges for one face or an
     /// object, whose overall size is its edges.
     /// </summary>
+    /// <summary>Selected reference models are measured by their model's box, not their origin (a door shows its size).</summary>
+    static (Vector3 Min, Vector3 Max) WithReferenceModels(EditorContext ctx, (Vector3 Min, Vector3 Max) bounds)
+    {
+        foreach (var e in ctx.Sel.Entities(ctx.Doc))
+            if (ReferenceModels.Get(e).Model != null)
+                foreach (var c in EntityOps.BoxCorners(e))
+                    bounds = (Vector3.Min(bounds.Min, c), Vector3.Max(bounds.Max, c));
+        return bounds;
+    }
+
     static void DrawDimensions(EditorContext ctx, ImDrawListPtr dl, Vector2 origin, DimensionMode mode, (Vector3 Min, Vector3 Max) bounds)
     {
         var edges = Dimensions.ForSelection(ctx.Doc, ctx.Sel, bounds);

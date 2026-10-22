@@ -22,7 +22,8 @@ public static class EntityOverlay
 
     /// <summary>Occlusion tests cast a ray per entity per pane; past this many they are skipped (everything draws bright).</summary>
     const int OcclusionLimit = 400;
-    static readonly ConditionalWeakTable<EditorContext, Rendering.FrameCache<Dictionary<int, EntityDrawGeometry>>> GeometryCache = new();
+    /// <summary>Per context; <c>Revision</c> is <see cref="ReferenceModels.Revision"/> at build (a model reloading changes its box).</summary>
+    static readonly ConditionalWeakTable<EditorContext, Rendering.FrameCache<(int Revision, Dictionary<int, EntityDrawGeometry> Boxes)>> GeometryCache = new();
     static readonly ConditionalWeakTable<EditorContext, EntityVisibilityFrameCache> VisibilityCache = new();
 
     // Set only by the hidden benchmark to isolate frame submission from P1's ray-casting cost.
@@ -55,9 +56,12 @@ public static class EntityOverlay
         var sel = ctx.Sel;
         bool objectMode = sel.Mode == SelectMode.Object;
         int? hovered = objectMode && ctx.Hover is { } h && doc.FindEntity(h.Mesh) != null ? h.Mesh : null;
-        var geometry = GeometryCache.GetValue(ctx, _ => new Rendering.FrameCache<Dictionary<int, EntityDrawGeometry>>(selection: false));
-        if (!geometry.IsCurrent(ctx.Session))
-            geometry.Store(ctx.Session, doc.Entities.ToDictionary(e => e.Id, EntityDrawGeometry.Build));
+        var geometry = GeometryCache.GetValue(ctx, _ => new Rendering.FrameCache<(int, Dictionary<int, EntityDrawGeometry>)>(selection: false));
+        if (!geometry.IsCurrent(ctx.Session) || geometry.Value.Revision != ReferenceModels.Revision)
+        {
+            var boxes = doc.Entities.ToDictionary(e => e.Id, EntityDrawGeometry.Build);
+            geometry.Store(ctx.Session, (ReferenceModels.Revision, boxes)); // read after building: a first load bumps it
+        }
         var visibility = VisibilityCache.GetValue(ctx, _ => new EntityVisibilityFrameCache());
         bool occlusion = !BenchmarkSkipOcclusion && doc.Entities.Count <= OcclusionLimit;
 
@@ -71,7 +75,7 @@ public static class EntityOverlay
                 if (e.Hidden) continue;
                 var look = objectMode && sel.Items.Contains(ElementRef.Object(e.Id)) ? EntityLook.Selected : hovered == e.Id ? EntityLook.Hovered : EntityLook.Normal;
                 bool occluded = occlusion && !view.IsOrthographic && !visibility.Get(ctx.Session, view.Eye, ctx.Backfaces, e, ctx.Picks);
-                EntityDraw.Draw(dl, pane.Origin, view, e, look, occluded, e.Locked, geometry.Value[e.Id]);
+                EntityDraw.Draw(dl, pane.Origin, view, e, look, occluded, e.Locked, geometry.Value.Boxes[e.Id]);
             }
             if (pane == layout.Active && ctx.ActiveTool == ctx.DefaultTool && !sel.IsEmpty && sel.Entities(doc).Count > 0 && ctx.SelectionPivot() is { } pivot)
                 ctx.Gizmo.Draw(dl, pane.Origin, view, pivot);
