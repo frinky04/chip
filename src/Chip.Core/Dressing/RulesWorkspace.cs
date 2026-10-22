@@ -170,13 +170,14 @@ public sealed class RulesWorkspace
             if (same) Main.SetValue(id, key, null);
             else
             {
+                var patch = value ?? DefaultJson(rule, key);
                 // A patch merges into the style's object, so it can add and change keys but never take one away.
-                if (value is JsonObject v && baseValue is JsonObject b && b.Select(kv => kv.Key).FirstOrDefault(k => !v.ContainsKey(k)) is { } gone)
+                if (patch is JsonObject v && baseValue is JsonObject b && b.Select(kv => kv.Key).FirstOrDefault(k => !v.ContainsKey(k)) is { } gone)
                 {
                     Problem = $"A level can't take \"{gone}\" out of the style's {key}. Edit the style, or duplicate the rule into the level.";
                     return false;
                 }
-                Main.SetValue(id, key, value ?? DefaultJson(rule, key));
+                Main.SetValue(id, key, patch);
             }
         }
         Changed();

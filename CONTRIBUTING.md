@@ -62,7 +62,7 @@ public sealed class MeshOpsFeature : IEditorFeature
 - **Editor frame performance**: `Chip.exe --bench stress artifacts/frame.json` runs the hidden full-editor scenarios (Release; `CHIP_UI_SCALE` respected); see README for timing and diagnostic flags.
 - **Selection after topology edits**: use `Selection.Remap` or rebuild the selection explicitly; `Session.End` prunes anything invalid.
 - **Entity classes** come from the engine (`docs/entities.md`): don't add built-in classes in C#. Add a scene to `godot/addons/chip_import/entities/`, then `powershell -File scripts/godot-test.ps1 -UpdateBuiltins` regenerates Chip's embedded copy. Read entity values through `EntityValues` (they may be v2 strings) and set class properties with `EntityOps.SetProperty(e, spec, value)`, which types them and drops defaults. Changes to the addon need `scripts/godot-test.ps1` to pass.
-- **Dressing rule kinds** (`src/Chip.Core/Dressing/`, design in `docs/dressing.md`): a kind is a `RuleKind` subclass with a `ParamSpec` table (validation, defaults, the schema and docs all come from it), added to `RuleKind.All`, and run from `Dresser` as cached per-(rule, mesh) jobs. Never mutate the document; return meshes. Add cases to `DressingTests` (including the randomised incremental-equals-fresh test) and check a sample with `Chip --rules-check`.
+- **Dressing rule kinds** (`src/Chip.Core/Dressing/`, design in `docs/dressing.md`): a kind is a `RuleKind` subclass with a `DisplayName` and a `ParamSpec` table (validation, defaults, the schema, the Dressing rules window and docs all come from it: give each parameter a `Label`, a `Unit` for numbers and `ChoiceLabels` for choices), added to `RuleKind.All`, and run from `Dresser` as cached per-(rule, mesh) jobs. Never mutate the document; return meshes. Add a recipe for it (`Recipes.All`), cases to `DressingTests` (including the randomised incremental-equals-fresh test) and check a sample with `Chip --rules-check`. Editor code changes rules only through `DressingFeature.EditRules` (a `RulesWorkspace` edit written as one undo step), never by writing the file directly.
 
 ## Shared files: who may touch them
 
@@ -81,7 +81,7 @@ Everything else: create new files in your stream's folders (listed in `PLAN.md`)
 Scythe's bindings first (`SPEC.md` §4–§9), then Source 2 Hammer. `Chip.Editor.Tests` fails on any duplicate, so check `F1` / the tests before claiming a key. Decisions so far:
 - `H` / `Alt+H` = hide / unhide (Hammer). Scythe's Hard normals (`H`) gets a menu entry and a free chord instead.
 - `Shift+H` / `Shift+F` are reserved for hotspots (stream F).
-- `Ctrl+T` = tags popup; `` ` `` is reserved for the dressed/blockout view toggle (`docs/dressing.md`).
+- `Ctrl+T` = tags popup; `Ctrl+Shift+T` = Dress with; `Ctrl+Shift+D` = Dressing rules window; `` ` `` is reserved for the dressed/blockout view toggle (`docs/dressing.md`).
 - Tool-internal keys (Enter, Esc, Q/E in a UV editor) are read inside the tool's `Update`, not registered globally.
 
 ## UI rules

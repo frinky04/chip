@@ -104,7 +104,13 @@ public sealed class DressingRulesWindow(DressingFeature feature)
         {
             ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Theme.Px(6, 5));
             if (_selected == VarsRow) Vars(ws);
-            else if (ws.Find(_selected!) is { } rule) Details(ctx, ws, rule, level);
+            else if (ws.Find(_selected!) is { } rule)
+            {
+                // Per-rule ids: a field still being typed in when another rule is picked must not commit into that rule.
+                ImGui.PushID(rule.Id);
+                Details(ctx, ws, rule, level);
+                ImGui.PopID();
+            }
             ImGui.PopStyleVar();
         }
         ImGui.EndChild();
