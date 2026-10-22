@@ -14,8 +14,8 @@ public abstract class ProxyKind : RuleKind
 {
     public override Stage Stage => Stage.Shape;
 
-    protected static readonly ParamSpec MeshesParam = new("meshes", ParamType.Meshes, null, "Meshes to replace, by their mesh tags (Ctrl+T in object mode).", Required: true);
-    protected static readonly ParamSpec MaterialParam = new("material", ParamType.Text, null, "Material for what's built. Default: the material of the mesh it replaces.");
+    protected static readonly ParamSpec MeshesParam = new("meshes", ParamType.Meshes, null, "Meshes to replace, by their mesh tags (Ctrl+T in object mode).", Required: true, Label: "Meshes");
+    protected static readonly ParamSpec MaterialParam = new("material", ParamType.Text, null, "Material for what's built. Default: the material of the mesh it replaces.", Label: "Material");
 
     /// <summary>Builds the replacement for <paramref name="source"/>, or returns a reason it can't.</summary>
     internal abstract (PolyMesh? Mesh, string? Problem) Build(PolyMesh source, Rule rule);
@@ -59,17 +59,18 @@ public abstract class ProxyKind : RuleKind
 public sealed class RailingKind : ProxyKind
 {
     public override string Name => "railing";
+    public override string DisplayName => "Railing from box";
     public override string Summary => "Replace tagged boxes with a railing: posts, handrail, bottom rail and balusters, sized by the box.";
 
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         MeshesParam,
-        new("balusterEvery", ParamType.Number, 0.12f, "Spacing of the balusters (metres).", 0.03, 10),
-        new("baluster", ParamType.Number, 0.025f, "Baluster thickness (square, metres).", 0.005, 1),
-        new("postEvery", ParamType.Number, 1.5f, "Spacing of the posts; 0 for posts only at the ends (metres).", 0, 100),
-        new("post", ParamType.Number, 0.07f, "Post thickness (square, metres).", 0.01, 2),
-        new("rail", ParamType.Profile, Profile.Round(0.06f, 8), "Handrail cross-section, centred on the top of the box."),
-        new("bottomRail", ParamType.Number, 0.1f, "Height of a bottom rail; 0 for none (metres).", 0, 10),
+        new("balusterEvery", ParamType.Number, 0.12f, "Spacing of the balusters (metres).", 0.03, 10, Label: "Balusters every", Unit: ParamUnit.Length),
+        new("baluster", ParamType.Number, 0.025f, "Baluster thickness (square, metres).", 0.005, 1, Label: "Baluster size", Unit: ParamUnit.Length),
+        new("postEvery", ParamType.Number, 1.5f, "Spacing of the posts; 0 for posts only at the ends (metres).", 0, 100, Label: "Posts every", Unit: ParamUnit.Length),
+        new("post", ParamType.Number, 0.07f, "Post thickness (square, metres).", 0.01, 2, Label: "Post size", Unit: ParamUnit.Length),
+        new("rail", ParamType.Profile, Profile.Round(0.06f, 8), "Handrail cross-section, centred on the top of the box.", Label: "Handrail"),
+        new("bottomRail", ParamType.Number, 0.1f, "Height of a bottom rail; 0 for none (metres).", 0, 10, Label: "Bottom rail", Unit: ParamUnit.Length),
         MaterialParam,
     ];
 
@@ -141,6 +142,7 @@ public sealed class RailingKind : ProxyKind
 public sealed class StairsKind : ProxyKind
 {
     public override string Name => "stairs";
+    public override string DisplayName => "Stairs from ramp";
     public override string Summary => "Replace tagged ramps with stairs filling their box, climbing toward the high end.";
 
     public static readonly string[] Rises = ["auto", "+x", "-x", "+z", "-z"];
@@ -148,8 +150,9 @@ public sealed class StairsKind : ProxyKind
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         MeshesParam,
-        new("stepHeight", ParamType.Number, 0.18f, "Target height of one step; the count is rounded to fit the box (metres).", 0.02, 2),
-        new("rise", ParamType.Choice, "auto", "Which way the stairs climb: auto follows the ramp's slope; +x, -x, +z or -z force it.", Choices: Rises),
+        new("stepHeight", ParamType.Number, 0.18f, "Target height of one step; the count is rounded to fit the box (metres).", 0.02, 2, Label: "Step height", Unit: ParamUnit.Length),
+        new("rise", ParamType.Choice, "auto", "Which way the stairs climb: auto follows the ramp's slope; +x, -x, +z or -z force it.", Choices: Rises,
+            Label: "Climbs", ChoiceLabels: ["Up the slope", "Toward +X", "Toward -X", "Toward +Z", "Toward -Z"]),
         MaterialParam,
     ];
 

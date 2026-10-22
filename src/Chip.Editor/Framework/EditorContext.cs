@@ -166,6 +166,12 @@ public sealed class EditorContext
     /// <summary>Viewport shows the dressed level (true) or the bare blockout. Editing always works on the blockout.</summary>
     public bool ShowDressed { get; set; } = true;
 
+    /// <summary>
+    /// Blockout faces the viewport tints this frame (dressing: proxy stripes, the hovered rule's targets, tag colours).
+    /// Return the same list while nothing changed; a new list rebuilds the overlay.
+    /// </summary>
+    public Func<IReadOnlyList<Rendering.FaceTint>?> ViewportTints { get; set; } = () => null;
+
     /// <summary>What exports write: the dressed level when the level has rules, else the document itself.</summary>
     public Document ExportDocument() => Dressed() is { } dressed ? dressed.ForExport() : Doc;
     /// <summary>The active viewport pane's camera. The view layout swaps it when another pane becomes active.</summary>

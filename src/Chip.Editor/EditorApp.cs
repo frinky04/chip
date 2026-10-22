@@ -59,7 +59,9 @@ public sealed partial class EditorApp : IDisposable
             TextureFolders = _settings.Current.TextureFolders.ToList(),
         };
         _nav.CaptureCursor = SetCursorCaptured;
-        _shell = FeatureLoader.LoadAll(Ctx).OfType<ShellFeature>().First();
+        var features = FeatureLoader.LoadAll(Ctx);
+        _shell = features.OfType<ShellFeature>().First();
+        _dressing = features.OfType<Features.Dressing.DressingFeature>().First(); // shot states drive its window
         _autosave = new AutosaveManager(persistent ? Path.Combine(_settings.Folder!, "autosave") : null, () => _settings.Current.AutosaveSeconds)
         {
             OnError = message => Ctx.Status(message, error: true),

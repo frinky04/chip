@@ -55,6 +55,12 @@ public sealed class DressedLevel : IMeshSet
     }
 
     public RuleSet Rules { get; }
+
+    /// <summary>
+    /// Textures that came inside prop files, by the material their faces use (<c>file/material</c>). The editor registers
+    /// them as materials so props draw and export with their own textures.
+    /// </summary>
+    public IReadOnlyDictionary<string, Core.IO.ImportedImage> PropTextures { get; init; } = new Dictionary<string, Core.IO.ImportedImage>();
     public IReadOnlyList<PolyMesh> Meshes { get; }
     /// <summary>Rule file problems first, then what came up while dressing.</summary>
     public IReadOnlyList<Diagnostic> Diagnostics { get; }
@@ -93,6 +99,90 @@ public sealed class DressedLevel : IMeshSet
             if (takes) result.Add((rule, mesh.Dressing.Skips(rule.Id)));
         }
         return result;
+    }
+
+    /// <summary>
+    /// What rule <paramref name="ruleId"/> takes from the blockout: (mesh id, face index) for face rules, (mesh id, -1) for
+    /// whole meshes (proxies). Visible meshes only, at most <paramref name="limit"/> entries. Computed on demand and cached.
+    /// </summary>
+    public IReadOnlyList<(int Mesh, int Face)> Targets(string ruleId, int limit = 200_000)
+    {
+        _targets ??= new();
+        if (_targets.TryGetValue(ruleId, out var hit)) return hit;
+        var result = new List<(int, int)>();
+        if (Rules.Rules.FirstOrDefault(r => r.Id == ruleId) is { } rule)
+        {
+            string skip = rule.SkipTag;
+            foreach (var m in _doc.Meshes)
+            {
+                if (m.Hidden || m.Dressing.Skips(rule.Id)) continue;
+                if (rule.Find<MeshSelector>("meshes") is { } ms) { if (ms.Matches(m)) result.Add((m.Id, -1)); }
+                else if (rule.Find<FaceSelector>("faces") is { } fs)
+                    for (int f = 0; f < m.Faces.Count && result.Count < limit; f++)
+                        if (!m.Faces[f].Tags.Contains(skip) && fs.Matches(m, f, m.FaceNormal(f))) result.Add((m.Id, f));
+                if (result.Count >= limit) break;
+            }
+        }
+        return _targets[ruleId] = result;
+    }
+    Dictionary<string, IReadOnlyList<(int, int)>>? _targets;
+
+    /// <summary>
+    /// For one face (or, with <paramref name="face"/> -1, the mesh itself), why each rule does or doesn't take it, in rule
+    /// order: null when it does, else a short reason with a hint ("needs the tag wall (it has walls)"). Rules that pick
+    /// meshes answer for the mesh. For the inspector's "Why isn't this dressed?".
+    /// </summary>
+    public IReadOnlyList<(Rule Rule, string? Reason)> Explain(PolyMesh mesh, int face)
+    {
+        var result = new List<(Rule, string?)>();
+        foreach (var rule in Rules.Rules)
+        {
+            string? reason;
+            if (!rule.Enabled) reason = "switched off in the rules";
+            else if (mesh.Dressing.Skips(rule.Id)) reason = "switched off for this mesh (inspector)";
+            else if (rule.Find<MeshSelector>("meshes") is { } ms) reason = Missing(ms.Tags, ms.NotTags, mesh.Tags, "mesh tag");
+            else if (rule.Find<FaceSelector>("faces") is { } fs)
+            {
+                var faces = face >= 0 && face < mesh.Faces.Count ? [face] : Enumerable.Range(0, mesh.Faces.Count);
+                reason = null;
+                foreach (var f in faces)
+                {
+                    reason = mesh.Faces[f].Tags.Contains(rule.SkipTag) ? $"the face opts out ({rule.SkipTag})" : WhyNot(fs, mesh, f);
+                    if (reason == null) break;
+                }
+            }
+            else reason = "it picks nothing";
+            result.Add((rule, reason));
+        }
+        return result;
+    }
+
+    static string? WhyNot(FaceSelector s, PolyMesh m, int f)
+    {
+        var face = m.Faces[f];
+        if (Missing(s.Tags, s.NotTags, face.Tags, "tag") is { } tags) return tags;
+        if (s.Materials.Length > 0 && !s.Materials.Any(g => FaceSelector.Glob(g, face.Material)))
+            return $"needs material {string.Join(" or ", s.Materials)} (it has {face.Material})";
+        if (s.Facing != null && !s.Matches(m, f, m.FaceNormal(f)))
+        {
+            float y = m.FaceNormal(f).Y;
+            string facing = y > 0.7f ? "up" : y < -0.7f ? "down" : MathF.Abs(y) < 0.3f ? "upright" : "at a slant";
+            return $"needs faces facing {s.Facing} (it faces {facing})";
+        }
+        return null;
+    }
+
+    static string? Missing(string[] need, string[] avoid, TagSet have, string noun)
+    {
+        foreach (var t in need)
+            if (!have.Contains(t))
+            {
+                var near = Suggest.Closest(t, have.Where(h => !h.StartsWith(TagSet.SkipPrefix, StringComparison.Ordinal)));
+                return $"needs the {noun} {t}" + (near != null ? $" (it has {near})" : "");
+            }
+        foreach (var t in avoid)
+            if (have.Contains(t)) return $"it has the {noun} {t}, which the rule leaves out";
+        return null;
     }
 
     /// <summary>A stable hash of everything dressing generated: equal across runs and machines for the same level and rules.</summary>

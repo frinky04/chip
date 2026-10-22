@@ -12,16 +12,18 @@ namespace Chip.Core.Dressing;
 public sealed class BevelKind : RuleKind
 {
     public override string Name => "bevel";
+    public override string DisplayName => "Bevel corners";
     public override Stage Stage => Stage.Shape;
     public override string Summary => "Bevel the edges between matching faces (outside corners by default) on a copy of the mesh.";
 
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        new("faces", ParamType.Faces, null, "Faces whose shared edges are bevelled; both faces of an edge must match.", Required: true),
-        new("edges", ParamType.Choice, "convex", "convex: outside corners. concave: inside corners.", Choices: ["convex", "concave"]),
-        new("minDeg", ParamType.Number, 30f, "Only edges where the faces meet at this angle or more (degrees; 90 for a box corner).", 0, 180),
-        new("width", ParamType.Number, 0.02f, "How far the bevel reaches into each face (metres).", 0.0005, 10),
-        new("segments", ParamType.Int, 1, "1 is a flat chamfer; more is rounded.", 1, 16),
+        new("faces", ParamType.Faces, null, "Faces whose shared edges are bevelled; both faces of an edge must match.", Required: true, Label: "Faces"),
+        new("edges", ParamType.Choice, "convex", "convex: outside corners. concave: inside corners.", Choices: ["convex", "concave"],
+            Label: "Corners", ChoiceLabels: ["Outside corners", "Inside corners"]),
+        new("minDeg", ParamType.Number, 30f, "Only edges where the faces meet at this angle or more (degrees; 90 for a box corner).", 0, 180, Label: "Sharper than", Unit: ParamUnit.Degrees),
+        new("width", ParamType.Number, 0.02f, "How far the bevel reaches into each face (metres).", 0.0005, 10, Label: "Width", Unit: ParamUnit.Length),
+        new("segments", ParamType.Int, 1, "1 is a flat chamfer; more is rounded.", 1, 16, Label: "Segments"),
     ];
 
     /// <summary>

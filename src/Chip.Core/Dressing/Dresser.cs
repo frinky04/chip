@@ -122,7 +122,7 @@ public sealed class Dresser(IDressingFiles files)
         }
         Prune(doc);
         _lastState = state;
-        return _last = new DressedLevel(doc, _rules, meshes, info, rev, run.Diagnostics, run.Stats);
+        return _last = new DressedLevel(doc, _rules, meshes, info, rev, run.Diagnostics, run.Stats) { PropTextures = _props.Textures() };
     }
 
     DressedLevel? _last;

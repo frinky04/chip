@@ -177,6 +177,30 @@ public class DressingPhase2Tests
         Assert.Contains("levels/props/nope.glb", w.Message);
     }
 
+    [Fact]
+    public void A_glb_props_own_texture_comes_with_it()
+    {
+        var png = Path.Combine(Path.GetTempPath(), $"chip-prop-tex-{Guid.NewGuid():N}.png");
+        File.WriteAllBytes(png, MaterialLibrary.EncodePng(2, 2, new byte[16]));
+        try
+        {
+            var lib = new MaterialLibrary();
+            lib.Add(new MaterialInfo("bricks", png, 2, 2));
+            var propDoc = new Document();
+            var box = propDoc.Add(Box(new Vector3(-0.05f, 0, -0.05f), new Vector3(0.05f, 0.5f, 0.05f)));
+            foreach (var f in box.Faces) f.Material = "bricks";
+            var files = Rules(""" "lights": { "kind": "repeat", "faces": { "tags": ["wall"] }, "prop": "props/light.glb", "every": 2 } """);
+            files.SetBytes("levels/props/light.glb", GlbExporter.Build(propDoc, lib)); // embeds the image
+            var level = Dress(Room(), files);
+            Assert.Empty(level.Diagnostics);
+            var image = Assert.Single(level.PropTextures);
+            Assert.Equal("light/bricks", image.Key);
+            Assert.Equal(".png", image.Value.Extension);
+            Assert.All(Outputs(level, "lights").SelectMany(m => m.Faces), f => Assert.Equal("light/bricks", f.Material));
+        }
+        finally { File.Delete(png); }
+    }
+
     // ---- Scatter ----
 
     const string Rubble = """ "rubble": { "kind": "scatter", "faces": { "tags": ["floor"] }, "props": [{ "box": [0.2, 0.1, 0.2] }, { "cylinder": [0.15, 0.3] }], "weights": [3, 1], "perM2": 1, "minGap": 0.3 } """;

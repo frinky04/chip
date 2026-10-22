@@ -69,7 +69,7 @@ public sealed unsafe class Renderer : IDisposable
     readonly FrameCache<Overlay> _overlayCache = new();
     ElementRef? _overlayHover;
     bool _overlayNormals;
-    IReadOnlyList<(int SourceId, string Rule, string Kind)>? _overlayProxies;
+    IReadOnlyList<FaceTint>? _overlayTints;
 
     /// <summary>Reference models (pos + colour, lighting baked in) and their hard edges, rebuilt when entities or files change.</summary>
     readonly uint _refVao, _refVbo, _refWireVao, _refWireVbo;
@@ -78,14 +78,6 @@ public sealed unsafe class Renderer : IDisposable
     /// <summary>Reference models read as clay, apart from every dev texture and from the orange selection.</summary>
     static readonly Vector4 Clay = Theme.Rgb(0xA3B1C2);
     static readonly Vector3 ClayLight = Vector3.Normalize(new Vector3(0.35f, 0.9f, 0.25f));
-
-    /// <summary>Stripe tint for a proxy kind in the blockout view (unknown kinds get a neutral one).</summary>
-    static Vector4 ProxyTint(string kind) => kind switch
-    {
-        "railing" => Theme.Rgb(0x3EC6C0, 0.45f),
-        "stairs" => Theme.Rgb(0xA77BFF, 0.45f),
-        _ => Theme.Rgb(0xC8C8C8, 0.4f),
-    };
 
     /// <summary>Meshes re-uploaded by the last scene sync (diagnostics and tests of the dirty tracking).</summary>
     public int LastRebuildCount { get; private set; }
@@ -148,9 +140,12 @@ public sealed unsafe class Renderer : IDisposable
     /// Once per frame, before any pane renders: syncs mesh buffers with the document and builds the shared overlay.
     /// <paramref name="showNormals"/> adds short corner-normal lines for the selection (View > Show normals).
     /// </summary>
-    /// <param name="proxies">In the blockout view, meshes a dressing proxy rule replaces (striped, tinted by kind).</param>
+    /// <param name="tints">
+    /// Blockout faces to tint (dressing: proxy stripes, the rule under the mouse, tag colours). Pass the same list object
+    /// while nothing changed: a new list rebuilds the overlay.
+    /// </param>
     public void BeginFrame(Session session, ElementRef? hover, bool showNormals = false, IMeshSet? scene = null,
-        IReadOnlyList<(int SourceId, string Rule, string Kind)>? proxies = null)
+        IReadOnlyList<FaceTint>? tints = null)
     {
         LastRebuildCount = 0;
         _scene = scene;
@@ -158,12 +153,12 @@ public sealed unsafe class Renderer : IDisposable
             SyncScene(session, scene);
         _edgeMode = session.Sel.Mode == SelectMode.Edge;
         if (!_refCache.IsCurrent(session) || _refRevision != ReferenceModels.DrawRevision) SyncReferences(session);
-        if (_overlayCache.IsCurrent(session) && hover == _overlayHover && showNormals == _overlayNormals && ReferenceEquals(proxies, _overlayProxies)) return;
-        _overlay = BuildOverlay(session, hover, showNormals, proxies, _overlay);
+        if (_overlayCache.IsCurrent(session) && hover == _overlayHover && showNormals == _overlayNormals && ReferenceEquals(tints, _overlayTints)) return;
+        _overlay = BuildOverlay(session, hover, showNormals, tints, _overlay);
         _overlayCache.Store(session, _overlay);
         _overlayHover = hover;
         _overlayNormals = showNormals;
-        _overlayProxies = proxies;
+        _overlayTints = tints;
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _overlayVbo);
         _gl.BufferData<float>(BufferTargetARB.ArrayBuffer, CollectionsMarshal.AsSpan(_overlay.Data), BufferUsageARB.StreamDraw);
     }
@@ -553,7 +548,7 @@ public sealed unsafe class Renderer : IDisposable
         public int VertexCount => Data.Count / 7;
     }
 
-    static Overlay BuildOverlay(Session session, ElementRef? hover, bool showNormals, IReadOnlyList<(int SourceId, string Rule, string Kind)>? proxies, Overlay o)
+    static Overlay BuildOverlay(Session session, ElementRef? hover, bool showNormals, IReadOnlyList<FaceTint>? tints, Overlay o)
     {
         o.Data.Clear(); o.Lines.Clear(); o.Points.Clear();
         var doc = session.Doc;
@@ -576,13 +571,18 @@ public sealed unsafe class Renderer : IDisposable
         }
         if (hover is { } h && sel.Mode == SelectMode.Face && doc.Find(h.Mesh) is { } hm && h.A < hm.Faces.Count)
             Tint(hm, h.A, HoverCol with { W = 0.18f });
-        if (proxies != null)
-            foreach (var (id, _, kind) in proxies)
-                if (doc.Find(id) is { Hidden: false } pm)
-                {
-                    var tint = ProxyTint(kind);
-                    for (int f = 0; f < pm.Faces.Count; f++) Tint(pm, f, tint with { W = -tint.W }); // negative alpha: striped
-                }
+        if (tints != null)
+        {
+            PolyMesh? tm = null;
+            foreach (var t in tints)
+            {
+                if (tm?.Id != t.Mesh) tm = doc.Find(t.Mesh);
+                if (tm is not { Hidden: false }) continue;
+                var c = t.Striped ? t.Color with { W = -t.Color.W } : t.Color; // negative alpha: striped
+                if (t.Face < 0) for (int f = 0; f < tm.Faces.Count; f++) Tint(tm, f, c);
+                else if (t.Face < tm.Faces.Count) Tint(tm, t.Face, c);
+            }
+        }
         o.TriCount = o.VertexCount;
 
         void Lines(IEnumerable<(Vector3, Vector3)> segs, Vector4 c, float width)

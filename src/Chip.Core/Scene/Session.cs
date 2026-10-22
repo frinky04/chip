@@ -11,13 +11,23 @@ public sealed class Session
 {
     const int MaxUndo = 256;
 
-    sealed record Snapshot(string Label, Document? Doc, Selection Sel, UndoDelta? Delta = null);
+    sealed record Snapshot(string Label, Document? Doc, Selection Sel, UndoDelta? Delta = null, IReadOnlyList<FileChange>? Files = null);
     sealed record ScopeCheck(PolyMesh Mesh, ulong Hash);
 
     readonly List<Snapshot> _undo = new();
     readonly List<Snapshot> _redo = new();
     Snapshot? _pending;
+    List<FileChange>? _pendingFiles;
     List<ScopeCheck>? _scopeChecks;
+
+    /// <summary>Where <see cref="WriteFile"/> reads and writes. Files written in a step (dressing rules) undo and redo with it.</summary>
+    public ISessionFiles Files { get; init; } = DiskSessionFiles.Instance;
+
+    /// <summary>Raised after a step, undo, redo or cancel rewrote files (their paths), so watchers can reload them at once.</summary>
+    public event Action<IReadOnlyList<string>>? FilesChanged;
+
+    /// <summary>Raised when undo, redo or cancel couldn't rewrite a file (the path and the reason). The document still steps.</summary>
+    public event Action<string, string>? FileError;
 
     /// <summary>Reference implementation for undo equivalence tests and baseline measurements.</summary>
     public bool FullSnapshotUndo { get; init; }
@@ -59,6 +69,7 @@ public sealed class Session
         _undo.Clear();
         _redo.Clear();
         _pending = null;
+        _pendingFiles = null;
         _scopeChecks = null;
         Version++;
     }
@@ -85,6 +96,35 @@ public sealed class Session
             ? Doc.Meshes.Where(m => !meshIds.Contains(m.Id)).Select(m => new ScopeCheck(m, ScopeHash(m))).ToList()
             : null;
         _pending = new Snapshot(label, Doc.Clone(meshIds), Sel.Clone());
+        _pendingFiles = null;
+    }
+
+    /// <summary>
+    /// Writes <paramref name="text"/> to <paramref name="path"/> (null deletes it) as part of the current step, so undo puts
+    /// the old text back. Only inside a step (<see cref="Do(string, Action)"/> or <see cref="Begin(string)"/>). Throws
+    /// <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> when the file can't be written, which rolls
+    /// a <see cref="Do(string, Action)"/> back.
+    /// </summary>
+    public void WriteFile(string path, string? text)
+    {
+        if (_pending == null) throw new InvalidOperationException("WriteFile is only allowed inside an undo step");
+        _pendingFiles ??= new();
+        int i = _pendingFiles.FindIndex(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
+        string? before = i >= 0 ? _pendingFiles[i].Before : Files.Read(path);
+        Files.Write(path, text);
+        if (i >= 0) _pendingFiles[i] = _pendingFiles[i] with { After = text };
+        else _pendingFiles.Add(new FileChange(path, before, text));
+    }
+
+    /// <summary>Puts each file's <see cref="FileChange.Before"/> text back, newest first, reporting files it couldn't write.</summary>
+    void Restore(IReadOnlyList<FileChange> files)
+    {
+        for (int i = files.Count - 1; i >= 0; i--)
+        {
+            try { Files.Write(files[i].Path, files[i].Before); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { FileError?.Invoke(files[i].Path, e.Message); }
+        }
+        FilesChanged?.Invoke(files.Select(f => f.Path).ToList());
     }
 
     public void Touch() => Version++;
@@ -94,14 +134,18 @@ public sealed class Session
         if (_pending == null) return;
         CheckScope();
         PruneGroupMembers(); // before the delta, so the cleanup undoes with the step that caused it
-        _undo.Add(FullSnapshotUndo ? _pending : _pending with { Doc = null, Delta = UndoDelta.Between(_pending.Doc!, Doc) });
+        var files = _pendingFiles?.Where(f => f.Before != f.After).ToList();
+        var step = _pending with { Files = files is { Count: > 0 } ? files : null };
+        _undo.Add(FullSnapshotUndo ? step : step with { Doc = null, Delta = UndoDelta.Between(_pending.Doc!, Doc) });
         if (_undo.Count > MaxUndo) _undo.RemoveAt(0);
         _redo.Clear();
         _pending = null;
+        _pendingFiles = null;
         _scopeChecks = null;
         Sel.Prune(Doc);
         Dirty = true;
         Version++;
+        if (step.Files != null) FilesChanged?.Invoke(step.Files.Select(f => f.Path).ToList());
     }
 
     /// <summary>Drops group members whose object no longer exists (merged meshes, meshes emptied by deleting every face).</summary>
@@ -121,8 +165,11 @@ public sealed class Session
         Doc = _pending.Doc!;
         Sel = _pending.Sel;
         _pending = null;
+        var files = _pendingFiles;
+        _pendingFiles = null;
         _scopeChecks = null;
         Version++;
+        if (files != null) Restore(files);
     }
 
     /// <summary>Runs one atomic edit. Exceptions roll the document back.</summary>
@@ -149,17 +196,19 @@ public sealed class Session
         if (_pending != null || from.Count == 0) return false;
         var s = from[^1];
         from.RemoveAt(from.Count - 1);
+        var files = s.Files?.Select(f => new FileChange(f.Path, f.After, f.Before)).ToList(); // the step back the other way
         if (s.Delta is { } delta)
         {
             var (doc, reverse) = delta.Swap(Doc);
-            to.Add(new Snapshot(s.Label, null, Sel, reverse));
+            to.Add(new Snapshot(s.Label, null, Sel, reverse, files));
             Doc = doc;
         }
         else
         {
-            to.Add(new Snapshot(s.Label, Doc, Sel));
+            to.Add(new Snapshot(s.Label, Doc, Sel, Files: files));
             Doc = s.Doc!;
         }
+        if (s.Files != null) Restore(s.Files);
         Sel = s.Sel;
         Dirty = true;
         Version++;

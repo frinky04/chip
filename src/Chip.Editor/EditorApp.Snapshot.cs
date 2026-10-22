@@ -13,12 +13,13 @@ namespace Chip.Editor;
 /// <summary>
 /// <c>Chip --shot [level.chip|-] out.png [state] [--run cmd.id,cmd.id]</c>: renders the whole editor UI from an invisible
 /// window into an offscreen buffer, after an optional preset <c>state</c> (empty|objects|faces|block|blockpreview|polygonpreview|
-/// backfaces|bevelpending|offsetpending|tags|tags-popup|dressing|dressing-blockout|dressing-railing|shortcuts|shortcuts-search|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale|hotspot-editor) and a
+/// backfaces|bevelpending|offsetpending|tags|tags-popup|dressing|dressing-blockout|dressing-railing|dressing-rules|dressing-dresswith|dressing-tags|shortcuts|shortcuts-search|palette|palette-search|preferences|prefs-viewport|prefs-hotkeys|prefs-paths|recovery|rescale|hotspot-editor) and a
 /// comma-separated list of command ids. Every feature can prove its UI headlessly this way.
 /// </summary>
 public sealed partial class EditorApp
 {
     uint _captureFbo;
+    Features.Dressing.DressingFeature _dressing = null!;
     string? _snapshotPaletteQuery;
     Action? _snapshotAfterPrefsOpen;
     Vector2? _shotDragMouse;
@@ -171,15 +172,27 @@ public sealed partial class EditorApp
                 if (state == "tags-popup") ctx.Commands.Execute("tags.edit");
                 break;
             }
-            case "dressing" or "dressing-blockout" or "dressing-railing": // the dressing sample from inside the room
+            case "dressing" or "dressing-blockout" or "dressing-railing" or "dressing-rules" or "dressing-dresswith" or "dressing-tags":
             {
+                // The dressing sample from inside the room; the sample opens the Dressing rules window, which most states close.
                 ctx.Commands.Execute("dressing.sample");
+                if (state != "dressing-rules") ctx.Commands.Execute("dressing.rules");
                 ctx.Camera.Position = new System.Numerics.Vector3(7.4f, 2.4f, 5.5f);
                 ctx.Camera.LookAt(new System.Numerics.Vector3(3.2f, 0.2f, 1.6f));
                 ctx.SetMode(SelectMode.Object);
-                string pick = state == "dressing-railing" ? "rail-north" : "pillar"; // railing: its per-mesh overrides show
+                string pick = state == "dressing-railing" ? "rail-north" : state == "dressing-dresswith" ? "plinth" : "pillar"; // railing: its per-mesh overrides show
                 if (ctx.Doc.Meshes.FirstOrDefault(m => m.Name == pick) is { } picked) ctx.Sel.Add(ElementRef.Object(picked.Id));
                 if (state == "dressing-blockout") ctx.Commands.Execute("view.dressed");
+                // CHIP_SHOT_RULE=<id> (or "vars") picks what the Dressing rules window shows.
+                if (Environment.GetEnvironmentVariable("CHIP_SHOT_RULE") is { Length: > 0 } shotRule)
+                {
+                    if (shotRule == "vars") _dressing.Window.ShowSharedValues(); else _dressing.Window.ShowRule(shotRule);
+                }
+                if (state == "dressing-railing" && Environment.GetEnvironmentVariable("CHIP_SHOT_OVERRIDE") == "1"
+                    && ctx.Doc.Meshes.FirstOrDefault(m => m.Name == "rail-north") is { } rail)
+                    rail.Dressing = rail.Dressing.WithParam("railings", "balusterEvery", System.Text.Json.Nodes.JsonValue.Create(0.3));
+                if (state == "dressing-dresswith") ctx.Commands.Execute("dressing.dressWith");
+                if (state == "dressing-tags") ctx.Commands.Execute("view.tagColours");
                 break;
             }
             case "polygonpreview":

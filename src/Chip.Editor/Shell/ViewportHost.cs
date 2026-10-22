@@ -65,8 +65,7 @@ public sealed partial class EditorApp
         _construction = ConstructionPlane();
 
         var dressed = Ctx.Dressed();
-        _renderer.BeginFrame(Ctx.Session, Ctx.Hover, ViewSettings.Of(Ctx).ShowNormals, Ctx.ShowDressed ? dressed : null,
-            Ctx.ShowDressed ? null : dressed?.Proxies);
+        _renderer.BeginFrame(Ctx.Session, Ctx.Hover, ViewSettings.Of(Ctx).ShowNormals, Ctx.ShowDressed ? dressed : null, Ctx.ViewportTints());
         _bench?.Mark("sync");
         foreach (var pane in layout.Visible)
         {

@@ -10,12 +10,13 @@ Chip.exe --rules-check level.chip [--json]    # check a level's dressing rules (
 Chip.exe --rules-schema [out.json]            # JSON Schema for dressing rules files
 ```
 
-**Dressing** (docs/dressing.md): tag surfaces (Ctrl+T), then a JSON rules file beside the level (`level.dressing.json`)
-turns the blockout into the shipped level: baseboards and trims along walls, pipes in corners, bevelled corners, boxes that
-become railings, ramps that become stairs, lights along walls, rubble on floors. Edit the blockout and the dressing
-follows; edit the rules and Chip reloads them live; override a rule for one mesh in the inspector, or Bake it to edit by
-hand. `` ` `` switches between the dressed level and the bare blockout; export always ships the dressed level. Try it:
-Tools > Open dressing sample.
+**Dressing** (docs/dressing.md): rules turn the blockout into the shipped level: baseboards and trims along walls, pipes in
+corners, bevelled corners, boxes that become railings, ramps that become stairs, lights along walls, rubble on floors.
+Select walls and press Ctrl+Shift+T (Dress with) to add a rule from a recipe and apply it; Ctrl+Shift+D (Dressing rules)
+edits rules in centimetres and words, with styles shared between levels. Edit the blockout and the dressing follows. The
+rules are saved as JSON beside the level (`level.dressing.json`), so agents can edit them too, and Chip reloads the file
+live. Override a rule for one mesh in the inspector, or Bake it to edit by hand. `` ` `` switches between the dressed
+level and the bare blockout; export always ships the dressed level. Try it: Tools > Open dressing sample.
 
 Everything is in metres. Materials are the PNGs in `assets/textures`, and texel density is set per level, Scythe style, in the Material section: "1 m is 256 px" by default, so a 128 px texture tiles every 50 cm. Textures can have their own density. `Shift+Alt+1..0` picks the first ten. The export scale defaults to 1 (Godot); use 100 for centimetre engines.
 
@@ -32,7 +33,7 @@ Layout: the left strip holds tools (select, block, move/rotate/scale). The viewp
 | Select | 1 vert · 2 edge · 3 face · 4 object · click / Shift add / Ctrl toggle · drag paints a selection (Shift adds, Ctrl removes) · Ctrl+Alt+drag box select · Ctrl+A · Ctrl+I · Esc |
 | Transform | W move · E rotate · R scale · Shift+drag (faces) extrude · Alt+arrows nudge · `[` `]` grid · inspector Position/Size (Enter) |
 | Mesh | I inset · O outset · Shift+O offset faces along their normals (trims, baseboards) · B bevel · C knife · V connect |
-| Edit | Del · Shift+D duplicate · Shift+N flip · H hide · Alt+H unhide · Shift+Ctrl+Alt+V verts to grid · Ctrl+T tags (faces, or meshes in object mode) · Ctrl+Z / Ctrl+Y |
+| Edit | Del · Shift+D duplicate · Shift+N flip · H hide · Alt+H unhide · Shift+Ctrl+Alt+V verts to grid · Ctrl+T tags (faces, or meshes in object mode) · Ctrl+Shift+T dress with · Ctrl+Shift+D dressing rules · Ctrl+Z / Ctrl+Y |
 | View | Alt+B select backfaces (clicks can hit faces pointing away; rendering doesn't change) · `[` `]` grid 3 cm to 16 m |
 | Texture | Shift+T apply · Shift+RMB lift · Shift+Ctrl+G grid · Shift+Ctrl+F face · Ctrl+Alt+F fit · Ctrl+arrows shift · Ctrl+Shift+arrows scale · Alt+, / Alt+. rotate · Shift+Alt+arrows justify (numpad keys work too) |
 | File | Ctrl+N/O/S, Ctrl+Shift+S · Ctrl+E export GLB (Ctrl+Shift+E export as) |

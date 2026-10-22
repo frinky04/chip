@@ -17,6 +17,13 @@ sealed class PropLibrary(IDressingFiles files)
     public const string DefaultMaterial = "dev_measurewall01d";
 
     readonly Dictionary<PropSpec, (long Stamp, PolyMesh? Mesh, string? Error)> _cache = new();
+    readonly Dictionary<string, ImportedImage> _textures = new(StringComparer.Ordinal);
+
+    /// <summary>Textures that came inside prop files, by the material name their faces use (<c>file/material</c>).</summary>
+    public Dictionary<string, ImportedImage> Textures()
+    {
+        lock (_textures) return new(_textures, StringComparer.Ordinal);
+    }
 
     /// <summary>A number that changes when any of <paramref name="props"/> changes on disk (for job keys).</summary>
     public long Stamp(IEnumerable<PropSpec> props) =>
@@ -54,6 +61,18 @@ sealed class PropLibrary(IDressingFiles files)
             if (result.Meshes.Count == 0) return (null, $"prop \"{spec.File}\" has no meshes");
             var merged = result.Meshes[0].Clone();
             MeshOps.MergeMeshes(merged, result.Meshes.Skip(1));
+            // The file's own textures win: their faces get a material named after the file, which the editor registers.
+            if (result.Images.Count > 0)
+            {
+                string stem = Path.GetFileNameWithoutExtension(spec.File!);
+                foreach (var face in merged.Faces)
+                    if (result.Images.TryGetValue(face.Material, out var image))
+                    {
+                        string name = $"{stem}/{face.Material}";
+                        lock (_textures) _textures[name] = image;
+                        face.Material = name;
+                    }
+            }
             return (merged, null);
         }
         catch (Exception e) when (e is InvalidDataException or System.Text.Json.JsonException or IOException)
