@@ -42,31 +42,26 @@ public sealed class LevelSection : IInspectorSection
 
         RowLabel("Export", "Where Ctrl+E writes the .glb");
         string target = doc.ExportPath != null ? Path.GetFileName(doc.ExportPath) : "not chosen yet";
-        ImGui.TextColored(doc.ExportPath != null ? Theme.Text : Theme.TextDim, MaterialTilesFit(target));
+        ImGui.TextColored(doc.ExportPath != null ? Theme.Text : Theme.TextDim, Ellipsize(target, ImGui.GetContentRegionAvail().X));
         if (doc.ExportPath != null) Tip(doc.ExportPath);
-        ImGui.SetCursorPosX(LabelColumn + ImGui.GetStyle().WindowPadding.X);
-        float half = (ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemSpacing.X) * 0.5f;
-        if (ImGui.Button("Export now", new Vector2(half, 0))) ctx.Commands.Execute("file.export");
-        Tip("Write the .glb  (Ctrl+E)");
-        ImGui.SameLine();
-        if (ImGui.Button("Settings…", new Vector2(-1, 0))) ctx.Commands.Execute("pipeline.exportSettings");
-        Tip("Scale, collision baking, tessellation for vertex lighting, textures and material remaps");
-        ImGui.SetCursorPosX(LabelColumn + ImGui.GetStyle().WindowPadding.X);
+        FieldStart();
+        int export = ButtonRow("export",
+            Command(ctx.Commands, "file.export", "Export now"),
+            new RowButton("Settings…", "Scale, collision baking, tessellation for vertex lighting, textures and material remaps"));
+        if (export == 0) ctx.Commands.Execute("file.export");
+        if (export == 1) ctx.Commands.Execute("pipeline.exportSettings");
+        FieldStart();
         bool onSave = doc.Export.ExportOnSave;
-        if (ImGui.Checkbox("Export on save", ref onSave)) ctx.Commands.Execute("pipeline.exportOnSave");
-        Tip("Every save also writes the .glb, so the engine picks up changes  (Ctrl+Alt+E)");
+        if (Check("Export on save", ref onSave, "Every save also writes the .glb, so the engine picks up changes  (Ctrl+Alt+E)"))
+            ctx.Commands.Execute("pipeline.exportOnSave");
 
         RowLabel("Rules", "Dressing rules: they turn the blockout into the shipped level (docs/dressing.md)");
         var rules = ctx.Dressed();
-        ImGui.TextColored(rules != null ? Theme.Text : Theme.TextDim, rules != null ? Count(rules.Rules.Rules.Count(r => r.Enabled), "rule", "rules") + " on" : "no rules yet");
-        ImGui.SameLine();
-        float w = ImGui.CalcTextSize("Edit").X + ImGui.GetStyle().FramePadding.X * 2;
-        ImGui.SetCursorPosX(ImGui.GetWindowContentRegionMax().X - w);
-        if (ImGui.SmallButton("Edit")) ctx.Commands.Execute("dressing.rules");
+        ImGui.TextColored(rules != null ? Theme.Text : Theme.TextDim, rules != null ? Count(rules.Rules.Rules.Count(r => r.Enabled), "rule", "rules") + " on" : "none yet");
+        FieldStart();
+        if (ImGui.Button(rules != null ? "Edit rules…" : "Set up rules…", new Vector2(-1, 0))) ctx.Commands.Execute("dressing.rules");
         Tip("Open the Dressing tab  (Ctrl+Shift+D)");
     }
-
-    static string MaterialTilesFit(string text) => Features.Materials.MaterialTiles.Fit(text, ImGui.GetContentRegionAvail().X);
 
     static string Count(int n, string one, string many) => n == 1 ? $"1 {one}" : $"{n} {many}";
 }

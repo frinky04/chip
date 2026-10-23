@@ -10,14 +10,14 @@ namespace Chip.Editor.Features.Tagging;
 /// <summary>
 /// Inspector block listing the selection's tags as chips that wrap. A chip on only part of the selection shows how much
 /// ("wall 2/5"); clicking it adds the tag to the rest. The × removes the tag from the selection; Ctrl+click selects
-/// everything with the tag. "Add tag" opens the Ctrl+T popup.
+/// everything with the tag. "+ Tag" opens the Ctrl+T popup.
 /// </summary>
 public sealed class TagsSection(TagsPopup popup) : IInspectorSection
 {
     readonly Rendering.FrameCache<(List<(string Tag, int Count)> Tags, int Targets)> _cache = new();
 
     public string Id => "tags";
-    public int Order => 150;
+    public int Order => 700; // near the end with Dressing, which selects by tags: the surface comes first
     public bool Visible(EditorContext ctx) => TagOps.CanTag(ctx.Sel.Mode) && !ctx.Sel.IsEmpty;
 
     public void Draw(EditorContext ctx)
@@ -25,20 +25,30 @@ public sealed class TagsSection(TagsPopup popup) : IInspectorSection
         if (!_cache.IsCurrent(ctx.Session))
             _cache.Store(ctx.Session, (TagOps.OnSelection(ctx.Doc, ctx.Sel), TagOps.TargetCount(ctx.Doc, ctx.Sel)));
         var (tags, targets) = _cache.Value;
-        if (!Heading("Tags", ctx.Sel.Mode == SelectMode.Object ? "on meshes" : null)) return;
+        if (!Heading("Tags", tags.Count == 0 ? "none" : null)) return;
 
+        // The chips flow in the field column, wrapping back to it, with "+ Tag" as the last one.
+        bool meshes = ctx.Sel.Mode == SelectMode.Object;
+        RowLabel(meshes ? "Meshes" : "Faces", meshes ? "Tags on the selected meshes (object mode)" : "Tags on the selected faces");
         string? remove = null, complete = null, selectAll = null;
         float right = ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X;
-        var spacing = Theme.Px(6, 6);
+        float gap = Theme.Px(4);
+        void Flow(float width, bool first)
+        {
+            if (first) return;
+            ImGui.SameLine(0, gap);
+            if (ImGui.GetCursorScreenPos().X + width > right)
+            {
+                ImGui.NewLine();
+                FieldStart();
+            }
+        }
         for (int i = 0; i < tags.Count; i++)
         {
             var (tag, count) = tags[i];
             var size = ChipSize(tag, count, targets);
-            if (i > 0)
-            {
-                ImGui.SameLine(0, spacing.X);
-                if (ImGui.GetCursorScreenPos().X + size.X > right) ImGui.NewLine();
-            }
+            size.X = MathF.Min(size.X, right - ImGui.GetWindowPos().X - LabelColumn); // a long tag gets an ellipsis, never loses its ×
+            Flow(size.X, i == 0);
             switch (Chip(tag, count, targets, size))
             {
                 case ChipClick.Remove: remove = tag; break;
@@ -46,23 +56,15 @@ public sealed class TagsSection(TagsPopup popup) : IInspectorSection
                 case ChipClick.Body when count < targets: complete = tag; break;
             }
         }
-        if (tags.Count == 0)
-        {
-            ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(Theme.TextDim, "No tags");
-            ImGui.SameLine();
-        }
-        else ImGui.Dummy(new Vector2(0, spacing.Y * 0.5f));
-        if (tags.Count == 0) ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - AddWidth());
-        if (ImGui.Button("Add tag", new Vector2(tags.Count == 0 ? AddWidth() : -1, 0))) popup.Open();
-        Tip("Add or find tags: Ctrl+T. Dressing rules select faces and meshes by tag.");
+        const string add = "+ Tag";
+        Flow(ImGui.CalcTextSize(add).X + ImGui.GetStyle().FramePadding.X * 2, tags.Count == 0);
+        if (ImGui.Button(add)) popup.Open();
+        Tip("Add or find tags  (Ctrl+T). Dressing rules select faces and meshes by tag.");
 
         if (remove != null) TagsFeature.Set(ctx, remove, on: false);
         if (complete != null) TagsFeature.Set(ctx, complete, on: true);
         if (selectAll != null) TagsFeature.SelectAll(ctx, selectAll);
     }
-
-    static float AddWidth() => ImGui.CalcTextSize("Add tag").X + ImGui.GetStyle().FramePadding.X * 4;
 
     enum ChipClick { None, Body, Remove }
 
@@ -93,7 +95,8 @@ public sealed class TagsSection(TagsPopup popup) : IInspectorSection
         uint U(Vector4 c) => ImGui.ColorConvertFloat4ToU32(c);
         dl.AddRectFilled(p, p + size, U(bodyHovered || xHovered ? Theme.FrameHover : Theme.Frame), size.Y * 0.5f);
         float ty = MathF.Round(p.Y + (size.Y - ImGui.GetTextLineHeight()) * 0.5f);
-        dl.AddText(new Vector2(p.X + Theme.Px(10), ty), U(count < targets ? Theme.TextDim : Theme.Text), Label(tag, count, targets));
+        dl.AddText(new Vector2(p.X + Theme.Px(10), ty), U(count < targets ? Theme.TextDim : Theme.Text),
+            Ellipsize(Label(tag, count, targets), size.X - Theme.Px(10) - xw));
         var c = new Vector2(MathF.Round(p.X + size.X - xw * 0.5f - Theme.Px(2)), MathF.Round(p.Y + size.Y * 0.5f));
         float r = Theme.Px(3.5f);
         uint ink = U(xHovered ? Theme.Text : Theme.TextDim);

@@ -18,7 +18,7 @@ public sealed class SmoothingSection(NormalsFeature feature) : IInspectorSection
 
     public NormalsFeature Feature => feature;
     public string Id => "smoothing";
-    public int Order => 250;
+    public int Order => 400; // after the surface (material, texture, hotspot): how it's lit, then collision
     public bool Visible(EditorContext ctx) => !ctx.Sel.IsEmpty;
 
     public void Draw(EditorContext ctx)
@@ -53,45 +53,20 @@ public sealed class SmoothingSection(NormalsFeature feature) : IInspectorSection
         var (soft, total) = _counts.Value;
         if (!Heading("Smoothing", total == 0 ? null : soft == 0 ? "all hard" : soft == total ? "all soft" : $"{soft} of {total} soft")) return;
 
-        var style = ImGui.GetStyle();
-        float w = (ImGui.GetContentRegionAvail().X - style.ItemSpacing.X * 2) / 3;
-        CommandButton(ctx, "mesh.softNormals", "Soft", w);
-        ImGui.SameLine();
-        CommandButton(ctx, "mesh.hardNormals", "Hard", w);
-        ImGui.SameLine();
-        CommandButton(ctx, "mesh.dominantNormals", "Dominant", w);
+        RowLabel("Normals", "Set the selection's edges soft or hard, or let each face's normal follow its biggest neighbour");
+        CommandRow(ctx.Commands, "normals", ("mesh.softNormals", "Soft", null), ("mesh.hardNormals", "Hard", null), ("mesh.dominantNormals", "Dominant", null));
 
+        // Auto-smooth: the angle, then the commands that use it, in the same field column.
         RowLabel("Angle", "Auto-smooth threshold: edges whose faces meet at less than this angle become soft");
+        var style = ImGui.GetStyle();
         float angle = feature.SmoothAngle;
-        float presetW = ImGui.CalcTextSize("60°").X + style.FramePadding.X * 2;
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (presetW + style.ItemSpacing.X) * Presets.Length);
-        if (Widgets.ValueSlider("##smoothAngle", "", ref angle, 1, 180, "%.0f°", a => $"{a:0}°")) feature.SmoothAngle = angle;
-        foreach (var p in Presets)
-        {
-            ImGui.SameLine();
-            bool on = MathF.Abs(feature.SmoothAngle - p) < 0.5f;
-            if (on) ImGui.PushStyleColor(ImGuiCol.Button, Theme.FrameHover);
-            if (ImGui.Button($"{p:0}°##preset", new System.Numerics.Vector2(presetW, 0))) feature.SmoothAngle = p;
-            if (on) ImGui.PopStyleColor();
-            Tip($"Set the angle to {p:0}°");
-        }
-
-        ImGui.Dummy(new System.Numerics.Vector2(LabelColumn - style.ItemSpacing.X, 0));
-        ImGui.SameLine();
-        float half = (ImGui.GetContentRegionAvail().X - style.ItemSpacing.X) / 2;
-        CommandButton(ctx, "mesh.autoSmooth", "Auto-smooth", half);
-        ImGui.SameLine();
-        CommandButton(ctx, "mesh.clearSmoothing", "Clear", half);
-    }
-
-    /// <summary>A button that runs a registered command, greyed when it can't run, with its description and hotkey as the tip.</summary>
-    static void CommandButton(EditorContext ctx, string id, string label, float width)
-    {
-        if (ctx.Commands.Find(id) is not { } cmd) return;
-        bool enabled = cmd.Enabled;
-        ImGui.BeginDisabled(!enabled);
-        if (ImGui.Button($"{label}##{id}", new System.Numerics.Vector2(width, 0))) ctx.Commands.Execute(id);
-        ImGui.EndDisabled();
-        Tip(cmd.HotkeyText is { } key ? $"{cmd.Description}  ({key})" : cmd.Description ?? cmd.Label);
+        float gap = Theme.Px(4), presetW = ImGui.CalcTextSize("60°").X + style.FramePadding.X * 2;
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (presetW + gap) * Presets.Length);
+        if (ValueSlider("##smoothAngle", "", ref angle, 1, 180, "%.0f°", a => $"{a:0}°")) feature.SmoothAngle = angle;
+        ImGui.SameLine(0, gap);
+        int preset = ButtonRow("presets", Presets.Select(p => new RowButton($"{p:0}°", $"Set the angle to {p:0}°", Selected: MathF.Abs(feature.SmoothAngle - p) < 0.5f)).ToArray());
+        if (preset >= 0) feature.SmoothAngle = Presets[preset];
+        FieldStart();
+        CommandRow(ctx.Commands, "auto", ("mesh.autoSmooth", "Auto-smooth", null), ("mesh.clearSmoothing", "Clear", null));
     }
 }

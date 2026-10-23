@@ -43,10 +43,14 @@ public sealed class TextureSection : IInspectorSection
 
         int explicitCount = stats.ExplicitCount;
         RowLabel("UVs", "Explicit UVs (from unwraps, wraps or the fast texture tool) override the projection and stay on the geometry");
-        ImGui.Text(explicitCount == 0 ? "Projection" : explicitCount == faces.Count ? "Explicit" : $"{explicitCount} explicit, {faces.Count - explicitCount} projected");
+        string uvs = explicitCount == 0 ? "Projection" : explicitCount == faces.Count ? "Explicit" : $"{explicitCount} explicit, {faces.Count - explicitCount} projected";
+        const string clear = "Clear";
+        float clearW = explicitCount > 0 ? ImGui.CalcTextSize(clear).X + ImGui.GetStyle().FramePadding.X * 2 + ImGui.GetStyle().ItemSpacing.X : 0;
+        string shown = Ellipsize(uvs, ImGui.GetContentRegionAvail().X - clearW); // the summary gives way to Clear
+        ImGui.Text(shown);
+        if (shown != uvs) Tip(uvs);
         if (explicitCount > 0)
         {
-            const string clear = "Clear";
             ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - ImGui.CalcTextSize(clear).X - ImGui.GetStyle().FramePadding.X * 2);
             if (ImGui.Button(clear)) ctx.Commands.Execute("texture.clearUVs");
             Tip("Clear explicit UVs: go back to the planar projection");
@@ -75,59 +79,34 @@ public sealed class TextureSection : IInspectorSection
                 ctx.EditMapping("Texture Rotation", m => m with { Rotation = rv });
         }
 
-        ImGui.Dummy(Theme.Px(0, 2));
-        float gap = Theme.Px(4);
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(gap, Theme.Px(4)));
-        float w = (ImGui.GetContentRegionAvail().X - gap * 4) / 5;
-        if (ImGui.Button("Grid", new Vector2(w, 0))) ctx.Commands.Execute("texture.alignGrid");
-        Tip($"Align to grid: project from the nearest world axis{Keys(ctx, "texture.alignGrid")}");
-        ImGui.SameLine();
-        if (ImGui.Button("Face", new Vector2(w, 0))) ctx.Commands.Execute("texture.alignFace");
-        Tip($"Align to face: project along the face{Keys(ctx, "texture.alignFace")}");
-        ImGui.SameLine();
-        if (ImGui.Button("Fit", new Vector2(w, 0))) ctx.Commands.Execute("texture.fit");
-        Tip($"Fit: one tile across the faces, using the fit options below{Keys(ctx, "texture.fit")}");
-        ImGui.SameLine();
-        if (IconButton("flipu", Icon.FlipU, $"Flip horizontally{Keys(ctx, "texture.flipU")}", w)) ctx.Commands.Execute("texture.flipU");
-        ImGui.SameLine();
-        if (IconButton("flipv", Icon.FlipV, $"Flip vertically{Keys(ctx, "texture.flipV")}", w)) ctx.Commands.Execute("texture.flipV");
+        RowLabel("Align", "Project the texture again, or fit or flip it");
+        CommandRow(ctx.Commands, "align", ("texture.alignGrid", "Grid", Icon.Grid), ("texture.alignFace", "Face", Icon.Face), ("texture.fit", "Fit", Icon.FitBoth),
+            ("texture.flipU", "", Icon.FlipU), ("texture.flipV", "", Icon.FlipV));
 
-        // Justify: five equal icon buttons after the label column.
         RowLabel("Justify", "Line the texture up with the faces' edges or centre");
-        float jw = (ImGui.GetContentRegionAvail().X - gap * 4) / 5;
-        (Icon Icon, string Id, string Tip)[] justify =
-        [
-            (Icon.JustifyLeft, "texture.justifyLeft", "Justify left"), (Icon.JustifyRight, "texture.justifyRight", "Justify right"),
-            (Icon.JustifyTop, "texture.justifyTop", "Justify top"), (Icon.JustifyBottom, "texture.justifyBottom", "Justify bottom"),
-            (Icon.JustifyCenter, "texture.justifyCenter", "Justify centre"),
-        ];
-        for (int i = 0; i < justify.Length; i++)
-        {
-            if (i > 0) ImGui.SameLine();
-            if (IconButton(justify[i].Id, justify[i].Icon, justify[i].Tip + Keys(ctx, justify[i].Id), jw)) ctx.Commands.Execute(justify[i].Id);
-        }
-        ImGui.PopStyleVar();
+        CommandRow(ctx.Commands, "justify", ("texture.justifyLeft", "", Icon.JustifyLeft), ("texture.justifyRight", "", Icon.JustifyRight),
+            ("texture.justifyTop", "", Icon.JustifyTop), ("texture.justifyBottom", "", Icon.JustifyBottom), ("texture.justifyCenter", "", Icon.JustifyCenter));
 
-        // Fit options: which extent Fit fills, then Keep Ratio and Treat as One.
+        // Fit: which extent one tile fills, then the options that shape fit, justify and moves.
         RowLabel("Fit", $"What Fit{Keys(ctx, "texture.fit")} fills with one tile");
-        int fit = SegmentedControl("fitmode",
-        [
-            (Icon.FitBoth, "", "Fit width and height"), (Icon.FitWidth, "", "Fit width (walls: one tile across)"),
-            (Icon.FitHeight, "", "Fit height (walls: floor to ceiling)"),
-        ], (int)options.Fit);
+        int fit = ButtonRow("fitmode",
+            new RowButton("", "Fit width and height", Icon: Icon.FitBoth, Selected: options.Fit == FitMode.Both),
+            new RowButton("", "Fit width (walls: one tile across)", Icon: Icon.FitWidth, Selected: options.Fit == FitMode.Width),
+            new RowButton("", "Fit height (walls: floor to ceiling)", Icon: Icon.FitHeight, Selected: options.Fit == FitMode.Height));
         if (fit >= 0) options.Fit = (FitMode)fit;
-        ImGui.SameLine(0, Theme.Px(6));
-        if (Toggle("keepratio", Icon.KeepRatio, "", "Keep ratio: scale both axes together when fitting", options.KeepRatio)) options.KeepRatio = !options.KeepRatio;
-        ImGui.SameLine(0, Theme.Px(2));
-        if (Toggle("asone", Icon.TreatAsOne, "", "Treat as one: fit, justify, scale and flip all faces as one region", options.TreatAsOne)) options.TreatAsOne = !options.TreatAsOne;
-        ImGui.SameLine(0, Theme.Px(2));
-        if (Toggle("lock", Icon.Lock, "", ctx.Session.TextureLock
+        RowLabel("Options", "How fit, justify, scale and moves treat the selection");
+        int option = ButtonRow("options",
+            new RowButton("", "Keep ratio: scale both axes together when fitting", Icon: Icon.KeepRatio, On: options.KeepRatio),
+            new RowButton("", "Treat as one: fit, justify, scale and flip all faces as one region", Icon: Icon.TreatAsOne, On: options.TreatAsOne),
+            new RowButton("", ctx.Session.TextureLock
                 ? "Texture lock is on: projected textures follow moved objects"
-                : "Texture lock is off: projected textures stay world-aligned when objects move", ctx.Session.TextureLock))
-            ctx.Commands.Execute("texture.lock");
+                : "Texture lock is off: projected textures stay world-aligned when objects move", Icon: Icon.Lock, On: ctx.Session.TextureLock));
+        if (option == 0) options.KeepRatio = !options.KeepRatio;
+        if (option == 1) options.TreatAsOne = !options.TreatAsOne;
+        if (option == 2) ctx.Commands.Execute("texture.lock");
 
-        ImGui.Dummy(Theme.Px(0, 2));
-        if (ImGui.Button("Edit UVs in the fast texture tool", new Vector2(-1, 0))) ctx.SetTool("fastTexture");
-        Tip("Fast texture tool: unwrap, move, scale and rotate UVs in 2D  (Shift+Q)");
+        FieldStart();
+        if (ImGui.Button("Fast texture tool", new Vector2(-1, 0))) ctx.SetTool("fastTexture");
+        Tip("Edit UVs in 2D: unwrap, move, scale and rotate them  (Shift+Q)");
     }
 }

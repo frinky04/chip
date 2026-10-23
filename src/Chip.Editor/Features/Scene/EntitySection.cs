@@ -122,18 +122,17 @@ public sealed class EntitySection : IInspectorSection
         string? error = null;
         bool readable = !set || EntityValues.Coerce(spec, own, out error) != null;
         var value = EntityValues.Effective(e, spec);
-        float avail = ImGui.GetContentRegionAvail().X;
-        float labelW = MathF.Floor(avail * 0.42f);
+        float labelW = PropertyColumn;
         float resetW = ImGui.GetFrameHeight();
 
         ImGui.AlignTextToFramePadding();
         var labelCol = !readable ? Theme.Error : set ? Theme.Accent : Theme.TextDim;
-        ImGui.PushClipRect(ImGui.GetCursorScreenPos(), ImGui.GetCursorScreenPos() + new Vector2(labelW - Theme.Px(4), ImGui.GetFrameHeight()), true);
-        ImGui.TextColored(labelCol, spec.Label);
-        ImGui.PopClipRect();
+        ImGui.TextColored(labelCol, Ellipsize(spec.Label, labelW - ImGui.GetCursorPosX() - Theme.Px(4)));
         Tip(FieldTip(spec, set, error));
         ImGui.SameLine(labelW);
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - resetW - ImGui.GetStyle().ItemSpacing.X);
+        // Every field stops short of the × column, whatever kind it is.
+        float fieldW = ImGui.GetContentRegionAvail().X - resetW - ImGui.GetStyle().ItemSpacing.X;
+        ImGui.SetNextItemWidth(fieldW);
         string label = $"Set {spec.Label}";
         void Commit(JsonElement v) => Edit(ctx, id, label, x => EntityOps.SetProperty(x, spec, v));
         var key = (id, spec.Name);
@@ -164,7 +163,7 @@ public sealed class EntitySection : IInspectorSection
                 break;
             }
             case PropType.String:
-                if (_text.Field($"##s{id}/{spec.Name}", EntityValues.Text(value), out var text)) Commit(EntityValues.Of(text));
+                if (_text.Field($"##s{id}/{spec.Name}", EntityValues.Text(value), out var text, width: fieldW)) Commit(EntityValues.Of(text));
                 break;
             case PropType.Enum:
             {
@@ -194,7 +193,7 @@ public sealed class EntitySection : IInspectorSection
                 int n = spec.Type == PropType.Vector2 ? 2 : 3;
                 var v = EntityValues.Vector(value, n) ?? new float[n];
                 string[] tags = n == 2 ? ["X", "Y"] : ["X", "Y", "Z"];
-                if (TaggedFields("##v", tags, Theme.AxisU32, v, new bool[n], spec.Integer ? "%.0f" : "%.3f", out int axis, out float av))
+                if (TaggedFields("##v", tags, Theme.AxisU32, v, new bool[n], spec.Integer ? "%.0f" : "%.3f", out int axis, out float av, fieldW))
                 {
                     v[axis] = av;
                     Commit(EntityValues.Array(v));
@@ -205,7 +204,7 @@ public sealed class EntitySection : IInspectorSection
                 ReferenceCombo(ctx, e, value, Commit);
                 break;
             case PropType.Resource:
-                if (_text.Field($"##r{id}/{spec.Name}", EntityValues.Text(value), out var path, hint: "res://…"))
+                if (_text.Field($"##r{id}/{spec.Name}", EntityValues.Text(value), out var path, hint: "res://…", width: fieldW))
                     Commit(path.Trim().Length == 0 ? EntityValues.Null : EntityValues.Of(path.Trim()));
                 break;
             default:

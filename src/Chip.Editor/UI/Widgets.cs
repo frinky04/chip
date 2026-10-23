@@ -10,9 +10,133 @@ namespace Chip.Editor.UI;
 /// </summary>
 public static class Widgets
 {
-    public static float LabelColumn => Theme.Px(64);
+    /// <summary>
+    /// Where inspector fields start (window-local x). Every row is a dim label (<see cref="RowLabel"/>) then its controls
+    /// from here to the right edge; a row without a label starts here too (<see cref="FieldStart"/>), so a section reads
+    /// as two straight columns.
+    /// </summary>
+    public static float LabelColumn => Theme.Px(80);
 
     static uint U32(Vector4 c) => ImGui.ColorConvertFloat4ToU32(c);
+
+    /// <summary>
+    /// The field start for property tables (an entity's properties, a dressing rule's per-mesh values): their names run
+    /// long, so they get a wider column than <see cref="LabelColumn"/>, the same in every table.
+    /// </summary>
+    public static float PropertyColumn => MathF.Floor((ImGui.GetWindowContentRegionMax().X - ImGui.GetWindowContentRegionMin().X) * 0.42f);
+
+    /// <summary>Starts a row with no label: its controls line up with the labelled rows' fields.</summary>
+    public static void FieldStart() => ImGui.SetCursorPosX(LabelColumn);
+
+    /// <summary>
+    /// One button of a <see cref="ButtonRow"/>: its label (and an icon, used instead when the label is empty or doesn't
+    /// fit), tip, and whether it can run or is on.
+    /// </summary>
+    /// <remarks>
+    /// <c>On</c> is a toggle that's set (raised, orange icon); <c>Selected</c> is the chosen one of exclusive options and
+    /// <c>Primary</c> the main action (both solid orange).
+    /// </remarks>
+    public readonly record struct RowButton(string Label, string Tip, bool Enabled = true, Icon? Icon = null, bool On = false, bool Primary = false,
+        bool Selected = false);
+
+    /// <summary>A row button for a registered command: greyed when it can't run, its name, hotkey and description as the tip.</summary>
+    public static RowButton Command(Framework.CommandRegistry commands, string id, string label, Icon? icon = null)
+    {
+        if (commands.Find(id) is not { } c) return new RowButton(label, label, Enabled: false, Icon: icon);
+        string tip = c.HotkeyText is { } key ? $"{c.Label}  ({key})" : c.Label;
+        if (c.Description != null) tip += "\n" + c.Description;
+        return new RowButton(label, tip, c.Enabled, icon, c.IsChecked?.Invoke() ?? false);
+    }
+
+    /// <summary>
+    /// Buttons of equal width filling the rest of the row (from the cursor to the right edge), a small gap apart. An "on"
+    /// button is raised. Returns the index clicked, or -1.
+    /// </summary>
+    public static int ButtonRow(string id, params RowButton[] items)
+    {
+        float gap = Theme.Px(4);
+        float w = MathF.Floor((ImGui.GetContentRegionAvail().X - gap * (items.Length - 1)) / items.Length);
+        int clicked = -1;
+        ImGui.PushID(id);
+        for (int i = 0; i < items.Length; i++)
+        {
+            var b = items[i];
+            if (i > 0) ImGui.SameLine(0, gap);
+            // The last button takes what rounding left over, so the row ends exactly at the edge.
+            float bw = i == items.Length - 1 ? ImGui.GetContentRegionAvail().X : w;
+            ImGui.BeginDisabled(!b.Enabled);
+            bool orange = b.Primary || b.Selected;
+            if (orange) PushPrimary();
+            if (b.On) ImGui.PushStyleColor(ImGuiCol.Button, Theme.Raised);
+            // As room allows: icon and label, then the label alone, then the icon alone. A label with no icon to fall back
+            // on gets an ellipsis instead.
+            float room = bw - ImGui.GetStyle().FramePadding.X * 2, iconGap = Theme.Px(6);
+            float textW = ImGui.CalcTextSize(b.Label).X;
+            bool both = b.Icon != null && b.Label.Length > 0 && textW + Fonts.IconSize + iconGap <= room;
+            bool textOnly = !both && b.Label.Length > 0 && (b.Icon == null || textW <= room);
+            bool pressed = ImGui.Button($"{(b.Icon == null ? Ellipsize(b.Label, room) : "")}##{i}", new Vector2(bw, 0));
+            if (b.Icon is { } icon)
+            {
+                // The toggle look: on is a raised fill with an orange icon (or orange text, when only the label fits).
+                var (a, z) = (ImGui.GetItemRectMin(), ImGui.GetItemRectMax());
+                uint ink = U32(b.Enabled ? Theme.Text : Theme.TextDisabled);
+                uint mark = orange ? Theme.OnAccentU32 : b.On ? Theme.AccentU32 : ink;
+                var dl = ImGui.GetWindowDrawList();
+                float cy = (a.Y + z.Y) * 0.5f, ty = MathF.Round(cy - ImGui.GetTextLineHeight() * 0.5f);
+                if (both)
+                {
+                    float x = MathF.Round((a.X + z.X - (Fonts.IconSize + iconGap + textW)) * 0.5f);
+                    Icons.Draw(dl, icon, new Vector2(x + Fonts.IconSize * 0.5f, cy), mark);
+                    dl.AddText(new Vector2(x + Fonts.IconSize + iconGap, ty), orange ? Theme.OnAccentU32 : ink, b.Label);
+                }
+                else if (textOnly) dl.AddText(new Vector2(MathF.Round((a.X + z.X - textW) * 0.5f), ty), mark, b.Label);
+                else Icons.Draw(dl, icon, new Vector2((a.X + z.X) * 0.5f, cy), mark);
+            }
+            if (b.On) ImGui.PopStyleColor();
+            if (orange) PopPrimary();
+            ImGui.EndDisabled();
+            Tip(b.Enabled ? b.Tip : b.Tip + "\nDoesn't apply to this selection");
+            if (pressed) clicked = i;
+        }
+        ImGui.PopID();
+        return clicked;
+    }
+
+    /// <summary>A checkbox whose label is cut to the room left on the row (all of it in the tooltip). True when toggled.</summary>
+    public static bool Check(string label, ref bool value, string tip)
+    {
+        var style = ImGui.GetStyle();
+        float room = ImGui.GetContentRegionAvail().X - ImGui.GetFrameHeight() - style.ItemInnerSpacing.X;
+        string shown = Ellipsize(label, room);
+        bool changed = ImGui.Checkbox($"{shown}##{label}", ref value);
+        Tip(shown == label ? tip : $"{label}\n{tip}");
+        return changed;
+    }
+
+    /// <summary>A tool's pending result: Apply (Enter, primary) and Cancel (Esc) in the field column. 0 apply, 1 cancel, -1 neither.</summary>
+    public static int ApplyCancel()
+    {
+        FieldStart();
+        return ButtonRow("applyCancel", new RowButton("Apply", "Apply  (Enter)", Primary: true), new RowButton("Cancel", "Cancel  (Esc)"));
+    }
+
+    /// <summary>A dim note under a section's rows, wrapped in the field column.</summary>
+    public static void FieldNote(string text)
+    {
+        FieldStart();
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
+        ImGui.PushTextWrapPos(0);
+        ImGui.TextUnformatted(text);
+        ImGui.PopTextWrapPos();
+        ImGui.PopStyleColor();
+    }
+
+    /// <summary>A <see cref="ButtonRow"/> of commands (id, label, optional icon) that runs the one clicked.</summary>
+    public static void CommandRow(Framework.CommandRegistry commands, string id, params (string Command, string Label, Icon? Icon)[] items)
+    {
+        int i = ButtonRow(id, items.Select(x => Command(commands, x.Command, x.Label, x.Icon)).ToArray());
+        if (i >= 0) commands.Execute(items[i].Command);
+    }
 
     enum Kind { Tool, Segment, Toggle }
 
@@ -234,14 +358,15 @@ public static class Widgets
     /// A row of numeric fields, each with a small coloured tag (X/Y/Z, U/V). Commits on Enter and returns which
     /// field changed. Fields whose values differ across the selection show "mixed".
     /// </summary>
-    public static bool TaggedFields(string id, string[] tags, uint[] colors, float[] values, bool[] mixed, string fmt, out int index, out float value)
+    /// <param name="width">The whole row's width; 0 for the rest of the line.</param>
+    public static bool TaggedFields(string id, string[] tags, uint[] colors, float[] values, bool[] mixed, string fmt, out int index, out float value, float width = 0)
     {
         index = -1;
         value = 0;
         int n = tags.Length;
         float tagW = ImGui.CalcTextSize("X").X + Theme.Px(8);
         float gap = Theme.Px(4);
-        float w = (ImGui.GetContentRegionAvail().X - gap * (n - 1)) / n - tagW;
+        float w = ((width > 0 ? width : ImGui.GetContentRegionAvail().X) - gap * (n - 1)) / n - tagW;
         float h = ImGui.GetFrameHeight();
         var dl = ImGui.GetWindowDrawList();
         for (int a = 0; a < n; a++)
@@ -268,7 +393,7 @@ public static class Widgets
     static readonly int[] DensitySteps = [8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 
     /// <summary>
-    /// Scythe's texel density control: "[1] m is [64 ▾] px". Editing the metres keeps the pixels; picking pixels keeps
+    /// Scythe's texel density control: "[1] m is [64 px ▾]". Editing the metres keeps the pixels; picking pixels keeps
     /// the metres. The metres typed are remembered per <paramref name="id"/> so "2 m is 64 px" reads back as typed.
     /// Returns true with the new pixels-per-metre in <paramref name="result"/>. <paramref name="reserve"/> leaves room on the right.
     /// </summary>
@@ -279,7 +404,7 @@ public static class Widgets
         float px = pixelsPerMetre * metres;
         bool changed = false;
 
-        ImGui.SetNextItemWidth(Theme.Px(52));
+        ImGui.SetNextItemWidth(Theme.Px(44));
         float edit = metres;
         if (dim) ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
         bool typed = ImGui.InputFloat($"{id}m", ref edit, 0, 0, "%g", ImGuiInputTextFlags.EnterReturnsTrue);
@@ -295,10 +420,15 @@ public static class Widgets
         ImGui.AlignTextToFramePadding();
         ImGui.TextColored(Theme.TextDim, "m is");
         ImGui.SameLine(0, Theme.Px(6));
-        float pxLabel = ImGui.CalcTextSize("px").X + Theme.Px(6);
-        ImGui.SetNextItemWidth(MathF.Max(ImGui.GetContentRegionAvail().X - pxLabel - reserve, Theme.Px(64)));
+        // "px" sits in the value rather than after it, so the row fits the narrowest inspector.
+        float comboW = MathF.Max(ImGui.GetContentRegionAvail().X - reserve, Theme.Px(56));
+        string preview = $"{px:0.##} px";
+        // Short of room the arrow goes before the value does.
+        var comboFlags = comboW < ImGui.CalcTextSize(preview).X + ImGui.GetStyle().FramePadding.X * 2 + ImGui.GetFrameHeight()
+            ? ImGuiComboFlags.NoArrowButton : ImGuiComboFlags.None;
+        ImGui.SetNextItemWidth(comboW);
         if (dim) ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
-        bool open = ImGui.BeginCombo($"{id}px", $"{px:0.##}");
+        bool open = ImGui.BeginCombo($"{id}px", preview, comboFlags);
         if (dim) ImGui.PopStyleColor();
         if (open)
         {
@@ -311,8 +441,6 @@ public static class Widgets
             ImGui.EndCombo();
         }
         Tip("Texture pixels across that distance");
-        ImGui.SameLine(0, Theme.Px(6));
-        ImGui.TextColored(Theme.TextDim, "px");
         return changed;
     }
 

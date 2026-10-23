@@ -249,42 +249,33 @@ public sealed class BevelTool : IViewportTool
 
     public void DrawOptions(EditorContext ctx)
     {
-        ImGui.TextColored(Theme.TextDim, "Width");
-        Widgets.Tip("Distance from the edge on each side, in metres. Dragging snaps it to the grid; hold Ctrl for free.");
+        Widgets.RowLabel("Width", "Distance from the edge on each side, in metres. Dragging snaps it to the grid; hold Ctrl for free.");
         float w = Width;
+        ImGui.SetNextItemWidth(-1);
         if (ImGui.InputFloat("##width", ref w, 0, 0, "%.3f m")) Width = Math.Clamp(w, 0.001f, 100f);
-        ImGui.Dummy(Theme.Px(0, 2));
+        Widgets.RowLabel("Segments", "1 is a flat chamfer; more give a rounded edge. Mouse wheel or 1–9 while the bevel is showing.");
         int s = Segments;
-        if (Widgets.ValueSlider("##segments", "Segments", ref s, 1, MaxSegments)) Segments = s;
-        Widgets.Tip("1 is a flat chamfer; more give a rounded edge. Mouse wheel or 1–9 while the bevel is showing.");
+        if (Widgets.ValueSlider("##segments", "", ref s, 1, MaxSegments)) Segments = s;
         if (_pending) Refresh(ctx); // inspector edits show immediately
-        ImGui.Dummy(Theme.Px(0, 2));
 
         if (_pending)
         {
-            Widgets.PushPrimary();
-            bool apply = ImGui.Button("Apply", new Vector2(ImGui.GetContentRegionAvail().X * 0.5f - Theme.Px(2), 0));
-            Widgets.PopPrimary();
-            Widgets.Tip("Enter");
-            if (apply)
+            int act = Widgets.ApplyCancel();
+            if (act == 0)
             {
                 Commit(ctx);
                 if (ctx.DefaultTool != null) ctx.SetTool(ctx.DefaultTool);
             }
-            ImGui.SameLine();
-            if (ImGui.Button("Cancel", new Vector2(-1, 0))) Cancel(ctx);
-            Widgets.Tip("Esc");
+            if (act == 1) Cancel(ctx);
             return;
         }
         bool can = HasTargets(ctx);
-        ImGui.BeginDisabled(!can);
-        string label = ctx.Sel.Mode == SelectMode.Vertex ? "Chamfer selected vertices" : "Bevel selected edges";
-        if (ImGui.Button(label, new Vector2(-1, 0))) Begin(ctx);
-        ImGui.EndDisabled();
-        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
-        ImGui.TextWrapped(can
+        string label = ctx.Sel.Mode == SelectMode.Vertex ? "Chamfer vertices" : "Bevel edges";
+        Widgets.FieldStart();
+        if (Widgets.ButtonRow("bevel", new Widgets.RowButton(label, can ? "Start the bevel on the selection; or drag in the viewport" : "Select edges or vertices to bevel", can)) == 0)
+            Begin(ctx);
+        Widgets.FieldNote(can
             ? (ctx.Sel.Mode == SelectMode.Vertex ? "Vertices are chamfered flat." : "Or drag in the viewport.")
             : "Select edges or vertices to bevel.");
-        ImGui.PopStyleColor();
     }
 }

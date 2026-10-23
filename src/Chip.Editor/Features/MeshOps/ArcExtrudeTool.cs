@@ -470,32 +470,26 @@ public sealed class ArcExtrudeTool : IViewportTool
 
     public void DrawOptions(EditorContext ctx)
     {
+        RowLabel("Angle", "How far the sweep turns round the axis. Moving round the axis in the viewport snaps to the rotation step; hold Ctrl for free.");
         float angle = AngleDegrees;
-        if (ValueSlider("##arcAngle", "Angle", ref angle, 1, 360, "%.0f°", a => $"{a:0.#}°")) AngleDegrees = angle;
-        Tip("How far the sweep turns round the axis. Moving round the axis in the viewport snaps to the rotation step; hold Ctrl for free.");
-        ImGui.Dummy(Theme.Px(0, 2));
+        if (ValueSlider("##arcAngle", "", ref angle, 1, 360, "%.0f°", a => $"{a:0.#}°")) AngleDegrees = angle;
+        RowLabel("Segments", "Steps along the arc. Mouse wheel or 1–9 while the sweep is showing.");
         int s = Segments;
-        if (ValueSlider("##arcSegments", "Segments", ref s, 1, MaxSegments)) Segments = s;
-        Tip("Steps along the arc. Mouse wheel or 1–9 while the sweep is showing.");
-        ImGui.Dummy(Theme.Px(0, 2));
+        if (ValueSlider("##arcSegments", "", ref s, 1, MaxSegments)) Segments = s;
         RowLabel("Inner", "Inner radius. Gap between the axis and the selection's side nearest it, in metres: the inside wall's radius when a corridor turns a corner. 0 puts the axis on that side, which folds it into a fan.");
         ImGui.SetNextItemWidth(-1);
         float r = InnerRadius;
         if (ImGui.DragFloat("##arcRadius", ref r, 0.01f, 0, 1000, "%.3f m")) InnerRadius = r;
-        ImGui.Dummy(Theme.Px(0, 2));
-        if (Toggle("arcSmooth", Icon.Rotate, "Smooth", "Soften the edges between steps so the curve shades round", Smooth)) Smooth = !Smooth;
-        ImGui.SameLine();
-        if (Toggle("arcReverse", Icon.FlipU, "Reverse", "Sweep the other way out of the selection  (Tab)", Reverse)) Reverse = !Reverse;
+        RowLabel("Options");
+        int option = ButtonRow("arcOptions",
+            new RowButton("Smooth", "Soften the edges between steps so the curve shades round", Icon: Icon.Rotate, On: Smooth),
+            new RowButton("Reverse", "Sweep the other way out of the selection  (Tab)", Icon: Icon.FlipU, On: Reverse));
+        if (option == 0) Smooth = !Smooth;
+        if (option == 1) Reverse = !Reverse;
         if (_stage == Stage.Off) return;
         Refresh(ctx); // inspector edits show immediately
-        ImGui.Dummy(Theme.Px(0, 2));
-        PushPrimary();
-        bool apply = ImGui.Button("Apply", new Vector2(ImGui.GetContentRegionAvail().X * 0.5f - Theme.Px(2), 0));
-        PopPrimary();
-        Tip("Enter");
-        if (apply) { Commit(ctx); return; }
-        ImGui.SameLine();
-        if (ImGui.Button("Cancel", new Vector2(-1, 0))) Cancel(ctx);
-        Tip("Esc");
+        int act = ApplyCancel();
+        if (act == 0) { Commit(ctx); return; }
+        if (act == 1) Cancel(ctx);
     }
 }

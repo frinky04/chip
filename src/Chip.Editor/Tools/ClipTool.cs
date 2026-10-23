@@ -282,31 +282,24 @@ public sealed class ClipTool : IViewportTool
 
     public void DrawOptions(EditorContext ctx)
     {
-        ImGui.TextColored(Theme.TextDim, "Keep");
-        int keep = Widgets.SegmentedControl("keep",
-        [
-            (Icon.KeepFront, "Front", "Keep the side the arrow points to (Tab cycles)"),
-            (Icon.KeepBack, "Back", "Keep the other side (Tab cycles)"),
-            (Icon.KeepBoth, "Both", "Split in two: meshes into two meshes, selected faces into two unwelded halves (Tab cycles)"),
-        ], (int)Keep);
+        Widgets.RowLabel("Keep", "Which side of the plane stays (Tab cycles)");
+        int keep = Widgets.ButtonRow("keep",
+            new Widgets.RowButton("Front", "Keep the side the arrow points to (Tab cycles)", Icon: Icon.KeepFront, Selected: Keep == ClipKeep.Front),
+            new Widgets.RowButton("Back", "Keep the other side (Tab cycles)", Icon: Icon.KeepBack, Selected: Keep == ClipKeep.Back),
+            new Widgets.RowButton("Both", "Split in two: meshes into two meshes, selected faces into two unwelded halves (Tab cycles)", Icon: Icon.KeepBoth, Selected: Keep == ClipKeep.Both));
         if (keep >= 0) Keep = (ClipKeep)keep;
 
-        ImGui.TextColored(Theme.TextDim, "Plane");
-        int plane = Widgets.SegmentedControl("plane",
-        [
-            (Icon.Face, "Surface", "Perpendicular to the surface you draw the line on"),
-            (Icon.Eye, "View", "Contains the view direction: cuts along the line as you see it"),
-        ], AlongView ? 1 : 0);
+        Widgets.RowLabel("Plane", "How the line you draw becomes a plane");
+        int plane = Widgets.ButtonRow("plane",
+            new Widgets.RowButton("Surface", "Perpendicular to the surface you draw the line on", Icon: Icon.Face, Selected: !AlongView),
+            new Widgets.RowButton("View", "Contains the view direction: cuts along the line as you see it", Icon: Icon.Eye, Selected: AlongView));
         if (plane >= 0) AlongView = plane == 1;
 
-        ImGui.TextColored(Theme.TextDim, "Caps");
-        if (Widgets.Toggle("cap", Icon.Face, "Use active material", $"Cap cuts with {ctx.ActiveMaterial} instead of the cut face's material", CapWithActive))
-            CapWithActive = !CapWithActive;
+        Widgets.RowLabel("Caps", "What material the new faces across the cut get");
+        bool cap = CapWithActive;
+        if (Widgets.Check("Active material", ref cap, $"Cap cuts with {ctx.ActiveMaterial} instead of the cut face's material")) CapWithActive = cap;
 
-        ImGui.Dummy(Theme.Px(0, 2));
-        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
-        ImGui.TextWrapped(ctx.Sel.IsEmpty ? "Clips every visible mesh the plane crosses."
+        Widgets.FieldNote(ctx.Sel.IsEmpty ? "Clips every visible mesh the plane crosses."
             : OnFaces(ctx) ? "Clips only the selected faces." : "Clips the selected meshes.");
-        ImGui.PopStyleColor();
     }
 }

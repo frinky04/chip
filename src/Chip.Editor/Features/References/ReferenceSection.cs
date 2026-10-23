@@ -31,15 +31,13 @@ public sealed class ReferenceSection : IInspectorSection
             EntitySection.Edit(ctx, id, "Change Reference Model", x => EntityOps.SetProperty(x, ReferenceModels.ModelKey, chosen));
         ReferencePicker.Summary(model);
 
-        ImGui.Dummy(Theme.Px(0, 2));
         bool marker = ReferenceModels.Exports(e);
         string node = GlbExporter.EntityNodeName(e);
-        if (Toggle($"marker{id}", Icon.MapPin, "Export as marker",
-                $"On: exports an empty node called {node} here, to put the real asset on in your engine. Off: editor only", marker))
+        RowLabel("Export", "Whether the reference leaves anything in the exported .glb");
+        bool on = marker;
+        if (Check("As marker", ref on, marker ? $"Exports the empty node {node} here, to put the real asset on in your engine. Untick: editor only"
+                : $"Editor only: not exported. Tick to export an empty node called {node} here, to put the real asset on in your engine"))
             EntitySection.Edit(ctx, id, marker ? "Stop Exporting Marker" : "Export Marker",
                 x => EntityOps.SetProperty(x, ReferenceModels.MarkerKey, EntityValues.Of(!marker)));
-        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
-        ImGui.TextWrapped(marker ? $"Exports as the empty node {node}" : "Editor only: not exported");
-        ImGui.PopStyleColor();
     }
 }

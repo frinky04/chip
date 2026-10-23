@@ -55,16 +55,24 @@ sealed class DressingOverrides(DressingFeature feature)
 
     void Header(EditorContext ctx, PolyMesh mesh, Rule rule, bool skipped)
     {
-        ImGui.AlignTextToFramePadding();
-        ImGui.Text(rule.Id);
-        ImGui.SameLine();
-        ImGui.TextColored(Theme.TextDim, rule.Kind.DisplayName);
         var overrides = mesh.Dressing.OverridesFor(rule.Id);
         bool overridden = overrides != null;
 
-        // The rule's name and kind, then a switch for this mesh and a way to the rule itself.
+        // The rule's name and kind (cut to fit), then a switch for this mesh and a way to the rule itself.
         float w = ImGui.GetFrameHeight();
-        ImGui.SameLine(ImGui.GetContentRegionMax().X - w * 2 - ImGui.GetStyle().ItemSpacing.X);
+        float controls = ImGui.GetContentRegionMax().X - w * 2 - ImGui.GetStyle().ItemSpacing.X;
+        float room = controls - ImGui.GetCursorPosX() - Theme.Px(8);
+        ImGui.AlignTextToFramePadding();
+        string name = Ellipsize(rule.Id, room);
+        ImGui.Text(name);
+        if (name != rule.Id) Tip(rule.Id);
+        float kindRoom = room - ImGui.CalcTextSize(name).X - ImGui.GetStyle().ItemSpacing.X;
+        if (name == rule.Id && Ellipsize(rule.Kind.DisplayName, kindRoom) is { Length: > 0 } kind)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(Theme.TextDim, kind);
+        }
+        ImGui.SameLine(controls);
         bool on = !skipped;
         if (ImGui.Checkbox("##on", ref on)) Edit(ctx, mesh.Id, on ? "Switch dressing rule on" : "Switch dressing rule off", d => d.WithSkip(rule.Id, !on));
         Tip(skipped ? $"Off for this mesh: let {rule.Id} dress it again" : $"On: untick to stop {rule.Id} dressing this mesh (other meshes keep it)");
@@ -74,26 +82,23 @@ sealed class DressingOverrides(DressingFeature feature)
         // Values set for this mesh: put them into the rule for everyone, or drop them.
         if (overridden && !skipped)
         {
-            ImGui.TextColored(Theme.Accent, "This mesh differs");
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Use for all")) ApplyToRule(ctx, mesh, rule, overrides!);
-            Tip($"Put this mesh's values into {rule.Id} itself, so every mesh it dresses gets them");
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Reset")) Edit(ctx, mesh.Id, "Reset dressing overrides", d => d.WithoutOverrides(rule.Id));
-            Tip($"Go back to the rule's values for {rule.Id} on this mesh");
+            RowLabel("Differs", "This mesh has its own values for this rule (orange below)");
+            int act = ButtonRow("differs",
+                new RowButton("Use for all", $"Put this mesh's values into {rule.Id} itself, so every mesh it dresses gets them"),
+                new RowButton("Reset", $"Go back to the rule's values for {rule.Id} on this mesh"));
+            if (act == 0) ApplyToRule(ctx, mesh, rule, overrides!);
+            if (act == 1) Edit(ctx, mesh.Id, "Reset dressing overrides", d => d.WithoutOverrides(rule.Id));
         }
     }
 
     void Field(EditorContext ctx, PolyMesh mesh, Rule rule, ParamSpec spec, JsonNode? over)
     {
         bool overridden = over != null;
-        float avail = ImGui.GetContentRegionAvail().X;
-        float labelW = MathF.Min(avail * 0.45f, ImGui.CalcTextSize(spec.DisplayLabel).X + Theme.Px(10));
-        float resetW = Theme.Px(22);
+        float resetW = ImGui.GetFrameHeight();
         ImGui.AlignTextToFramePadding();
-        ImGui.TextColored(overridden ? Theme.Accent : Theme.TextDim, spec.DisplayLabel);
+        ImGui.TextColored(overridden ? Theme.Accent : Theme.TextDim, Ellipsize(spec.DisplayLabel, PropertyColumn - ImGui.GetCursorPosX() - Theme.Px(4)));
         Tip(spec.Description + (overridden ? "\nSet for this mesh only." : ""));
-        ImGui.SameLine(MathF.Max(labelW, avail * 0.45f));
+        ImGui.SameLine(PropertyColumn);
         ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - resetW - ImGui.GetStyle().ItemSpacing.X);
         var key = (mesh.Id, rule.Id, spec.Name);
         string id = $"##{spec.Name}";

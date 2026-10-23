@@ -9,8 +9,9 @@ using static Chip.Editor.UI.Widgets;
 namespace Chip.Editor.Features.Dressing;
 
 /// <summary>
-/// Inspector block for the level's dressing: the rules file, dressed / blockout view, which rules touch the selection,
-/// what each rule made, and every problem with its fix (the selection's first). Shown when the level has a rules file.
+/// Inspector block for the level's dressing: which rules touch the selection (Dress with, Bake, the Dressing tab), what
+/// each rule made, and every problem with its fix (the selection's first). Shown when the level has a rules file. The
+/// dressed / blockout switch is in the viewport header and the Dressing tab.
 /// </summary>
 public sealed class DressingSection(DressingFeature feature) : IInspectorSection
 {
@@ -19,7 +20,7 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
     bool _whyOpen;
 
     public string Id => "dressing";
-    public int Order => 160; // right after Tags: what the rules select by, then what they do
+    public int Order => 710; // last, right after Tags: what the rules select by, then what they do
     /// <summary>Shown for dressed levels, and (as a way in) for saved levels without rules while something is selected.</summary>
     public bool Visible(EditorContext ctx) => ctx.Dressed() != null || ctx.Session.Path != null && !ctx.Sel.IsEmpty && TagOps.CanTag(ctx.Sel.Mode);
 
@@ -28,28 +29,33 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
         if (ctx.Dressed() is not { } level)
         {
             if (!Heading("Dressing", "none yet")) return;
-            Buttons(ctx, view: false);
-            ImGui.PushTextWrapPos(0);
-            ImGui.TextColored(Theme.TextDim, "Dress with adds trims, bevels, railings or props to the selection from a recipe.");
-            ImGui.PopTextWrapPos();
+            RowLabel("Rules", "Dressing turns the blockout into the shipped level: trims, bevels, railings and props from rules");
+            ImGui.TextColored(Theme.TextDim, "none yet");
+            FieldStart();
+            Buttons(ctx, bake: false);
             return;
         }
         int errors = level.ErrorCount, warnings = level.WarningCount;
         int enabled = level.Rules.Rules.Count(r => r.Enabled);
         if (!Heading("Dressing", errors > 0 ? $"{errors} error{(errors == 1 ? "" : "s")}" : warnings > 0 ? $"{warnings} warning{(warnings == 1 ? "" : "s")}" : $"{enabled} rule{(enabled == 1 ? "" : "s")}")) return;
-        Buttons(ctx, view: true);
 
-        // What touches the selection.
+        // Which rules touch the selection, then what to do about it.
         var meshes = ctx.Sel.MeshIds();
         if (meshes.Count > 0)
         {
             var touching = meshes.SelectMany(level.RulesFor).Select(t => t.Rule).Distinct().ToList();
-            Line("Selection", touching.Count == 0 ? "no rules apply" : string.Join(", ", touching), Theme.TextDim, "Rules that change or add to the selected meshes");
-            if (ctx.Commands.Find("dressing.bake") is { Enabled: true })
-            {
-                if (ImGui.Button("Bake dressing", new Vector2(-1, 0))) ctx.Commands.Execute("dressing.bake");
-                Tip("Turn the selection's dressing into ordinary meshes you can edit by hand. They stop following the rules.");
-            }
+            RowLabel("Rules", "Rules that change or add to the selected meshes");
+            string list = touching.Count == 0 ? "none take it" : string.Join(", ", touching);
+            string shown = Ellipsize(list, ImGui.GetContentRegionAvail().X);
+            ImGui.TextColored(touching.Count == 0 ? Theme.TextDim : Theme.Text, shown);
+            if (shown != list) Tip(list);
+            FieldStart();
+            Buttons(ctx, bake: true);
+        }
+        else
+        {
+            FieldStart();
+            Buttons(ctx, bake: false);
         }
 
         // What each rule made (the whole level, when nothing is selected).
@@ -95,32 +101,26 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
             ImGui.Dummy(Theme.Px(0, 2));
         }
         if (problems.Count > MaxProblems)
+        {
+            ImGui.PushTextWrapPos(0);
             ImGui.TextColored(Theme.TextDim, $"and {problems.Count - MaxProblems} more. Chip --rules-check lists them all.");
+            ImGui.PopTextWrapPos();
+        }
     }
 
-    /// <summary>The Dressed / Blockout switch (for dressed levels), then Dress with and Rules at the right.</summary>
-    void Buttons(EditorContext ctx, bool view)
+    /// <summary>Dress with and the Dressing tab as a row of two; under them Bake, when the selection has dressing to bake.</summary>
+    void Buttons(EditorContext ctx, bool bake)
     {
-        if (view)
-        {
-            int v = TextSegments("##dressView", [("Dressed", "Show the level as shipped  (`)"), ("Blockout", "Show only the blockout. Export still includes the dressing  (`)")], ctx.ShowDressed ? 0 : 1);
-            if (v >= 0 && (v == 0) != ctx.ShowDressed) ctx.Commands.Execute("view.dressed");
-            ImGui.SameLine();
-        }
-        var style = ImGui.GetStyle();
-        float w = ImGui.CalcTextSize("Dress with...").X + ImGui.CalcTextSize("Rules...").X + style.FramePadding.X * 4 + style.ItemSpacing.X;
-        if (view && ImGui.GetContentRegionAvail().X < w) ImGui.NewLine(); // a narrow inspector: the buttons get their own row
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0, ImGui.GetContentRegionAvail().X - w));
-        bool canDress = !ctx.Sel.IsEmpty && TagOps.CanTag(ctx.Sel.Mode);
-        if (!canDress) ImGui.BeginDisabled();
-        if (ImGui.Button("Dress with...")) ctx.Commands.Execute("dressing.dressWith");
-        if (!canDress) ImGui.EndDisabled();
-        Tip("Dress the selection with a rule, or add one from a recipe  (Ctrl+Shift+T)");
-        ImGui.SameLine();
-        if (ImGui.Button("Rules...")) feature.Window.Open = true;
-        Tip(feature.RulesPath is { } path
-            ? $"Edit the rules  (Ctrl+Shift+D). They live in {Path.GetFileName(path)}, which agents can edit too; Chip reloads it whenever it changes."
-            : "Set up dressing rules for this level  (Ctrl+Shift+D)");
+        int i = ButtonRow("dressing", Command(ctx.Commands, "dressing.dressWith", "Dress with…"),
+            new RowButton("Rules…", feature.RulesPath is { } path
+                ? $"Edit the rules in the Dressing tab  (Ctrl+Shift+D). They live in {Path.GetFileName(path)}, which agents can edit too; Chip reloads it whenever it changes."
+                : "Set up dressing rules in the Dressing tab  (Ctrl+Shift+D)"));
+        if (i == 0) ctx.Commands.Execute("dressing.dressWith");
+        if (i == 1) feature.Window.Open = true;
+        if (!bake || ctx.Commands.Find("dressing.bake") is not { Enabled: true }) return;
+        FieldStart();
+        if (ImGui.Button("Bake dressing", new Vector2(-1, 0))) ctx.Commands.Execute("dressing.bake");
+        Tip("Turn the selection's dressing into ordinary meshes you can edit by hand. They stop following the rules.");
     }
 
     /// <summary>
@@ -133,8 +133,11 @@ public sealed class DressingSection(DressingFeature feature) : IInspectorSection
         var reasons = level.Explain(mesh, face).Where(r => r.Reason != null).ToList();
         if (reasons.Count == 0) return;
         ImGui.Dummy(Theme.Px(0, 2));
-        if (ImGui.SmallButton(_whyOpen ? $"Hide rules that skip this {(face >= 0 ? "face" : "mesh")}" : $"Why don't {reasons.Count} rule{(reasons.Count == 1 ? "" : "s")} take this {(face >= 0 ? "face" : "mesh")}?"))
-            _whyOpen = !_whyOpen;
+        string what = face >= 0 ? "face" : "mesh";
+        string why = _whyOpen ? $"Hide rules that skip this {what}" : $"Why don't {reasons.Count} rule{(reasons.Count == 1 ? "" : "s")} take this {what}?";
+        string shown = Ellipsize(why, ImGui.GetContentRegionAvail().X - ImGui.GetStyle().FramePadding.X * 2);
+        if (ImGui.Button($"{shown}##why", new Vector2(-1, 0))) _whyOpen = !_whyOpen;
+        if (shown != why) Tip(why);
         if (!_whyOpen) return;
         float w = ImGui.GetContentRegionAvail().X;
         float line = ImGui.GetTextLineHeight();

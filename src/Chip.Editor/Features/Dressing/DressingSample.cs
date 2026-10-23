@@ -42,7 +42,7 @@ public static class DressingSample
               "faces": { "tags": ["plinth"], "facing": "upright" },
               "edges": "concave",
               "profile": { "round": 0.08 },
-              "material": "dev_measurecrate02"
+              "material": "dev_measurewall01d"
             },
             "railings": {
               "kind": "railing",
@@ -98,7 +98,7 @@ public static class DressingSample
             m.Name = name;
             return doc.Add(m);
         }
-        var floor = Add("floor", new Vector3(0, -0.25f, 0), new Vector3(8, 0, 6), "dev_measurecrate02");
+        var floor = Add("floor", new Vector3(0, -0.25f, 0), new Vector3(8, 0, 6), "dev_measurewall01d");
         const float h = 3, t = 0.25f;
         var walls = new[]
         {
@@ -109,7 +109,7 @@ public static class DressingSample
             Add("east", new Vector3(8 - t, 0, t), new Vector3(8, h, 6 - t), "dev_measurewall01a"),
         };
         var pillar = Add("pillar", new Vector3(5.5f, 0, 3.5f), new Vector3(6, h, 4), "dev_measurewall01a");
-        var plinth = Add("plinth", new Vector3(1.25f, 0, 2.5f), new Vector3(3.25f, 0.5f, 4.5f), "dev_measurecrate02");
+        var plinth = Add("plinth", new Vector3(1.25f, 0, 2.5f), new Vector3(3.25f, 0.5f, 4.5f), "dev_measurewall01d");
         // The plinth's raised block: inset the top and lift it, so its sides meet the top in four inside corners.
         int top = Enumerable.Range(0, plinth.Faces.Count).First(f => plinth.FaceNormal(f).Y > 0.9f);
         MeshOps.Inset(plinth, [top]).Apply(plinth, 0.5f, outset: false);
@@ -118,9 +118,9 @@ public static class DressingSample
         MeshOps.AlignToGrid(plinth, Enumerable.Range(0, plinth.Faces.Count));
 
         // A platform in the south-east corner, a ramp up to it (stairs) and two railing boxes along its open edges.
-        var platform = Add("platform", new Vector3(5.5f, 0, t), new Vector3(8 - t, 1, 2.25f), "dev_measurecrate02");
+        var platform = Add("platform", new Vector3(5.5f, 0, t), new Vector3(8 - t, 1, 2.25f), "dev_measurewall01d");
         var rampFrame = PrimitiveFrame.FromBox(new Vector3(4, 0, t), new Vector3(5.5f, 1, 1.25f), Vector3.UnitY, Vector3.UnitX);
-        var ramp = doc.Add(Primitive.Build(PrimitiveShape.Wedge, new PrimitiveOptions(), rampFrame, "dev_measurecrate02", TextureMapping.Default));
+        var ramp = doc.Add(Primitive.Build(PrimitiveShape.Wedge, new PrimitiveOptions(), rampFrame, "dev_measurewall01d", TextureMapping.Default));
         ramp.Name = "ramp";
         ramp.Tags = TagSet.Of("ramp");
         Add("rail-north", new Vector3(5.5f, 1, 2.15f), new Vector3(8 - t, 2, 2.25f), "dev_measurewall01a").Tags = TagSet.Of("railing");

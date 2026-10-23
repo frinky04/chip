@@ -40,23 +40,25 @@ public sealed class HotspotSection : IInspectorSection
 
         RowLabel("Uses", "Hotspots use the active material when it has a hotspot asset, else the selected face's");
         if (target is { } t) ImGui.Text(t.Material);
-        else ImGui.TextColored(Theme.TextDim, "None with a hotspot asset");
-        if (target == null) Tip($"{ctx.ActiveMaterial} has no hotspot asset. Pick a hotspot material in the browser (T), or make an asset in the hotspot editor");
+        else
+        {
+            // Nothing to apply: just the way to make an asset, rather than a block of greyed-out options.
+            ImGui.TextColored(Theme.TextDim, "no hotspot material");
+            Tip($"{ctx.ActiveMaterial} has no hotspot asset. Pick a hotspot material in Materials (T), or make an asset in the hotspot editor");
+            FieldStart();
+            if (ImGui.Button("Hotspot editor…", new Vector2(-1, 0))) HotspotEditor.For(ctx).Show(ctx, null);
+            Tip("Open the hotspot editor  (Ctrl+Shift+H)");
+            return;
+        }
 
-        float gap = Theme.Px(4);
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(gap, Theme.Px(4)));
-        float w = (ImGui.GetContentRegionAvail().X - gap * 2) / 3;
-        ImGui.BeginDisabled(target == null);
-        if (ImGui.Button("Apply", new Vector2(w, 0))) ctx.Commands.Execute("hotspot.apply");
-        Tip("Apply hotspot: fit each coplanar region into the best patch  (Shift+H)");
-        ImGui.SameLine();
-        if (ImGui.Button("Each face", new Vector2(w, 0))) ctx.Commands.Execute("hotspot.applyFaces");
-        Tip("Hotspot individual faces: fit every face into its own patch  (Shift+F)");
-        ImGui.EndDisabled();
-        ImGui.SameLine();
-        if (ImGui.Button("Edit…", new Vector2(w, 0))) HotspotEditor.For(ctx).Show(ctx, target?.Asset);
-        Tip("Open the hotspot editor  (Ctrl+Shift+H)");
-        ImGui.PopStyleVar();
+        RowLabel("Apply", "Fit the selection into the asset's patches");
+        int act = ButtonRow("apply",
+            new RowButton("Regions", "Apply hotspot: fit each coplanar region into the best patch  (Shift+H)"),
+            new RowButton("Each face", "Hotspot individual faces: fit every face into its own patch  (Shift+F)"),
+            new RowButton("Editor…", "Open the hotspot editor  (Ctrl+Shift+H)"));
+        if (act == 0) ctx.Commands.Execute("hotspot.apply");
+        if (act == 1) ctx.Commands.Execute("hotspot.applyFaces");
+        if (act == 2) HotspotEditor.For(ctx).Show(ctx, t.Asset);
 
         RowLabel("Tiling", "Whether tiling patches (full-width strips) are used");
         int tiling = TextSegments("hstiling", [("No", "Never use tiling patches"), ("Allow", "Tiling patches compete with the rest; long strips get them"),
@@ -75,13 +77,13 @@ public sealed class HotspotSection : IInspectorSection
             _ => "Straighten quad strips, starting from the active face",
         });
 
+        // One option per line in the field column: side by side they don't fit a normal inspector.
+        RowLabel("Options");
         bool noRandom = s.DisallowRandom;
-        if (ImGui.Checkbox("Disallow random", ref noRandom)) s.DisallowRandom = noRandom;
-        Tip("Never mirror or turn patches at random, even where their flags allow it");
-        ImGui.SameLine(0, Theme.Px(12));
+        if (Check("Disallow random", ref noRandom, "Never mirror or turn patches at random, even where their flags allow it")) s.DisallowRandom = noRandom;
+        FieldStart();
         bool keep = s.DontApplyMaterial;
-        if (ImGui.Checkbox("Don't apply material", ref keep)) s.DontApplyMaterial = keep;
-        Tip("Write hotspot UVs but keep each face's material");
+        if (Check("Don't apply material", ref keep, "Write hotspot UVs but keep each face's material")) s.DontApplyMaterial = keep;
     }
 
 

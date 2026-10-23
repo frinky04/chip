@@ -2,6 +2,31 @@
 
 Chip is built by several agents working in parallel git worktrees (see `PLAN.md`). This file is the shared playbook: where things live, how to add a feature without touching anyone else's files, and the bar a branch must clear before it merges.
 
+## Build, test, capture
+
+C# (.NET 10), Silk.NET + OpenGL 3.3, ImGui.NET.
+
+```
+dotnet run --project src/Chip.Editor          # editor
+dotnet test                                    # core + scenario tests
+Chip.exe --shot level.chip out.png faces      # headless UI capture (empty|objects|faces|block|backfaces)
+Chip.exe --rules-schema [out.json]            # JSON Schema for dressing rules files
+python scripts/make-banner.py                 # redraw docs/images/banner.png (needs Pillow)
+```
+
+The README screenshots in `docs/images` are `--shot` captures at 1600×940: `editor.png` is the `dressing` state with
+`CHIP_SHOT_CAMERA=1,5.5,0.8,7,0,5`; `dressed.png`, `blockout.png`, `dressing-rules.png` and `dress-with.png` are the
+`dressing`, `dressing-blockout`, `dressing-rules` and `dressing-dresswith` states; `faces.png`, `hotspot-editor.png` and
+`palette.png` are those states on `tests/fixtures/level.chip`.
+
+### Frame benchmark
+
+Build Release, then run `Chip.exe --bench [stress|level.chip] [out.json]` (or `dotnet run -c Release --project src/Chip.Editor -- --bench stress artifacts/frame.json`). The default is `stress`: 2,000 meshes, about 100k faces, 200 entities and 20 groups. The window stays hidden, uses a 1600×900 backbuffer (times `CHIP_UI_SCALE`, so every scale lays out the same panels) with vsync off, and never reads or writes user settings. All mouse positions, camera motion and `TransformGesture` moves are scripted inside the app.
+
+Each scenario reports CPU median/p95/max, process-wide managed bytes per frame (including worker threads), GL elapsed timer-query results, stage medians and changed-mesh upload counts. GPU waits happen outside the CPU sample; GL elapsed time includes gaps while the CPU submits the frame, so it is not isolated GPU execution time. Gesture setup and cancel are outside the frame samples. There are 240 driver/JIT warmup frames, then 15 warmup and 60 measured frames per scenario.
+
+Set `CHIP_BENCH_FRAMES`, `CHIP_BENCH_WARMUP` or the scenario prefix `CHIP_BENCH_FILTER` to adjust a run. For diagnosis, `CHIP_BENCH_SKIP_OCCLUSION=1` skips entity visibility rays, and `CHIP_BENCH_SKIP_PICKING=1` skips hover picks. Both flags are recorded in the JSON; leave them unset for full-editor results. Compare the same build configuration, scale, frame counts and flags on the same machine. CPU timings include script application and rendering submission; inspector section timings are subsets of `shell`.
+
 ## Map
 
 ```
@@ -54,7 +79,7 @@ public sealed class MeshOpsFeature : IEditorFeature
 ```
 
 - **Commands**: id `area.camelCase`; `Menu` must be one of `CommandRegistry.MenuOrder`. `Group` names sort, so prefix with a number. `CanExecute` greys the item and blocks the hotkey. Set `DuringInteraction` only for things that must work mid-drag (undo/redo/cancel).
-- **Where UI goes.** The dock (`IDockPanel`) is for what you pick from: libraries, the scene, things to place, rule sets. The inspector (`IInspectorSection`) is for the selection only, plus the Level section when nothing is selected; start `Draw` with `if (!Heading(...)) return;` so the section folds. Level-wide settings go in the Level section, not a menu. A feature's mesh operation also gets a button in `ActionsSection` for its selection mode. Floating windows are for large editors that need room (hotspot editor) and dialogs.
+- **Where UI goes.** The dock (`IDockPanel`) is for what you pick from: libraries, the scene, things to place, rule sets. The inspector (`IInspectorSection`) is for the selection only, plus the Level section when nothing is selected; start `Draw` with `if (!Heading(...)) return;` so the section folds. Lay rows out in two columns: `RowLabel` then the controls, `FieldStart` for a row without a label, `ButtonRow`/`CommandRow` for buttons (equal widths filling the field column), one checkbox per line; property tables with long names use `PropertyColumn`. Pick the section's `Order` by where it belongs: selection 100, actions 105, entity 110, material 200, texture 300, hotspot 310, smoothing 400, collision 500, tags 700, dressing 710. Level-wide settings go in the Level section, not a menu. A feature's mesh operation also gets a button in `ActionsSection` for its selection mode. Floating windows are for large editors that need room (hotspot editor) and dialogs.
 - **Tools** implement `IViewportTool`. Read the mouse from `ctx.Mouse` / `ctx.MouseRay()`, set `ctx.Hover`, draw overlays in `Draw`, return `Busy` while mid-operation, and undo partial work in `Cancel` (Esc). Options go in `HasOptions`/`DrawOptions`.
 - **Edits** happen inside `ctx.Session.Do(label, ...)` (one undo step), or a `TransformGesture` for interactive transforms (`Begin` → `Apply` repeatedly → `Commit`/`Cancel`). Never mutate the document outside a step.
 - **Mesh ops** go in a new `Geometry/Ops/<Name>.cs` partial of `MeshOps`. Build a face from a source face with `src.Derive(verts)` (material, mapping and tags; never `new Face(v, src.Material, src.Map)`, which drops tags), and add the op to `TagTests.Every_op_keeps_tags_on_every_face`, which also runs `MeshOps.Check` on the result (pass `valid: false` only when a drag is meant to finish the shape, as with zero-height extrudes). Split faces through `PlanarSplit` and put vertices on existing edges through `EdgePoints` rather than splicing loops by hand. Keep face indices stable when you can. Route vertex renumbering through `RemoveUnusedVertices`/`Reindex` so `SoftEdges` and `UVs` stay valid. Reorder `Face.UVs` whenever you reorder `Face.Verts`. Return what the caller needs to fix the selection (maps or new indices).

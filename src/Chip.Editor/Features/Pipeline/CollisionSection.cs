@@ -18,7 +18,7 @@ public sealed class CollisionSection : IInspectorSection
     ];
 
     public string Id => "collision";
-    public int Order => 880;
+    public int Order => 500; // after smoothing: the last of what the mesh exports as; tags and dressing follow
     public bool Visible(EditorContext ctx) => ctx.Sel.Mode == Chip.Core.Scene.SelectMode.Object && !ctx.Sel.IsEmpty;
 
     public void Draw(EditorContext ctx)
@@ -38,11 +38,7 @@ public sealed class CollisionSection : IInspectorSection
             }
             ImGui.EndCombo();
         }
-        if (modes.Count == 1)
-        {
-            ImGui.PushTextWrapPos(0);
-            ImGui.TextColored(Theme.TextDim, Modes.First(m => m.Mode == modes[0]).Tip);
-            ImGui.PopTextWrapPos();
-        }
+        // What the mode does, on hover: the row stays one line like the rest of the inspector.
+        Tip(modes.Count == 1 ? Modes.First(m => m.Mode == modes[0]).Tip : "The selected meshes use different modes");
     }
 }

@@ -134,16 +134,17 @@ meshes themselves. A rule that picks faces only by facing or material has no tag
 
 ### Elsewhere
 
-- **Inspector, Dressing section**: the Dressed / Blockout switch, **Dress with...**, **Rules...**, which rules touch the
-  selection, Bake. A saved level without rules shows a small version (Dress with, Rules) while something is selected.
+- **Inspector, Dressing section** (the last section, after Tags): which rules touch the selection, **Dress with...** and
+  **Rules...** (the Dressing tab), and **Bake dressing** when the selection has dressing to bake. A saved level without
+  rules shows a small version (Dress with, Rules) while something is selected.
   With one mesh selected: each rule that takes it, with a tick to turn it off for this mesh, › to open the rule, and its
-  simple parameters as per-mesh overrides (orange; "This mesh differs" with **Use for all** and **Reset**), and *Why
+  simple parameters as per-mesh overrides (orange; a *Differs* row with **Use for all** and **Reset**), and *Why
   don't N rules take this mesh?* (or face, with one face selected): a row per rule that skips it, with why; click one to
   open the rule.
 - **View > Tag colours**: every tagged face tinted by its first tag (mesh tags striped), so untagged surfaces stand out.
   The Dressing tab's tag chips use the same colours.
 - **Tags** (Ctrl+T, inspector Tags section) still work as before: Dress with is a shortcut for the common case.
-- `` ` `` toggles dressed / blockout (View > Dressed view, the header toggle, the inspector switch). Export always ships
+- `` ` `` toggles dressed / blockout (View > Dressed view, the header toggle, the Dressing tab's switch). Export always ships
   the dressed level.
 - *New dressing rules file* (the tab's ⋯ menu, or the command palette) writes a starter (from the recipes) beside a saved
   level; the first rule added from the tab or Dress with does the same. *Open dressing sample* opens a room using every

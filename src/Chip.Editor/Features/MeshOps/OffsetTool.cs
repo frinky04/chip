@@ -157,6 +157,6 @@ public sealed class OffsetTool : IViewportTool
             _raw = a;
             SetAmount(ctx, a);
         }
-        ImGui.TextColored(Theme.TextDim, _amount >= 0 ? "Faces push out; corners stay mitred" : "Faces pull in; corners stay mitred");
+        FieldNote(_amount >= 0 ? "Faces push out; corners stay mitred" : "Faces pull in; corners stay mitred");
     }
 }
