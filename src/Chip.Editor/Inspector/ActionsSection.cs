@@ -9,7 +9,7 @@ namespace Chip.Editor.Inspector;
 
 /// <summary>
 /// What you can do to the selection, as buttons: the mesh operations for the selection mode (inset and offset for
-/// faces, bridge and connect for edges, weld for vertices, merge and group for objects). The same commands as the Mesh
+/// faces, bridge, fill and connect for edges, weld for vertices, merge and group for objects). The same commands as the Mesh
 /// menu and their hotkeys, which the tooltips show; ones that don't apply to this selection are greyed.
 /// </summary>
 public sealed class ActionsSection : IInspectorSection
@@ -23,9 +23,9 @@ public sealed class ActionsSection : IInspectorSection
         ],
         [SelectMode.Edge] =
         [
-            ("mesh.connect", "Connect"), ("mesh.bridge", "Bridge"), ("tool.bevel", "Bevel"),
-            ("mesh.dissolve", "Dissolve"), ("mesh.collapse", "Collapse"), ("mesh.arcExtrude", "Arc"),
-            ("select.loop", "Loop"), ("select.ring", "Ring"), ("mesh.weld", "Weld"),
+            ("mesh.connect", "Connect"), ("mesh.bridge", "Bridge"), ("mesh.fill", "Fill"),
+            ("tool.bevel", "Bevel"), ("mesh.dissolve", "Dissolve"), ("mesh.collapse", "Collapse"),
+            ("mesh.arcExtrude", "Arc"), ("select.loop", "Loop"), ("select.ring", "Ring"),
         ],
         [SelectMode.Face] =
         [

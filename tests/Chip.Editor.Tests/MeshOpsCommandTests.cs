@@ -249,4 +249,29 @@ public class MeshOpsCommandTests
         Assert.Equal(before.Min, ctx.Doc.Meshes[0].Bounds().Min); // symmetric about its own pivot
         Assert.Equal("Mirror", ctx.Session.UndoLabel);
     }
+
+    [Fact]
+    public void Fill_caps_the_hole_from_one_rim_edge_and_selects_the_new_face()
+    {
+        var ctx = WithBoxes(1);
+        var mesh = ctx.Doc.Meshes[0];
+        MeshOps.DeleteFaces(mesh, [3]); // the top
+        ctx.Commands.Execute("select.modeEdge");
+        ctx.Sel.Add(ElementRef.EdgeOf(mesh.Id, new Edge(0, 1))); // a closed edge: nothing to fill
+        Assert.True(ctx.Commands.Execute("mesh.fill"));
+        Assert.Equal(5, mesh.Faces.Count);
+        Assert.Null(ctx.Session.UndoLabel);
+
+        mesh = ctx.Doc.Meshes[0]; // the rollback restored a copy
+        ctx.Sel.Clear();
+        ctx.Sel.Add(ElementRef.EdgeOf(mesh.Id, new Edge(2, 6)));
+        Assert.True(ctx.Commands.Execute("mesh.fill"));
+        Assert.Equal(6, mesh.Faces.Count);
+        Assert.Equal(SelectMode.Face, ctx.Sel.Mode);
+        Assert.Equal([ElementRef.Face(mesh.Id, 5)], ctx.Sel.Items);
+        Assert.Equal("Fill", ctx.Session.UndoLabel);
+        ctx.Commands.Execute("edit.undo");
+        Assert.Equal(5, ctx.Doc.Meshes[0].Faces.Count);
+        Assert.Equal(SelectMode.Edge, ctx.Sel.Mode);
+    }
 }

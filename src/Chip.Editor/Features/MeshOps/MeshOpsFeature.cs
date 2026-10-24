@@ -33,6 +33,9 @@ public sealed class MeshOpsFeature : IEditorFeature
         c.Add("mesh.mergeFaces", "Merge faces", MergeFaces, "Mesh", "Backspace", () => Mode(SelectMode.Face, 2), "1-connect", 1);
         c.Add("mesh.bridge", "Bridge", Bridge, "Mesh", "Shift+C",
             () => (Sel.Mode == SelectMode.Face && Sel.Count == 2) || Mode(SelectMode.Edge, 2), "1-connect", 2);
+        c.Add("mesh.fill", "Fill holes", Fill, "Mesh", "Alt+F",
+            () => Mode(SelectMode.Edge) || Mode(SelectMode.Vertex) || (Sel.Mode == SelectMode.Object && Sel.MeshIds().Any(id => Doc.Find(id) != null)),
+            "1-connect", 3);
 
         c.Add("mesh.inset", "Inset", () => ctx.SetTool(_inset.For(outset: false)), "Mesh", "I", () => Mode(SelectMode.Face), "2-inset", 0);
         c.Add("mesh.outset", "Outset", () => ctx.SetTool(_inset.For(outset: true)), "Mesh", "O", () => Mode(SelectMode.Face), "2-inset", 1);
@@ -140,9 +143,45 @@ public sealed class MeshOpsFeature : IEditorFeature
         }
         else
         {
-            if (Ops.BridgeEdges(mesh, items.Select(i => i.AsEdge), out error) is not { } quads) return error;
-            _ctx.Status($"Bridged with {Plural(quads.Count, "face")}");
+            if (Ops.BridgeEdges(mesh, items.Select(i => i.AsEdge), out error) is not { } r) return error;
+            if (r.VertexMap is { } vmap) Sel.Remap(mesh.Id, vmap, r.FaceMap!);
+            _ctx.Status(r.Bridges == 1 ? $"Bridged with {Plural(r.Faces.Count, "face")}" : $"Made {r.Bridges} bridges with {Plural(r.Faces.Count, "face")}");
         }
+        return null;
+    });
+
+    /// <summary>Caps the holes the selection touches: edges or vertices on a hole's rim, or every hole of selected objects.</summary>
+    void Fill() => Edit("Fill", () =>
+    {
+        var filled = new List<ElementRef>();
+        int skipped = 0, nonPlanar = 0;
+        foreach (var (mesh, items) in ByMesh())
+        {
+            IEnumerable<Edge>? rim = null;
+            if (Sel.Mode == SelectMode.Edge) rim = items.Select(i => i.AsEdge);
+            else if (Sel.Mode == SelectMode.Vertex)
+            {
+                var verts = items.Select(i => i.A).ToHashSet();
+                rim = mesh.BoundaryEdges().Where(e => verts.Contains(e.A) || verts.Contains(e.B));
+            }
+            var r = Ops.FillHoles(mesh, rim);
+            skipped += r.Skipped;
+            nonPlanar += r.NonPlanar;
+            filled.AddRange(r.Faces.Select(f => ElementRef.Face(mesh.Id, f)));
+        }
+        if (filled.Count == 0)
+            return skipped > 0
+                ? "Can't fill: the hole's outline crosses itself or its edges are wound inconsistently"
+                : Sel.Mode == SelectMode.Object ? "No holes to fill" : "Nothing to fill: pick an open edge or vertex on the rim of a hole";
+        if (Sel.Mode != SelectMode.Object)
+        {
+            _ctx.SetMode(SelectMode.Face);
+            Select(filled);
+        }
+        var notes = new List<string>();
+        if (nonPlanar > 0) notes.Add($"{Plural(nonPlanar, "fill")} not flat");
+        if (skipped > 0) notes.Add($"skipped {Plural(skipped, "hole")} that can't be filled");
+        _ctx.Status($"Filled {Plural(filled.Count, "hole")}{(notes.Count > 0 ? $" ({string.Join("; ", notes)})" : "")}");
         return null;
     });
 

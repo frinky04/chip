@@ -194,9 +194,9 @@ public class MeshOpsTests
         var loopA = m.Faces[1].Edges().ToList();
         var loopB = m.Faces[6].Edges().ToList();
         MeshOps.DeleteFaces(m, [1, 6]); // no vertex is orphaned, so indices stay
-        var quads = MeshOps.BridgeEdges(m, loopA.Concat(loopB), out var error);
+        var r = MeshOps.BridgeEdges(m, loopA.Concat(loopB), out var error);
         Assert.Null(error);
-        Assert.Equal(4, quads!.Count);
+        Assert.Equal(4, r!.Faces.Count);
         Assert.True(IsClosedManifold(m));
     }
 
@@ -205,19 +205,181 @@ public class MeshOpsTests
     {
         var m = Strip(1);
         MeshOps.MergeMeshes(m, [Shifted(Strip(1), new Vector3(2, 0, 0))]);
-        var quads = MeshOps.BridgeEdges(m, [new Edge(2, 3), new Edge(4, 5)], out var error);
+        var r = MeshOps.BridgeEdges(m, [new Edge(2, 3), new Edge(4, 5)], out var error);
         Assert.Null(error);
-        int quad = Assert.Single(quads!);
+        int quad = Assert.Single(r!.Faces);
+        Assert.Null(r.VertexMap);
         Assert.True(IsConsistentlyOriented(m));
         Assert.True(m.FaceNormal(quad).Y > 0.99f);
         Assert.Null(MeshOps.BridgeEdges(m, [new Edge(0, 1)], out var single)); // one chain is not enough
         Assert.NotNull(single);
     }
 
+    [Fact]
+    public void Bridging_four_edges_across_a_gap_welds_the_split_side_and_makes_two_quads()
+    {
+        // Left wall in two pieces that don't share their seam corner; right wall in two pieces that do.
+        var m = Wall(0, Vector3.UnitX, [0, 2.85f, 3.95f], shareSeams: false);
+        MeshOps.MergeMeshes(m, [Wall(2, -Vector3.UnitX, [0, 2.85f, 3.95f])]);
+        int before = m.Positions.Count;
+        var r = MeshOps.BridgeEdges(m, InnerEdges(m), out var error);
+        Assert.Null(error);
+        Assert.Equal(1, r!.Bridges);
+        Assert.Equal(2, r.Faces.Count);
+        Assert.Equal(before - 1, m.Positions.Count); // the left seam corner is welded
+        Assert.NotNull(r.VertexMap);
+        Assert.True(IsConsistentlyOriented(m));
+        var e0 = r.Faces.SelectMany(f => m.Faces[f].Edges()).GroupBy(e => e).Count(g => g.Count() == 2);
+        Assert.Equal(1, e0); // the two quads share their middle rung
+        Assert.All(r.Faces, f => Assert.Null(MeshOps.FaceIssue(m, f)));
+        AssertValid(m);
+    }
+
+    [Fact]
+    public void Bridging_chains_with_different_edge_counts_adds_a_triangle()
+    {
+        var m = Wall(0, Vector3.UnitX, [0, 1, 4]);
+        MeshOps.MergeMeshes(m, [Wall(2, -Vector3.UnitX, [0, 4])]);
+        var r = MeshOps.BridgeEdges(m, InnerEdges(m), out var error);
+        Assert.Null(error);
+        Assert.Equal([3, 4], r!.Faces.Select(f => m.Faces[f].Verts.Length).Order().ToArray());
+        Assert.True(IsConsistentlyOriented(m));
+        Assert.All(r.Faces, f => Assert.True(MathF.Abs(m.FaceNormal(f).Z) > 0.99f));
+        AssertValid(m);
+    }
+
+    [Fact]
+    public void Bridging_several_gaps_at_once_pairs_each_chain_with_its_nearest_partner()
+    {
+        var m = Strip(1);
+        MeshOps.MergeMeshes(m, [Shifted(Strip(1), new Vector3(2, 0, 0)), Shifted(Strip(1), new Vector3(0, 0, 5)), Shifted(Strip(1), new Vector3(2, 0, 5))]);
+        var r = MeshOps.BridgeEdges(m, [new Edge(2, 3), new Edge(4, 5), new Edge(10, 11), new Edge(12, 13)], out var error);
+        Assert.Null(error);
+        Assert.Equal(2, r!.Bridges);
+        Assert.True(IsConsistentlyOriented(m));
+        foreach (var f in r.Faces)
+        {
+            var ps = m.FacePoints(f).ToList();
+            Assert.Equal([1f, 2f], ps.Select(p => p.X).Distinct().Order().ToArray()); // straight across its own gap
+            Assert.True(ps.Max(p => p.Z) - ps.Min(p => p.Z) <= 1.0001f);
+            Assert.True(m.FaceNormal(f).Y > 0.99f);
+        }
+    }
+
+    [Fact]
+    public void Bridging_chains_that_run_the_same_way_explains_the_twist()
+    {
+        var m = Wall(0, Vector3.UnitX, [0, 2]);
+        MeshOps.MergeMeshes(m, [Wall(2, Vector3.UnitX, [0, 2])]); // both face +X: a bridge would have to twist
+        Assert.Null(MeshOps.BridgeEdges(m, InnerEdges(m), out var error));
+        Assert.Contains("twisted", error);
+    }
+
+    [Fact]
+    public void Bridging_an_odd_chain_out_says_how_many_paired()
+    {
+        var m = Strip(1);
+        MeshOps.MergeMeshes(m, [Shifted(Strip(1), new Vector3(2, 0, 0)), Shifted(Strip(1), new Vector3(4, 0, 0))]);
+        Assert.Null(MeshOps.BridgeEdges(m, [new Edge(2, 3), new Edge(4, 5), new Edge(10, 11)], out var error));
+        Assert.Contains("2 of 3", error);
+    }
+
+    /// <summary>
+    /// A wall at x = <paramref name="x"/> spanning z 0..1, facing <paramref name="facing"/>, stacked in pieces between the
+    /// given heights. Without <paramref name="shareSeams"/> each piece has its own corners.
+    /// </summary>
+    static PolyMesh Wall(float x, Vector3 facing, float[] heights, bool shareSeams = true)
+    {
+        var m = new PolyMesh();
+        int Corner(float y, float z)
+        {
+            if (shareSeams && m.Positions.FindIndex(p => p == new Vector3(x, y, z)) is var i and >= 0) return i;
+            m.Positions.Add(new Vector3(x, y, z));
+            return m.Positions.Count - 1;
+        }
+        for (int i = 0; i + 1 < heights.Length; i++)
+        {
+            int[] q = [Corner(heights[i], 0), Corner(heights[i], 1), Corner(heights[i + 1], 1), Corner(heights[i + 1], 0)];
+            m.Faces.Add(new Face(q, "dev_a", TextureMapping.Default));
+            if (Vector3.Dot(m.FaceNormal(m.Faces.Count - 1), facing) < 0) Array.Reverse(q);
+        }
+        return m;
+    }
+
+    /// <summary>The wall edges along z = 1 (where two facing walls leave their gap).</summary>
+    static List<Edge> InnerEdges(PolyMesh m) =>
+        m.BoundaryEdges().Where(e => m.Positions[e.A].Z == 1 && m.Positions[e.B].Z == 1).ToList();
+
     static PolyMesh Shifted(PolyMesh m, Vector3 d)
     {
         for (int i = 0; i < m.Positions.Count; i++) m.Positions[i] += d;
         return m;
+    }
+
+    // ---- Fill ----
+
+    /// <summary>A box with its top face removed (vertex indices unchanged).</summary>
+    static PolyMesh OpenBox()
+    {
+        var m = UnitBox();
+        foreach (var f in m.Faces) f.Tags = TagSet.Of("wall");
+        m.Faces[2].Material = "floor";
+        MeshOps.DeleteFaces(m, [Top]);
+        return m;
+    }
+
+    [Fact]
+    public void Filling_from_one_rim_edge_caps_the_whole_hole()
+    {
+        var m = OpenBox();
+        var r = MeshOps.FillHoles(m, [new Edge(2, 6)]);
+        int f = Assert.Single(r.Faces);
+        Assert.Equal(4, m.Faces[f].Verts.Length);
+        Assert.True(IsClosedManifold(m));
+        Assert.True(m.FaceNormal(f).Y > 0.99f);
+        Assert.Equal("dev_a", m.Faces[f].Material); // the walls' material, not the floor's
+        Assert.True(m.Faces[f].Tags.IsEmpty); // a cap across walls isn't a wall
+        Assert.Equal(0, r.NonPlanar);
+        AssertValid(m);
+    }
+
+    [Fact]
+    public void Filling_ignores_edges_that_are_not_on_a_hole_and_fills_every_hole_when_asked()
+    {
+        var m = OpenBox();
+        Assert.Empty(MeshOps.FillHoles(m, [new Edge(0, 1)]).Faces); // the floor's edge is closed
+        MeshOps.DeleteFaces(m, [2]); // the floor too
+        var r = MeshOps.FillHoles(m);
+        Assert.Equal(2, r.Faces.Count);
+        Assert.True(IsClosedManifold(m));
+        AssertOutward(m, new Vector3(0.5f));
+    }
+
+    [Fact]
+    public void Filling_an_L_shaped_room_makes_one_concave_ceiling()
+    {
+        // An L-shaped room: floor plus six walls facing inward, open on top.
+        Vector2[] outline = [new(0, 0), new(4, 0), new(4, 2), new(2, 2), new(2, 4), new(0, 4)];
+        var m = new PolyMesh();
+        foreach (var p in outline) m.Positions.Add(new Vector3(p.X, 0, p.Y));
+        foreach (var p in outline) m.Positions.Add(new Vector3(p.X, 3, p.Y));
+        int n = outline.Length;
+        m.Faces.Add(new Face(Enumerable.Range(0, n).Reverse().ToArray(), "floor", TextureMapping.Default));
+        if (m.FaceNormal(0).Y < 0) Array.Reverse(m.Faces[0].Verts); // the floor faces up, into the room
+        var floor = m.Faces[0].Verts;
+        for (int i = 0; i < n; i++)
+        {
+            int a = floor[i], b = floor[(i + 1) % n];
+            m.Faces.Add(new Face([b, a, a + n, b + n], "wall", TextureMapping.Default));
+        }
+        Assert.True(IsConsistentlyOriented(m));
+
+        var r = MeshOps.FillHoles(m, [new Edge(n, n + 1)]);
+        int f = Assert.Single(r.Faces);
+        Assert.Equal(n, m.Faces[f].Verts.Length);
+        Assert.Null(MeshOps.FaceIssue(m, f));
+        Assert.True(m.FaceNormal(f).Y < -0.99f); // the ceiling faces down into the room, like the walls face in
+        Assert.True(IsClosedManifold(m));
     }
 
     // ---- Inset / outset ----

@@ -86,7 +86,7 @@ and the inspector have the rest:
 | | |
 |---|---|
 | Faces | inset `I`, outset `O`, offset along normals `Shift+O` (for trims and baseboards), arc extrude `Shift+A`, bridge `Shift+C`, merge faces `Backspace`, detach `N`, extract `Alt+N` |
-| Edges and vertices | bevel `B`, connect `V`, collapse, weld `Ctrl+Shift+Alt+M`, dissolve `Ctrl+Backspace` |
+| Edges and vertices | bevel `B`, connect `V`, bridge `Shift+C` (any number of open chains at once), fill holes `Alt+F` (pick one rim edge), collapse, weld `Ctrl+Shift+Alt+M`, dissolve `Ctrl+Backspace` |
 | Cutting | knife `C`, clip with a plane `Shift+X` (`Tab` keeps the front, the back or both) |
 | Meshes | merge `M`, mirror `Shift+Z`, flip `Shift+N`, snap vertices to the grid `Ctrl+Shift+Alt+V`, clean up, check |
 | Smoothing | soft `J`, hard `Ctrl+J`, dominant `K`, auto-smooth by angle |
