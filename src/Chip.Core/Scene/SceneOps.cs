@@ -95,16 +95,19 @@ public static class SceneOps
         RemapReferences(added, map, dropOthers: true);
     }
 
-    /// <summary>Points <c>{ "entity": id }</c> values through <paramref name="map"/>; unmapped ones stay, or go when <paramref name="dropOthers"/>.</summary>
+    /// <summary>
+    /// Points <c>{ "entity": id }</c> values (and those in lists) through <paramref name="map"/>; unmapped ones stay, or go
+    /// when <paramref name="dropOthers"/>.
+    /// </summary>
     public static void RemapReferences(IEnumerable<Entity> entities, IReadOnlyDictionary<int, int> map, bool dropOthers)
     {
         foreach (var e in entities)
             foreach (var (key, value) in e.Properties.ToList())
-                if (EntityValues.RefId(value) is { } target)
-                {
-                    if (map.TryGetValue(target, out var to)) e.Properties[key] = EntityValues.Ref(to);
-                    else if (dropOthers) e.Properties.Remove(key);
-                }
+            {
+                var mapped = EntityValues.MapRefs(value, id => map.TryGetValue(id, out var to) ? to : dropOthers ? null : id, out _);
+                if (mapped is { } v) e.Properties[key] = v;
+                else e.Properties.Remove(key);
+            }
     }
 
     public static void SetHidden(Document doc, IEnumerable<int> ids, bool hidden)

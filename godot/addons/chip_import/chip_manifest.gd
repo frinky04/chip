@@ -180,8 +180,10 @@ static func describe(path: String, name: String, warnings: PackedStringArray) ->
 
 
 ## A property's spec: { name, type, default, ... }. Types: bool, int, float, string, enum, color, vector2, vector3, node,
-## resource, unsupported.
+## resource, array, unsupported.
 static func _prop(p: Dictionary, value: Variant) -> Dictionary:
+	if p["type"] == TYPE_ARRAY or p["type"] in PACKED_ITEMS:
+		return _list_prop(p, value)
 	var spec := {"name": str(p["name"])}
 	var hint: int = p["hint"]
 	var hs: String = p["hint_string"]
@@ -244,6 +246,73 @@ static func _prop(p: Dictionary, value: Variant) -> Dictionary:
 	if p["type"] in [TYPE_VECTOR2I, TYPE_VECTOR3I]:
 		spec["integer"] = true
 	return spec
+
+
+## The item type of each packed array.
+const PACKED_ITEMS := {
+	TYPE_PACKED_STRING_ARRAY: TYPE_STRING, TYPE_PACKED_BYTE_ARRAY: TYPE_INT, TYPE_PACKED_INT32_ARRAY: TYPE_INT,
+	TYPE_PACKED_INT64_ARRAY: TYPE_INT, TYPE_PACKED_FLOAT32_ARRAY: TYPE_FLOAT, TYPE_PACKED_FLOAT64_ARRAY: TYPE_FLOAT,
+	TYPE_PACKED_VECTOR2_ARRAY: TYPE_VECTOR2, TYPE_PACKED_VECTOR3_ARRAY: TYPE_VECTOR3, TYPE_PACKED_COLOR_ARRAY: TYPE_COLOR,
+}
+
+
+## A typed list (Array[StringName], Array[Node3D], PackedVector2Array): { type: "array", of: <item type>, default: [...] }
+## plus the item's hints (options, class, range, integer). The item's spec is built as if it were a property of its own,
+## from the array's "type/hint:hint_string" hint. Untyped arrays and lists of lists are unsupported.
+static func _list_prop(p: Dictionary, value: Variant) -> Dictionary:
+	var item := {"name": str(p["name"]), "type": PACKED_ITEMS.get(p["type"], TYPE_NIL), "hint": PROPERTY_HINT_NONE, "hint_string": ""}
+	var hs: String = p["hint_string"]
+	if p["hint"] == PROPERTY_HINT_TYPE_STRING and hs != "":
+		# "21:" (StringName), "24/34:Node3D" (a Node3D), "2/2:Calm,Alert" (an int enum)
+		var colon := hs.find(":")
+		var head := hs.substr(0, colon) if colon >= 0 else hs
+		var slash := head.find("/")
+		item["type"] = (head.substr(0, slash) if slash >= 0 else head).to_int()
+		if slash >= 0:
+			item["hint"] = head.substr(slash + 1).to_int()
+		item["hint_string"] = hs.substr(colon + 1) if colon >= 0 else ""
+	elif p["hint"] == PROPERTY_HINT_ARRAY_TYPE and hs != "":
+		_item_from_name(item, hs)
+	var t: int = item["type"]
+	var spec := {"name": str(p["name"])}
+	if t == TYPE_NIL or t == TYPE_ARRAY or t == TYPE_DICTIONARY or t in PACKED_ITEMS:
+		spec["type"] = "unsupported"
+		spec["godot"] = type_string(p["type"]) if t == TYPE_NIL else "Array[%s]" % type_string(t)
+		return spec
+	spec = _prop(item, type_convert(null, t))
+	if spec["type"] == "unsupported":
+		spec["godot"] = "Array[%s]" % spec.get("godot", type_string(t))
+		return spec
+	spec["of"] = spec["type"]
+	spec["type"] = "array"
+	var items := []
+	if spec["of"] != "node":  # a scene's own nodes mean nothing in a level
+		for x in value:
+			items.append(_prop(item, x)["default"])
+	spec["default"] = items
+	return spec
+
+
+## PROPERTY_HINT_ARRAY_TYPE names the item type ("String", "Node3D", "Material"); fills in the item's type and hint.
+static func _item_from_name(item: Dictionary, name: String) -> void:
+	for t in TYPE_MAX:
+		if type_string(t) == name:
+			item["type"] = t
+			return
+	var native := name
+	var bases := {}
+	for g in ProjectSettings.get_global_class_list():
+		bases[str(g["class"])] = str(g["base"])
+	while bases.has(native):  # a script class: up to the engine class it extends
+		native = bases[native]
+	if ClassDB.class_exists(native) and ClassDB.is_parent_class(native, "Node"):
+		item["type"] = TYPE_OBJECT
+		item["hint"] = PROPERTY_HINT_NODE_TYPE
+		item["hint_string"] = name
+	elif ClassDB.class_exists(native) and ClassDB.is_parent_class(native, "Resource"):
+		item["type"] = TYPE_OBJECT
+		item["hint"] = PROPERTY_HINT_RESOURCE_TYPE
+		item["hint_string"] = name
 
 
 ## "Swing,Slide:5,Fly" -> [{label, value}]; ints count up from the last explicit value, strings are their own value.

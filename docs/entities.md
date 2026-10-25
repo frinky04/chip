@@ -70,7 +70,13 @@ extends Node3D
 | `Vector2(i)`, `Vector3(i)` | X/Y/Z fields | `[x, y, z]` |
 | `Node` types, `NodePath` | list of the level's entities | `{ "entity": 7 }` |
 | `Resource` types | text field | `"res://materials/brick.tres"` |
-| anything else (arrays, dictionaries) | "Set in Godot" | not editable |
+| Typed arrays of the above (`Array[StringName]`, `Array[Vector2i]`, `Array[Node3D]`, `Array[Material]`, an `Array` of an enum) and packed arrays (`PackedStringArray`, `PackedFloat32Array`, `PackedVector3Array`…) | a field per item, with Add item and a remove button each | `["oak", "heavy"]`, `[{ "entity": 7 }, { "entity": 9 }]` |
+| anything else (untyped arrays, arrays of arrays, dictionaries) | "Set in Godot" | not editable |
+
+A list is one value: setting it replaces the whole list, and × puts back the scene's list. Add item copies the last item
+(a run of similar cells is quick), except in a list of references, which adds an empty one to pick. A list reads
+tolerantly, like the other types: a single value is a list of one, and text in a list of text or choices splits at commas,
+so a class that turns `tags: String` into `tags: Array[StringName]` keeps the levels' `"oak, heavy"` as `["oak", "heavy"]`.
 
 Defaults come from the instantiated scene, so a value set on the scene's root overrides the script's. Two pieces of root
 metadata cover what a script can't say:
@@ -101,7 +107,10 @@ its content changes. Headless (CI, or a project nobody has opened):
           "default": "swing", "doc": "How the door opens." },
         { "name": "open_angle", "type": "float", "range": [0, 180, 1], "or_greater": true, "suffix": "°", "default": 90 },
         { "name": "partner", "type": "node", "class": "Node3D", "default": null },
-        { "name": "volume", "type": "float", "range": [0, 1, 0], "default": 0.8, "group": "Sound" }
+        { "name": "volume", "type": "float", "range": [0, 1, 0], "default": 0.8, "group": "Sound" },
+        { "name": "tags", "type": "array", "of": "string", "default": ["wood"] },
+        { "name": "cells", "type": "array", "of": "vector2", "integer": true, "default": [] },
+        { "name": "linked", "type": "array", "of": "node", "class": "Node3D", "default": [] }
       ],
       "bounds": [[-0.5, 0, -0.05], [0.5, 2, 0.05]],
       "preview": "previews/door.glb"
@@ -109,6 +118,11 @@ its content changes. Headless (CI, or a project nobody has opened):
   }
 }
 ```
+
+A list is `"type": "array"` with its item type in `"of"` (any type above but `array` and `unsupported`). The item's hints
+(`options`, `class`, `range`, `integer`, `suffix`) sit on the list itself. The addon reads them from the array's
+`type/hint:hint_string` export hint, so an `Array[Node3D]` lists Node3D entities and an `Array[Vector2i]` has whole
+numbers. A node list's default is always empty: the nodes in a scene's own list mean nothing in a level.
 
 The format doesn't depend on Godot: another engine's plugin could write it.
 
@@ -128,8 +142,9 @@ names (`light_color`, `light_energy`, `omni_range` / `spot_range`, `spot_angle`,
 Each entity exports as an empty glTF node with
 `extras = { chip_class, chip_id, chip_uid?, chip_scene?, chip_name?, properties }`. Values are typed by the class on the
 way out (a v2 `"10"` goes out as `10`). The addon finds the scene by `chip_uid` (survives moving or renaming the scene),
-then `chip_scene`; instantiates it as a linked instance (editing the scene updates every level); applies the values;
-then points node properties at the instances of the entities they reference. Every entity keeps `chip_class`,
+then `chip_scene`; instantiates it as a linked instance (editing the scene updates every level); applies the values
+(a list fills the property's own typed or packed array, so `Array[StringName]` stays one);
+then points node properties, and node lists, at the instances of the entities they reference. Every entity keeps `chip_class`,
 `chip_properties` and `chip_id` as metadata and is in the `chip_entities` group. Groups saved on the scene (the player
 start's `chip_spawn`) come with it.
 
@@ -145,7 +160,7 @@ Nothing here stops a level from loading or exporting.
 | Class not in the project (scene deleted, level from elsewhere) | Red note in the inspector; values kept as free key-values | `Marker3D` carrying the values as metadata, with a warning |
 | A value the class no longer declares | Listed under "Unused values", removable | Warning; the value stays in `chip_properties` |
 | A value its type can't read | Red label, the default is used, export leaves it out with a status-bar warning | Scene's value |
-| Reference to an entity that isn't exported | Export leaves it out with a warning | — |
+| Reference to an entity that isn't exported | Export leaves it out with a warning (from a list: just that item) | Warning; the item is dropped from a list |
 | No manifest yet | Built-in classes; the entity tool says to enable the plugin | — |
 | Manifest can't be read (mid-write, hand-edited) | Keeps the last good classes and says why | — |
 
@@ -173,7 +188,7 @@ Nothing here stops a level from loading or exporting.
 ## Phases
 
 1. Done. Scenes as classes, manifest, typed inspector, sparse typed storage, instancing on import, built-ins as scenes.
-2. Done. Previews, node references.
+2. Done. Previews, node references, lists (typed and packed arrays).
 3. Mesh entities: a scene whose root is a `CollisionObject3D` (`Area3D`, `AnimatableBody3D`) can be given to a mesh,
    whose geometry becomes its visual and collision shape. Needs a per-object origin (a door's hinge); triggers become an
    ordinary `trigger.tscn`.
@@ -181,7 +196,8 @@ Nothing here stops a level from loading or exporting.
 
 ## Known limits
 
-- Arrays, dictionaries and other types can't be edited in Chip (shown as "Set in Godot").
+- Untyped arrays, arrays of arrays, dictionaries and other types can't be edited in Chip (shown as "Set in Godot").
+- List items can't be reordered in place yet (remove and add again).
 - Resource fields are typed paths; there's no browser of project resources yet.
 - A node property's class (`Node3D`) isn't checked against the referenced entity's scene root.
 - `Chip --export` doesn't apply dressing rules (the editor's export does).

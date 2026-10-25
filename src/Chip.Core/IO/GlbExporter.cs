@@ -336,7 +336,7 @@ public static class GlbExporter
     /// <summary>
     /// The values the entity sets, typed by its class (a v2 string "10" for a float goes out as 10). Values the class
     /// can't read, and references to entities that aren't exported, are left out with a warning, so the engine keeps
-    /// the scene's value. Properties the class doesn't declare go out as they are.
+    /// the scene's value (a list just loses those items). Properties the class doesn't declare go out as they are.
     /// </summary>
     static JsonObject EntityProperties(Entity e, EntityClass cls, HashSet<int> exportedIds, List<string> warnings)
     {
@@ -353,12 +353,15 @@ public static class GlbExporter
                 }
                 value = typed;
             }
-            if (EntityValues.RefId(value) is { } target && !exportedIds.Contains(target))
+            var mapped = EntityValues.MapRefs(value, id => exportedIds.Contains(id) ? id : null, out int dropped);
+            if (mapped is not { } exported)
             {
                 warnings.Add($"{SceneOps.DisplayName(e)}: {k} points at an entity that isn't exported; left out");
                 continue;
             }
-            props[k] = JsonNode.Parse(value.GetRawText());
+            if (dropped > 0)
+                warnings.Add($"{SceneOps.DisplayName(e)}: {dropped} of {k}'s entities {(dropped == 1 ? "isn't" : "aren't")} exported; left out of the list");
+            props[k] = JsonNode.Parse(exported.GetRawText());
         }
         return props;
     }

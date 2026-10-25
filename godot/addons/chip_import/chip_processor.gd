@@ -12,8 +12,10 @@ extends RefCounted
 ##
 ## Property values arrive typed (Chip coerces them with the manifest): numbers, bools, strings, [r, g, b, a] colours,
 ## [x, y, z] vectors, "res://" paths for resources and { "entity": id } for references to other entities, resolved to
-## the instance of that entity once every entity is placed.
+## the instance of that entity once every entity is placed. Lists of those fill the property's typed Array (or packed
+## array) in its own type.
 
+const Manifest = preload("chip_manifest.gd")
 const ENTITY_GROUP := &"chip_entities"
 
 
@@ -118,7 +120,10 @@ static func _apply(entity: Node, cls: String, key: String, value: Variant, links
 	if value is Dictionary and value.has("entity"):
 		links.append([entity, key, int(value["entity"])])
 		return
-	var converted = _convert(value, type)
+	if value is Array and value.any(func(x): return x is Dictionary and x.has("entity")):
+		links.append([entity, key, value])
+		return
+	var converted = _convert_list(value, entity.get(key), type) if value is Array and _is_list(type) else _convert(value, type)
 	if converted == null and value != null:
 		push_warning("Chip import: '%s' on class '%s' can't take %s; it keeps the scene's value." % [key, cls, JSON.stringify(value)])
 		return
@@ -157,15 +162,47 @@ static func _convert(value: Variant, type: int) -> Variant:
 	return null
 
 
-static func _resolve(entity: Node, key: String, target_id: int, by_id: Dictionary) -> void:
-	var target: Node = by_id.get(target_id)
-	if target == null:
-		push_warning("Chip import: '%s' on %s points at entity %d, which isn't in the export." % [key, entity.name, target_id])
+static func _is_list(type: int) -> bool:
+	return type == TYPE_ARRAY or type in Manifest.PACKED_ITEMS
+
+
+## The list in the property's own type: a typed Array (the scene's value, emptied, keeps the type) or a packed array.
+## Null when an item doesn't fit.
+static func _convert_list(value: Array, current: Variant, type: int) -> Variant:
+	var out: Array = current.duplicate() if current is Array else []
+	out.clear()
+	var item_type: int = Manifest.PACKED_ITEMS.get(type, out.get_typed_builtin())
+	for x in value:
+		var c = x if item_type == TYPE_NIL else _convert(x, item_type)
+		if c == null and x != null:
+			return null
+		out.append(c)
+	return out if type == TYPE_ARRAY else type_convert(out, type)
+
+
+## Sets a reference (target is an id) or a list of them (target is the list, its items { "entity": id }).
+static func _resolve(entity: Node, key: String, target: Variant, by_id: Dictionary) -> void:
+	var paths := _property_type(entity, key) == TYPE_NODE_PATH
+	if not target is Array:
+		var node: Node = by_id.get(target)
+		if node == null:
+			push_warning("Chip import: '%s' on %s points at entity %d, which isn't in the export." % [key, entity.name, target])
+		else:
+			entity.set(key, entity.get_path_to(node) if paths else node)
 		return
-	if _property_type(entity, key) == TYPE_NODE_PATH:
-		entity.set(key, entity.get_path_to(target))
-	else:
-		entity.set(key, target)
+	var current = entity.get(key)
+	var out: Array = current.duplicate() if current is Array else []
+	out.clear()
+	paths = out.get_typed_builtin() == TYPE_NODE_PATH
+	for item in target:
+		if not (item is Dictionary and item.has("entity")):
+			continue  # a row not picked yet
+		var node: Node = by_id.get(int(item["entity"]))
+		if node == null:
+			push_warning("Chip import: '%s' on %s lists entity %d, which isn't in the export." % [key, entity.name, int(item["entity"])])
+		else:
+			out.append(entity.get_path_to(node) if paths else node)
+	entity.set(key, out)
 
 
 # ---- Triggers ----

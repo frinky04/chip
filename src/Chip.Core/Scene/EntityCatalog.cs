@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Chip.Core.Scene;
 
-public enum PropType { Bool, Int, Float, String, Enum, Color, Vector2, Vector3, Node, Resource, Unsupported }
+public enum PropType { Bool, Int, Float, String, Enum, Color, Vector2, Vector3, Node, Resource, Array, Unsupported }
 
 public sealed record EnumOption(string Label, JsonElement Value);
 
@@ -27,11 +27,19 @@ public sealed record PropSpec
     public string? Class { get; init; }
     /// <summary>Whole-number vector components.</summary>
     public bool Integer { get; init; }
-    /// <summary>The engine type of an <see cref="PropType.Unsupported"/> property (<c>Array</c>).</summary>
+    /// <summary>The engine type of an <see cref="PropType.Unsupported"/> property (<c>Dictionary</c>).</summary>
     public string? EngineType { get; init; }
+    /// <summary>
+    /// The item type of an <see cref="PropType.Array"/> (never Array or Unsupported). The other hints (options, class,
+    /// range, integer) describe its items.
+    /// </summary>
+    public PropType ItemType { get; init; } = PropType.Unsupported;
 
     /// <summary>"open_angle" → "Open angle".</summary>
     public string Label => EntityClass.Humanize(Name);
+
+    /// <summary>One item of a list: this property's hints with the item type and no default.</summary>
+    public PropSpec Item => this with { Type = ItemType, Default = EntityValues.Null, ItemType = PropType.Unsupported };
 }
 
 /// <summary>
@@ -177,12 +185,10 @@ public sealed class EntityCatalog
     static PropSpec ParseProp(string cls, JsonElement p)
     {
         if (Str(p, "name") is not { Length: > 0 } name) throw new InvalidDataException($"class {cls} has a property without a name");
-        var type = Str(p, "type") switch
-        {
-            "bool" => PropType.Bool, "int" => PropType.Int, "float" => PropType.Float, "string" => PropType.String,
-            "enum" => PropType.Enum, "color" => PropType.Color, "vector2" => PropType.Vector2, "vector3" => PropType.Vector3,
-            "node" => PropType.Node, "resource" => PropType.Resource, _ => PropType.Unsupported,
-        };
+        var type = TypeOf(Str(p, "type"));
+        // A list of something Chip can't edit (lists of lists) can't be edited either.
+        var itemType = type == PropType.Array ? TypeOf(Str(p, "of")) : PropType.Unsupported;
+        if (type == PropType.Array && itemType is PropType.Array or PropType.Unsupported) type = PropType.Unsupported;
         var options = new List<EnumOption>();
         if (p.TryGetProperty("options", out var os) && os.ValueKind == JsonValueKind.Array)
             foreach (var o in os.EnumerateArray())
@@ -196,13 +202,20 @@ public sealed class EntityCatalog
         {
             Name = name, Type = type, Doc = Str(p, "doc") ?? "", Group = Str(p, "group") ?? "",
             Range = range, OrGreater = Flag(p, "or_greater"), OrLess = Flag(p, "or_less"), Suffix = Str(p, "suffix") ?? "",
-            Options = options, Class = Str(p, "class"), Integer = Flag(p, "integer"),
+            Options = options, Class = Str(p, "class"), Integer = Flag(p, "integer"), ItemType = itemType,
             EngineType = type == PropType.Unsupported ? Str(p, "godot") ?? Str(p, "type") : null,
             Default = p.TryGetProperty("default", out var d) ? d.Clone() : EntityValues.Null,
         };
         // Normalised to the type; a default it can't read (a hand-edited manifest) becomes "none".
         return spec with { Default = EntityValues.Coerce(spec, spec.Default, out _) ?? EntityValues.Null };
     }
+
+    static PropType TypeOf(string? name) => name switch
+    {
+        "bool" => PropType.Bool, "int" => PropType.Int, "float" => PropType.Float, "string" => PropType.String,
+        "enum" => PropType.Enum, "color" => PropType.Color, "vector2" => PropType.Vector2, "vector3" => PropType.Vector3,
+        "node" => PropType.Node, "resource" => PropType.Resource, "array" => PropType.Array, _ => PropType.Unsupported,
+    };
 
     static string? Str(JsonElement o, string key) =>
         o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;

@@ -21,7 +21,7 @@
       "position": [2, 0, 0],
       "rotation": [0, 90, 0],
       "hidden": false,
-      "properties": { "mode": "slide", "tint": [1, 0, 0, 1], "keys_needed": 2, "partner": { "entity": 1 } }
+      "properties": { "mode": "slide", "tint": [1, 0, 0, 1], "keys_needed": 2, "partner": { "entity": 1 }, "tags": ["oak", "heavy"], "linked": [{ "entity": 1 }] }
     },
     {
       "id": 3,

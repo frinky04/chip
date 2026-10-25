@@ -6,7 +6,8 @@ namespace Chip.Core.Scene;
 
 /// <summary>
 /// Entity property values: plain JSON (numbers, bools, strings, <c>[r, g, b, a]</c> colours in 0..1, <c>[x, y, z]</c>
-/// vectors, <c>{ "entity": id }</c> references, <c>"res://…"</c> resource paths), read against a <see cref="PropSpec"/>.
+/// vectors, <c>{ "entity": id }</c> references, <c>"res://…"</c> resource paths, and <c>[…]</c> lists of those), read
+/// against a <see cref="PropSpec"/>.
 /// Reading is tolerant, so levels from before typed properties (every value a string: <c>"255 128 0"</c>, <c>"10"</c>,
 /// <c>"1"</c>) still read as the type their class declares.
 /// </summary>
@@ -108,6 +109,35 @@ public static class EntityValues
     public static int? RefId(JsonElement v) =>
         v.ValueKind == JsonValueKind.Object && v.TryGetProperty("entity", out var id) && id.ValueKind == JsonValueKind.Number && id.TryGetInt32(out int i) ? i : null;
 
+    /// <summary>
+    /// The value with its references (a reference, or the references in a list) pointed through <paramref name="map"/>,
+    /// which returns null to drop one: a dropped reference becomes null, a dropped list item leaves the list.
+    /// <paramref name="dropped"/> counts them. Other values come back as they are.
+    /// </summary>
+    public static JsonElement? MapRefs(JsonElement v, Func<int, int?> map, out int dropped)
+    {
+        dropped = 0;
+        if (RefId(v) is { } single)
+        {
+            if (map(single) is { } to) return Ref(to);
+            dropped = 1;
+            return null;
+        }
+        if (v.ValueKind != JsonValueKind.Array || !v.EnumerateArray().Any(x => RefId(x) != null)) return v;
+        var items = new List<JsonElement>();
+        foreach (var x in v.EnumerateArray())
+        {
+            if (RefId(x) is not { } id) items.Add(x);
+            else if (map(id) is { } to) items.Add(Ref(to));
+            else dropped++;
+        }
+        return List(items);
+    }
+
+    public static JsonElement List(IEnumerable<JsonElement> items) => JsonSerializer.SerializeToElement(items.ToList());
+
+    public static readonly JsonElement EmptyList = List([]);
+
     static float[]? Floats(JsonElement array)
     {
         var result = new float[array.GetArrayLength()];
@@ -141,6 +171,7 @@ public static class EntityValues
         if (IsNull(v))
         {
             if (p.Type is PropType.Node or PropType.Resource or PropType.Unsupported) return Null;
+            if (p.Type == PropType.Array) return EmptyList;
             error = $"{p.Name} needs a value";
             return null;
         }
@@ -176,6 +207,8 @@ public static class EntityValues
             case PropType.Resource:
                 if (v.ValueKind == JsonValueKind.String) return v;
                 break;
+            case PropType.Array:
+                return CoerceList(p, v, out error);
             case PropType.Unsupported:
                 return v;
         }
@@ -183,9 +216,59 @@ public static class EntityValues
         return null;
     }
 
+    /// <summary>
+    /// A list, each item in the item type. Tolerant like the rest: a single value (<c>[1, 2]</c> for a list of vectors
+    /// too) is a list of one, and text for a list
+    /// of text or choices is split at commas (<c>"a, b"</c>, how a list was kept before lists).
+    /// Unset references and resources stay as null items (a row not picked yet).
+    /// </summary>
+    static JsonElement? CoerceList(PropSpec p, JsonElement v, out string? error)
+    {
+        error = null;
+        var item = p.Item;
+        bool oneVector = item.Type is PropType.Vector2 or PropType.Vector3 or PropType.Color
+            && v.ValueKind == JsonValueKind.Array && v.GetArrayLength() > 0 && v.EnumerateArray().All(x => x.ValueKind == JsonValueKind.Number);
+        IEnumerable<JsonElement> items =
+            v.ValueKind == JsonValueKind.Array && !oneVector ? v.EnumerateArray()
+            : v.ValueKind == JsonValueKind.String && item.Type is PropType.String or PropType.Enum
+                ? v.GetString()!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(Of)
+            : [v];
+        var result = new List<JsonElement>();
+        int n = 0;
+        foreach (var x in items)
+        {
+            n++;
+            if (Coerce(item, x, out var itemError) is not { } ok)
+            {
+                error = $"{itemError} (item {n})";
+                return null;
+            }
+            result.Add(ok);
+        }
+        return List(result);
+    }
+
     /// <summary>The value the entity has for the property: its own (when readable) or the class default.</summary>
     public static JsonElement Effective(Entity e, PropSpec p) =>
         e.Properties.TryGetValue(p.Name, out var v) && Coerce(p, v, out _) is { } ok ? ok : p.Default;
+
+    /// <summary>The type as words: "whole number", "list of text".</summary>
+    public static string TypeName(PropSpec p) => p.Type == PropType.Array ? $"list of {Plural(p.ItemType)}" : TypeName(p.Type);
+
+    static string Plural(PropType t) => t switch
+    {
+        PropType.Bool => "true/false values",
+        PropType.Int => "whole numbers",
+        PropType.Float => "numbers",
+        PropType.String => "text",
+        PropType.Enum => "choices",
+        PropType.Color => "colours",
+        PropType.Vector2 => "2D vectors",
+        PropType.Vector3 => "3D vectors",
+        PropType.Node => "references to entities",
+        PropType.Resource => "resource paths",
+        _ => "values",
+    };
 
     public static string TypeName(PropType t) => t switch
     {
@@ -199,6 +282,7 @@ public static class EntityValues
         PropType.Vector3 => "3D vector",
         PropType.Node => "reference to an entity",
         PropType.Resource => "resource path",
+        PropType.Array => "list",
         _ => "value",
     };
 }

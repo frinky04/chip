@@ -17,5 +17,12 @@ extends Node3D
 @export_range(0, 1) var volume := 0.8
 @export var sound_offset := Vector3(0, 1, 0)
 
-## Not editable in Chip (arrays aren't supported yet).
-@export var tags: Array[String] = []
+@export_group("Lists")
+## Slot tags.
+@export var tags: Array[StringName] = [&"wood"]
+@export var cells: Array[Vector2i] = []
+## Doors that open with this one.
+@export var linked: Array[Node3D] = []
+@export var weights := PackedFloat32Array([0.5])
+## Not editable in Chip (dictionaries aren't supported).
+@export var notes := {}

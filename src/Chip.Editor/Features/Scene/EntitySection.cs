@@ -10,7 +10,8 @@ namespace Chip.Editor.Features.Scene;
 
 /// <summary>
 /// The selected entity: class, name, position, rotation and its properties. A class from the engine project lists its
-/// properties with a field for each type (the engine's defaults shown until changed, × puts one back); values the class
+/// properties with a field for each type (a list gets one per item; the engine's defaults shown until changed, × puts
+/// one back); values the class
 /// doesn't declare are listed as unused. A class the project doesn't define keeps free key-values. Every committed field
 /// is one undo step. With several entities selected it says how many and asks for one.
 /// </summary>
@@ -132,11 +133,82 @@ public sealed class EntitySection : IInspectorSection
         ImGui.SameLine(labelW);
         // Every field stops short of the × column, whatever kind it is.
         float fieldW = ImGui.GetContentRegionAvail().X - resetW - ImGui.GetStyle().ItemSpacing.X;
-        ImGui.SetNextItemWidth(fieldW);
         string label = $"Set {spec.Label}";
         void Commit(JsonElement v) => Edit(ctx, id, label, x => EntityOps.SetProperty(x, spec, v));
-        var key = (id, spec.Name);
 
+        if (spec.Type == PropType.Array)
+        {
+            var items = value.ValueKind == JsonValueKind.Array ? value.EnumerateArray().ToList() : [];
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextColored(Theme.TextDim, items.Count == 0 ? "Empty" : items.Count == 1 ? "1 item" : $"{items.Count} items");
+            ImGui.SameLine(labelW + fieldW + ImGui.GetStyle().ItemSpacing.X);
+        }
+        else
+        {
+            ImGui.SetNextItemWidth(fieldW);
+            ValueField(ctx, e, spec, value, spec.Name, fieldW, Commit);
+            ImGui.SameLine();
+        }
+
+        if (set)
+        {
+            if (ImGui.Button("×", new Vector2(resetW, 0)))
+                Edit(ctx, id, $"Reset {spec.Label}", x => x.Properties.Remove(spec.Name) ? null : $"{spec.Label} already has its default");
+            Tip($"Back to the class default ({Show(spec, spec.Default)})");
+        }
+        else ImGui.Dummy(new Vector2(resetW, 0));
+
+        if (spec.Type == PropType.Array) ListItems(ctx, e, spec, value, labelW, fieldW, resetW, Commit);
+    }
+
+    /// <summary>
+    /// A list's items under its row: the number in the label column, a field of the item type, and a remove button in
+    /// the × column; then a button that adds an item (the last one again, so a run of similar items is quick).
+    /// </summary>
+    void ListItems(EditorContext ctx, Entity e, PropSpec spec, JsonElement value, float labelW, float fieldW, float buttonW, Action<JsonElement> commit)
+    {
+        var items = value.ValueKind == JsonValueKind.Array ? value.EnumerateArray().ToList() : [];
+        var item = spec.Item;
+        for (int i = 0; i < items.Count; i++)
+        {
+            int at = i;
+            ImGui.PushID(i);
+            ImGui.AlignTextToFramePadding();
+            ImGui.SetCursorPosX(labelW - ImGui.CalcTextSize($"{i + 1}").X - Theme.Px(8));
+            ImGui.TextColored(Theme.TextDisabled, $"{i + 1}");
+            ImGui.SameLine(labelW);
+            ImGui.SetNextItemWidth(fieldW);
+            ValueField(ctx, e, item, items[i], $"{spec.Name}[{i}]", fieldW, v => commit(EntityValues.List(items.Select((x, j) => j == at ? v : x))));
+            ImGui.SameLine();
+            if (IconButton("remove", Icon.Trash, $"Remove item {i + 1}", buttonW))
+                commit(EntityValues.List(items.Where((_, j) => j != at)));
+            ImGui.PopID();
+        }
+        ImGui.SetCursorPosX(labelW);
+        if (ImGui.Button("Add item", new Vector2(fieldW, 0)))
+            commit(EntityValues.List([.. items, items.Count > 0 && item.Type != PropType.Node ? items[^1] : NewItem(item)]));
+        Tip(item.Type == PropType.Node || items.Count == 0 ? $"Add a {EntityValues.TypeName(item.Type)}" : "Add a copy of the last item");
+    }
+
+    /// <summary>A fresh item: the first choice, white, zero, empty text, or none.</summary>
+    static JsonElement NewItem(PropSpec item) => item.Type switch
+    {
+        PropType.Bool => EntityValues.Of(false),
+        PropType.Int => EntityValues.Of(0L),
+        PropType.Float => EntityValues.Of(0.0),
+        PropType.String => EntityValues.Of(""),
+        PropType.Enum when item.Options.Count > 0 => item.Options[0].Value,
+        PropType.Color => EntityValues.Color(Vector4.One),
+        PropType.Vector2 => EntityValues.Array(0, 0),
+        PropType.Vector3 => EntityValues.Array(0, 0, 0),
+        _ => EntityValues.Null,
+    };
+
+    /// <summary>The field for one value of a single-valued type, its width already set. <paramref name="name"/> tells it from the entity's other fields.</summary>
+    void ValueField(EditorContext ctx, Entity e, PropSpec spec, JsonElement value, string name, float fieldW, Action<JsonElement> Commit)
+    {
+        int id = e.Id;
+        var key = (id, name);
         switch (spec.Type)
         {
             case PropType.Bool:
@@ -163,7 +235,7 @@ public sealed class EntitySection : IInspectorSection
                 break;
             }
             case PropType.String:
-                if (_text.Field($"##s{id}/{spec.Name}", EntityValues.Text(value), out var text, width: fieldW)) Commit(EntityValues.Of(text));
+                if (_text.Field($"##s{id}/{name}", EntityValues.Text(value), out var text, width: fieldW)) Commit(EntityValues.Of(text));
                 break;
             case PropType.Enum:
             {
@@ -204,7 +276,7 @@ public sealed class EntitySection : IInspectorSection
                 ReferenceCombo(ctx, e, value, Commit);
                 break;
             case PropType.Resource:
-                if (_text.Field($"##r{id}/{spec.Name}", EntityValues.Text(value), out var path, hint: "res://…", width: fieldW))
+                if (_text.Field($"##r{id}/{name}", EntityValues.Text(value), out var path, hint: "res://…", width: fieldW))
                     Commit(path.Trim().Length == 0 ? EntityValues.Null : EntityValues.Of(path.Trim()));
                 break;
             default:
@@ -212,15 +284,6 @@ public sealed class EntitySection : IInspectorSection
                 ImGui.TextColored(Theme.TextDisabled, $"Set in Godot ({spec.EngineType})");
                 break;
         }
-
-        ImGui.SameLine();
-        if (set)
-        {
-            if (ImGui.Button("×", new Vector2(resetW, 0)))
-                Edit(ctx, id, $"Reset {spec.Label}", x => x.Properties.Remove(spec.Name) ? null : $"{spec.Label} already has its default");
-            Tip($"Back to the class default ({Show(spec, spec.Default)})");
-        }
-        else ImGui.Dummy(new Vector2(resetW, 0));
     }
 
     /// <summary>Picks another entity (or none) for a node property.</summary>
@@ -254,7 +317,7 @@ public sealed class EntitySection : IInspectorSection
     {
         var lines = new List<string>();
         if (spec.Doc.Length > 0) lines.Add(spec.Doc);
-        lines.Add($"{spec.Name}: {EntityValues.TypeName(spec.Type)}{(spec.Class != null ? $" ({spec.Class})" : "")}");
+        lines.Add($"{spec.Name}: {EntityValues.TypeName(spec)}{(spec.Class != null ? $" ({spec.Class})" : "")}");
         if (error != null) lines.Add($"{error}. Set a new value, or × to go back to the default");
         else lines.Add(set ? $"Set on this entity. Class default: {Show(spec, spec.Default)}" : "The class default");
         return string.Join("\n", lines);
@@ -263,6 +326,8 @@ public sealed class EntitySection : IInspectorSection
     static string Show(PropSpec spec, JsonElement v) => spec.Type switch
     {
         _ when EntityValues.IsNull(v) => "none",
+        PropType.Array when v.ValueKind == JsonValueKind.Array =>
+            v.GetArrayLength() == 0 ? "empty" : string.Join(", ", v.EnumerateArray().Select(x => Show(spec.Item, x))),
         PropType.Enum => spec.Options.FirstOrDefault(o => EntityValues.Same(o.Value, v))?.Label ?? EntityValues.Text(v),
         _ => EntityValues.Text(v),
     };

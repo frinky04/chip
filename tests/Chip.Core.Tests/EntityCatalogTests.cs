@@ -39,7 +39,11 @@ public class EntityCatalogTests : IDisposable
                 { "name": "skin", "type": "resource", "class": "Material", "default": null },
                 { "name": "volume", "type": "float", "range": [0.0, 1.0, 0.0], "default": 0.8, "group": "Sound" },
                 { "name": "sound_offset", "type": "vector3", "default": [0.0, 1.0, 0.0], "group": "Sound" },
-                { "name": "tags", "type": "unsupported", "godot": "Array", "group": "Sound" }
+                { "name": "tags", "type": "array", "of": "string", "default": ["wood"], "group": "Lists" },
+                { "name": "cells", "type": "array", "of": "vector2", "integer": true, "default": [], "group": "Lists" },
+                { "name": "linked", "type": "array", "of": "node", "class": "Node3D", "default": [], "group": "Lists" },
+                { "name": "grid", "type": "array", "of": "array", "group": "Lists" },
+                { "name": "notes", "type": "unsupported", "godot": "Dictionary", "group": "Lists" }
               ],
               "bounds": [[-0.5, 0.0, -0.05], [0.5, 2.0, 0.05]],
               "preview": "previews/door.glb"
@@ -77,7 +81,7 @@ public class EntityCatalogTests : IDisposable
         var door = catalog.Find("door")!;
         Assert.Equal("uid://dlm1osw5eeb10", door.Uid);
         Assert.Equal("A door.", door.Doc);
-        Assert.Equal(["mode", "open_angle", "locked", "tint", "keys_needed", "partner", "skin", "volume", "sound_offset", "tags"], door.Props.Select(p => p.Name));
+        Assert.Equal(["mode", "open_angle", "locked", "tint", "keys_needed", "partner", "skin", "volume", "sound_offset", "tags", "cells", "linked", "grid", "notes"], door.Props.Select(p => p.Name));
         var mode = door.Prop("mode")!;
         Assert.Equal(PropType.Enum, mode.Type);
         Assert.Equal(["swing", "slide"], mode.Options.Select(o => o.Label));
@@ -89,7 +93,14 @@ public class EntityCatalogTests : IDisposable
         Assert.Equal("Open angle", angle.Label);
         Assert.Equal("Material", door.Prop("skin")!.Class);
         Assert.Equal("Sound", door.Prop("volume")!.Group);
-        Assert.Equal("Array", door.Prop("tags")!.EngineType);
+        Assert.Equal("Dictionary", door.Prop("notes")!.EngineType);
+        var tags = door.Prop("tags")!;
+        Assert.Equal((PropType.Array, PropType.String), (tags.Type, tags.ItemType));
+        Assert.Equal("""["wood"]""", tags.Default.GetRawText());
+        Assert.True(door.Prop("cells")!.Item.Integer); // item hints come from the list
+        Assert.Equal("Node3D", door.Prop("linked")!.Item.Class);
+        Assert.Equal(PropType.Unsupported, door.Prop("grid")!.Type); // lists of lists aren't editable
+        Assert.Equal("list of text", EntityValues.TypeName(tags));
         Assert.Equal(new Vector3(0.5f, 2, 0.05f), door.BoxMax);
         Assert.Equal(Path.Combine(_dir, ".chip", "previews", "door.glb"), door.Preview);
         Assert.Equal("Grunt", catalog.Find("enemies/grunt")!.Label);
@@ -149,6 +160,29 @@ public class EntityCatalogTests : IDisposable
         Assert.Equal("\"res://m.tres\"", Coerced(Spec("door", "skin"), EntityValues.Of("res://m.tres")));
         Assert.StartsWith("error: open_angle is wide", Coerced(Spec("door", "open_angle"), EntityValues.Of("wide")));
         Assert.StartsWith("error: mode is fly, which isn't one of swing, slide", Coerced(Spec("door", "mode"), EntityValues.Of("fly")));
+    }
+
+    [Fact]
+    public void List_items_are_read_as_the_item_type()
+    {
+        static JsonElement J(string json) => JsonDocument.Parse(json).RootElement;
+        Assert.Equal("""["oak","3"]""", Coerced(Spec("door", "tags"), J("""["oak", 3]""")));
+        Assert.Equal("""["oak","heavy"]""", Coerced(Spec("door", "tags"), EntityValues.Of("oak, heavy"))); // text kept as a list before lists
+        Assert.Equal("[]", Coerced(Spec("door", "tags"), EntityValues.Null));
+        Assert.Equal("[[1,2],[3,4]]", Coerced(Spec("door", "cells"), J("[[1.4, 2], \"3 4\"]")));
+        Assert.Equal("[[1,2]]", Coerced(Spec("door", "cells"), EntityValues.Array(1, 2))); // one value: a list of one
+        Assert.Equal("""[{"entity":7},null]""", Coerced(Spec("door", "linked"), J("""[{ "entity": 7 }, null]"""))); // unpicked rows stay
+        Assert.Equal("error: cells is x, which isn't a 2D vector (item 2)", Coerced(Spec("door", "cells"), J("[[1, 2], \"x\"]")));
+    }
+
+    [Fact]
+    public void A_list_equal_to_the_default_follows_the_default()
+    {
+        var e = new Entity { ClassName = "door" };
+        Assert.Null(EntityOps.SetProperty(e, Spec("door", "tags"), EntityValues.List([EntityValues.Of("oak")])));
+        Assert.Equal("""["oak"]""", e.Properties["tags"].GetRawText());
+        Assert.Null(EntityOps.SetProperty(e, Spec("door", "tags"), EntityValues.Of("wood")));
+        Assert.False(e.Properties.ContainsKey("tags"));
     }
 
     [Theory]
@@ -277,6 +311,7 @@ public class EntityCatalogTests : IDisposable
         a.Properties["partner"] = EntityValues.Ref(11);
         b.Properties["partner"] = EntityValues.Ref(10);
         b.Properties["target"] = EntityValues.Ref(99); // not in the file
+        a.Properties["linked"] = EntityValues.List([EntityValues.Ref(11), EntityValues.Ref(99), EntityValues.Of("x")]);
         var doc = new Document();
         doc.Add(MeshOps.CreateBox(Vector3.Zero, Vector3.One, "m", TextureMapping.Default));
         SceneOps.AddEntities(doc, [a, b]);
@@ -284,6 +319,7 @@ public class EntityCatalogTests : IDisposable
         Assert.Equal(b.Id, EntityValues.RefId(a.Properties["partner"]));
         Assert.Equal(a.Id, EntityValues.RefId(b.Properties["partner"]));
         Assert.False(b.Properties.ContainsKey("target"));
+        Assert.Equal($$"""[{"entity":{{b.Id}}},"x"]""", a.Properties["linked"].GetRawText()); // items follow; the outsider leaves
     }
 
     [Fact]
@@ -295,10 +331,12 @@ public class EntityCatalogTests : IDisposable
         var outside = doc.Add(new Entity { ClassName = "info_target" });
         a.Properties["partner"] = EntityValues.Ref(b.Id);
         a.Properties["target"] = EntityValues.Ref(outside.Id);
+        a.Properties["linked"] = EntityValues.List([EntityValues.Ref(b.Id), EntityValues.Ref(outside.Id)]);
         var copies = SceneOps.Duplicate(doc, [a.Id, b.Id]);
         var a2 = doc.FindEntity(copies[0])!;
         Assert.Equal(copies[1], EntityValues.RefId(a2.Properties["partner"]));
         Assert.Equal(outside.Id, EntityValues.RefId(a2.Properties["target"]));
+        Assert.Equal($$"""[{"entity":{{copies[1]}}},{"entity":{{outside.Id}}}]""", a2.Properties["linked"].GetRawText());
         Assert.Equal(b.Id, EntityValues.RefId(a.Properties["partner"])); // the original is untouched
     }
 }
@@ -339,6 +377,8 @@ public class GlobalClasses : IDisposable
         door.Properties["mode"] = EntityValues.Of("fly");           // not an option: left out, with a warning
         door.Properties["partner"] = EntityValues.Ref(hidden.Id);   // not exported: left out, with a warning
         door.Properties["sound_offset"] = EntityValues.Array(0, 2, 0);
+        door.Properties["tags"] = EntityValues.Of("oak, heavy");    // text from before lists: goes out as a list
+        door.Properties["linked"] = EntityValues.List([EntityValues.Ref(light.Id), EntityValues.Ref(hidden.Id)]); // the hidden one is left out
         light.Properties["note"] = EntityValues.Of("x");
 
         var result = GlbExporter.Build(doc, new MaterialLibrary(), null);
@@ -348,11 +388,14 @@ public class GlobalClasses : IDisposable
         Assert.Equal("uid://dlm1osw5eeb10", d["chip_uid"]!.GetValue<string>());
         Assert.Equal("res://entities/door.tscn", d["chip_scene"]!.GetValue<string>());
         var props = d["properties"]!.AsObject();
-        Assert.Equal(["open_angle", "sound_offset"], props.Select(kv => kv.Key));
+        Assert.Equal(["linked", "open_angle", "sound_offset", "tags"], props.Select(kv => kv.Key));
         Assert.Equal(120, props["open_angle"]!.GetValue<double>());
-        Assert.Equal(2, result.Warnings.Count);
+        Assert.Equal("""["oak","heavy"]""", props["tags"]!.ToJsonString());
+        Assert.Equal($$"""[{"entity":{{light.Id}}}]""", props["linked"]!.ToJsonString());
+        Assert.Equal(3, result.Warnings.Count);
         Assert.Contains(result.Warnings, w => w.Contains("mode is fly"));
         Assert.Contains(result.Warnings, w => w.Contains("partner points at an entity that isn't exported"));
+        Assert.Contains(result.Warnings, w => w.Contains("1 of linked's entities isn't exported"));
 
         var unknown = nodes.First(n => n!["extras"]?["chip_class"]?.GetValue<string>() == "info_target")!["extras"]!;
         Assert.Null(unknown["chip_scene"]); // the addon makes it a Marker3D carrying its values
