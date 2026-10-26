@@ -71,7 +71,7 @@ public sealed class ExportSettingsWindow
         Label("Watch");
         bool watch = opt.ExportOnSave;
         if (ImGui.Checkbox("Export on save", ref watch)) PipelineActions.ToggleExportOnSave(ctx);
-        Tip("Every save also writes the .glb, so Godot re-imports it  (Ctrl+Alt+E)");
+        Tip($"Every save also writes the .glb, so {EntityClasses.Engine} can reload it  (Ctrl+Alt+E)");
 
         Gap();
         Heading("Geometry");
@@ -132,14 +132,16 @@ public sealed class ExportSettingsWindow
         var remap = ctx.Doc.Export.MaterialRemap;
         Heading("Material remap", remap.Count > 0 ? (remap.Count == 1 ? "1 material" : $"{remap.Count} materials") : null);
         ImGui.PushTextWrapPos(0);
-        ImGui.TextColored(Theme.TextDim, "Swap Chip materials for Godot resources on import. Needs the chip_import addon.");
+        ImGui.TextColored(Theme.TextDim, EntityClasses.Project is { IsGodot: false } project
+            ? $"Swap Chip materials for {project.Engine} materials: the path goes into the glTF material's extras.chip_path."
+            : "Swap Chip materials for Godot resources on import. Needs the chip_import addon.");
         ImGui.PopTextWrapPos();
 
         string? remove = null;
         if (remap.Count > 0 && ImGui.BeginTable("##remap", 3, ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.RowBg))
         {
             ImGui.TableSetupColumn("Material", ImGuiTableColumnFlags.WidthStretch, 0.35f);
-            ImGui.TableSetupColumn("Godot resource", ImGuiTableColumnFlags.WidthStretch, 0.65f);
+            ImGui.TableSetupColumn($"{EntityClasses.Engine} material", ImGuiTableColumnFlags.WidthStretch, 0.65f);
             ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFrameHeight());
             ImGui.TableHeadersRow();
             foreach (var (material, path) in remap.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).ToList())
@@ -154,11 +156,10 @@ public sealed class ExportSettingsWindow
                 // The buffer only exists while the field is being edited, so undo shows through otherwise.
                 var buf = _remapBuffers.TryGetValue(material, out var pending) ? pending : path;
                 ImGui.SetNextItemWidth(-1);
-                if (ImGui.InputTextWithHint("##path", "res://materials/name.tres", ref buf, 512)) _remapBuffers[material] = buf;
+                if (ImGui.InputTextWithHint("##path", Suggest("name"), ref buf, 512)) _remapBuffers[material] = buf;
                 if (ImGui.IsItemDeactivatedAfterEdit()) SetRemap(ctx, material, buf.Trim());
                 else if (!ImGui.IsItemActive()) _remapBuffers.Remove(material);
-                bool invalid = path.Length > 0 && !path.StartsWith("res://", StringComparison.Ordinal);
-                if (invalid) Tip("Godot paths start with res://");
+                if (Misplaced(path)) Tip($"{EntityClasses.Engine} paths start with {Prefix}");
                 if (path.Length == 0) Tip("Empty: this material is exported as is");
                 ImGui.TableNextColumn();
                 if (ImGui.Button("×", new Vector2(ImGui.GetFrameHeight(), 0))) remove = material;
@@ -173,8 +174,8 @@ public sealed class ExportSettingsWindow
             ctx.Session.Do("Remove Material Remap", () => ctx.Doc.Export.MaterialRemap.Remove(m));
             _remapBuffers.Remove(m);
         }
-        if (remap.Values.Any(p => p.Length > 0 && !p.StartsWith("res://", StringComparison.Ordinal)))
-            ImGui.TextColored(Theme.Error, "Some paths don't start with res://. Godot can only load project resources.");
+        if (remap.Values.Any(Misplaced))
+            ImGui.TextColored(Theme.Error, $"Some paths don't start with {Prefix}. {EntityClasses.Engine} can only load project resources.");
 
         var used = MaterialLibrary.Usage(ctx.Doc).Select(u => u.Material).Where(m => !remap.ContainsKey(m) && MaterialLibrary.ToolKind(m) == ToolMaterial.None).ToList();
         ImGui.SetNextItemWidth(Theme.Px(200));
@@ -182,7 +183,7 @@ public sealed class ExportSettingsWindow
         {
             if (used.Count == 0) ImGui.TextColored(Theme.TextDim, "Every material in the level is listed.");
             foreach (var m in used)
-                if (ImGui.Selectable(m)) { string pick = m; ctx.Session.Do("Add Material Remap", () => ctx.Doc.Export.MaterialRemap[pick] = $"res://materials/{pick}.tres"); }
+                if (ImGui.Selectable(m)) { string pick = m; ctx.Session.Do("Add Material Remap", () => ctx.Doc.Export.MaterialRemap[pick] = Suggest(pick)); }
             ImGui.EndCombo();
         }
         ImGui.SameLine();
@@ -190,11 +191,20 @@ public sealed class ExportSettingsWindow
         if (ImGui.Button("Add all used"))
             ctx.Session.Do("Add Material Remaps", () =>
             {
-                foreach (var m in used) ctx.Doc.Export.MaterialRemap[m] = $"res://materials/{m}.tres";
+                foreach (var m in used) ctx.Doc.Export.MaterialRemap[m] = Suggest(m);
             });
         ImGui.EndDisabled();
-        Tip("One row per material the level uses, pointing at res://materials/<name>.tres. Edit the paths to match your project.");
+        Tip($"One row per material the level uses, pointing at {Suggest("<name>")}. Edit the paths to match your project.");
     }
+
+    /// <summary>What the project's asset paths start with: its <see cref="GameProject.AssetPrefix"/>, else Godot's.</summary>
+    static string Prefix => EntityClasses.Project?.AssetPrefix ?? "res://";
+
+    static bool Misplaced(string path) => Prefix.Length > 0 && path.Length > 0 && !path.StartsWith(Prefix, StringComparison.Ordinal);
+
+    /// <summary>A first guess at a material's engine path: Godot's <c>res://materials/name.tres</c>, else <c>prefix + materials/name</c>.</summary>
+    static string Suggest(string material) =>
+        EntityClasses.Project is { IsGodot: false } ? $"{Prefix}materials/{material}" : $"res://materials/{material}.tres";
 
     static void SetPath(EditorContext ctx, string path)
     {

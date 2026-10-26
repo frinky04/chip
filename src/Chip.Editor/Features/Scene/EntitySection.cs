@@ -55,9 +55,11 @@ public sealed class EntitySection : IInspectorSection
             if (cls.Summary != cls.Doc) Tip(cls.Doc);
         }
         if (!cls.Known)
-            Warn(EntityClasses.ProjectRoot is { } root
-                ? $"{Path.GetFileName(root)} has no {e.ClassName} class. Its values are kept and exported; Godot makes it a Marker3D. Pick a class, or add the scene in Godot"
-                : $"{e.ClassName} isn't a built-in class. Save the level inside a Godot project to use its classes");
+            Warn(EntityClasses.Project is { } project
+                ? project.IsGodot
+                    ? $"{Path.GetFileName(project.Root)} has no {e.ClassName} class. Its values are kept and exported; Godot makes it a Marker3D. Pick a class, or add the scene in Godot"
+                    : $"{Path.GetFileName(project.Root)} has no {e.ClassName} class. Its values are kept and exported. Pick a class, or add it to {project.Relative(project.Manifest)}"
+                : $"{e.ClassName} isn't a built-in class. Save the level inside a game project to use its classes");
 
         RowLabel("Name", "Exported as the node name; leave empty to use the class");
         if (_text.Field($"##name{id}", e.Name, out var name, hint: e.ClassName))
@@ -81,7 +83,7 @@ public sealed class EntitySection : IInspectorSection
             if (unused.Count > 0)
             {
                 SubHeading("Unused values");
-                Dim($"{cls.Label} has no property called {string.Join(", ", unused)}, so Godot ignores {(unused.Count == 1 ? "it" : "them")}. Remove {(unused.Count == 1 ? "it" : "them")}, or add the property in Godot");
+                Dim($"{cls.Label} has no property called {string.Join(", ", unused)}, so {EntityClasses.Engine} ignores {(unused.Count == 1 ? "it" : "them")}. Remove {(unused.Count == 1 ? "it" : "them")}, or add the property in {EntityClasses.Engine}");
                 DrawFreeProperties(ctx, e, unused, allowAdd: false);
             }
         }
@@ -92,9 +94,14 @@ public sealed class EntitySection : IInspectorSection
         }
     }
 
-    static string ClassTip() => EntityClasses.Current.Source != null
-        ? $"Entity classes are the scenes in your Godot project's entity folders ({EntityClasses.ProjectRoot})"
-        : EntityClasses.Problem ?? "Built-in classes. Save the level inside a Godot project with the Chip import plugin to use the project's scenes";
+    static string ClassTip() => EntityClasses.Current.Source is { } source
+        ? EntityClasses.Project is { IsGodot: true, File: null }
+            ? $"Entity classes are the scenes in your Godot project's entity folders ({EntityClasses.ProjectRoot})"
+            : $"Entity classes come from {source}"
+        : EntityClasses.Problem ?? "Built-in classes. Save the level inside a game project (a Godot project with the Chip import plugin, or a folder with chip.project.json) to use its classes";
+
+    /// <summary>The resource field's hint: the project's asset prefix ("res://…"), else a plain path.</summary>
+    static string AssetHint() => (EntityClasses.Project?.AssetPrefix ?? "res://") is { Length: > 0 } prefix ? prefix + "…" : "path…";
 
     // ---- Class properties ----
 
@@ -276,12 +283,12 @@ public sealed class EntitySection : IInspectorSection
                 ReferenceCombo(ctx, e, value, Commit);
                 break;
             case PropType.Resource:
-                if (_text.Field($"##r{id}/{name}", EntityValues.Text(value), out var path, hint: "res://…", width: fieldW))
+                if (_text.Field($"##r{id}/{name}", EntityValues.Text(value), out var path, hint: AssetHint(), width: fieldW))
                     Commit(path.Trim().Length == 0 ? EntityValues.Null : EntityValues.Of(path.Trim()));
                 break;
             default:
                 ImGui.AlignTextToFramePadding();
-                ImGui.TextColored(Theme.TextDisabled, $"Set in Godot ({spec.EngineType})");
+                ImGui.TextColored(Theme.TextDisabled, $"Set in {EntityClasses.Engine} ({spec.EngineType})");
                 break;
         }
     }

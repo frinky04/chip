@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "classes": {
+    "door": {
+      "label": "Door",
+      "doc": "A door that opens when the player comes near.",
+      "props": [
+        {
+          "name": "mode",
+          "type": "enum",
+          "options": [
+            {
+              "label": "Swing",
+              "value": "swing"
+            },
+            {
+              "label": "Slide",
+              "value": "slide"
+            }
+          ],
+          "default": "swing"
+        },
+        {
+          "name": "open_angle",
+          "type": "float",
+          "range": [
+            0,
+            180,
+            0
+          ],
+          "suffix": "°",
+          "default": 90
+        },
+        {
+          "name": "partner",
+          "type": "entity",
+          "class": "door",
+          "doc": "Opens together with this door.",
+          "default": null
+        },
+        {
+          "name": "sound",
+          "type": "asset",
+          "doc": "Played when it opens.",
+          "default": "assets/sounds/door.wav"
+        },
+        {
+          "name": "keys",
+          "type": "array",
+          "of": "string",
+          "doc": "Any of these keys unlocks it; none means it's never locked.",
+          "group": "Lock",
+          "default": []
+        }
+      ],
+      "bounds": [
+        [
+          -0.5,
+          0,
+          -0.05
+        ],
+        [
+          0.5,
+          2,
+          0.05
+        ]
+      ]
+    },
+    "light": {
+      "label": "Light",
+      "doc": "A point light.",
+      "props": [
+        {
+          "name": "color",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "range",
+          "type": "float",
+          "range": [
+            0,
+            1,
+            0
+          ],
+          "or_greater": true,
+          "suffix": " m",
+          "default": 8
+        },
+        {
+          "name": "linked",
+          "type": "array",
+          "of": "entity",
+          "class": "light",
+          "doc": "Lights that switch on and off with this one.",
+          "default": []
+        }
+      ]
+    },
+    "pickup": {
+      "label": "Pickup",
+      "doc": "Something the player collects by walking into it.",
+      "props": [
+        {
+          "name": "item",
+          "type": "string",
+          "doc": "Item id.",
+          "default": "coin"
+        },
+        {
+          "name": "amount",
+          "type": "int",
+          "range": [
+            1,
+            99,
+            1
+          ],
+          "default": 1
+        },
+        {
+          "name": "respawns",
+          "type": "bool",
+          "doc": "Comes back 30 s after it's taken.",
+          "default": false
+        }
+      ],
+      "bounds": [
+        [
+          -0.25,
+          0,
+          -0.25
+        ],
+        [
+          0.25,
+          0.5,
+          0.25
+        ]
+      ]
+    },
+    "player_start": {
+      "label": "Player start",
+      "doc": "Where the player appears.",
+      "props": [
+        {
+          "name": "team",
+          "type": "int",
+          "range": [
+            1,
+            4,
+            1
+          ],
+          "doc": "Which team spawns here.",
+          "default": 1
+        }
+      ],
+      "bounds": [
+        [
+          -0.3,
+          0,
+          -0.3
+        ],
+        [
+          0.3,
+          1.8,
+          0.3
+        ]
+      ]
+    }
+  }
+}

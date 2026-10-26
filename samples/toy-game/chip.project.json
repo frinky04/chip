@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "engine": "Toy",
+  "entities": "chip/entities.json",
+  "assetPrefix": "assets/"
+}

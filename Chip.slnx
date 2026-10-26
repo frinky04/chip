@@ -3,6 +3,9 @@
     <Project Path="src/Chip.Core/Chip.Core.csproj" />
     <Project Path="src/Chip.Editor/Chip.Editor.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/toy-game/game/ToyGame.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Chip.Core.Tests/Chip.Core.Tests.csproj" />
     <Project Path="tests/Chip.Bench/Chip.Bench.csproj" />

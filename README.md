@@ -14,7 +14,7 @@ geometry, such as baseboards along the walls, railings and stairs, and they upda
 - [Materials and texturing](#materials-and-texturing)
 - [Dressing](#dressing)
 - [Reference models and entities](#reference-models-and-entities)
-- [Exporting to Godot](#exporting-to-godot)
+- [Exporting to your engine](#exporting-to-your-engine)
 - [Shortcuts](#shortcuts)
 - [Settings and files](#settings-and-files)
 - [Not there yet](#not-there-yet)
@@ -164,10 +164,13 @@ goes; otherwise references stay in the editor. Chip reloads a reference when its
 **Entities** are things placed in the level that aren't geometry: the player start, lights, targets, and your own game
 objects. With the Godot addon enabled, every scene under `res://entities/` becomes an entity class you can place from the
 Place tab (or with `Shift+E`). Its `@export` variables are the properties the inspector edits, and on import each entity
-becomes an instance of its scene. Without a Godot project Chip offers its built-in classes. See
+becomes an instance of its scene. Other engines list their classes in an entity manifest
+([docs/engines.md](docs/engines.md)). Without a game project Chip offers its built-in classes. See
 [docs/entities.md](docs/entities.md).
 
-## Exporting to Godot
+## Exporting to your engine
+
+### Godot
 
 1. Copy `godot/addons/chip_import` into your Godot project (4.3 or later) and enable **Chip import** under
    Project > Project Settings > Plugins.
@@ -181,16 +184,27 @@ On import, entities become instances of their scenes and trigger faces become `A
 and map Chip materials to Godot material resources. The addon's own [README](godot/addons/chip_import/README.md) has the
 details.
 
-For other engines, set the export scale under Export settings: 1 for metre engines such as Godot (the default), 100 for
-centimetre engines. File > Export OBJ writes an `.obj` with its `.mtl`, and File > Import mesh reads `.glb`, `.gltf` and
-`.obj` files.
+### Any other engine
 
-Chip can also export or check a level without opening a window, for build scripts:
+Put a `chip.project.json` at the game's root that names the engine and an entity manifest, which you generate from your
+game's entity definitions. Then load the `.glb` with any glTF library: entities, colliders and triggers are marked in
+node extras. [docs/engines.md](docs/engines.md) walks through it, and [samples/toy-game](samples/toy-game) is a
+complete example. Set the export scale under Export settings: 1 for metre engines (the default), 100 for centimetre
+engines. File > Export OBJ writes an `.obj` with its `.mtl`, and File > Import mesh reads `.glb`, `.gltf` and `.obj`
+files.
+
+### Build scripts and agents
+
+Chip can export or check a level without opening a window:
 
 ```
-Chip.exe --export level.chip [out.glb]       # export (without dressing); defaults to the level's export path
-Chip.exe --rules-check level.chip [--json]   # check the dressing rules: exit 0 clean, 1 warnings, 2 errors
+Chip.exe --export level.chip [out.glb]          # export (without dressing); defaults to the level's export path
+Chip.exe --entities-check <game root> [--json]  # check the entity manifest: exit 0 clean, 1 warnings, 2 errors
+Chip.exe --rules-check level.chip [--json]      # check the dressing rules: exit 0 clean, 1 warnings, 2 errors
 ```
+
+[skills/chip](skills/chip/SKILL.md) is an agent skill for the whole pipeline: copy it into a game's repository so
+coding agents can connect the game, change its entity classes, and edit and export levels.
 
 ## Shortcuts
 

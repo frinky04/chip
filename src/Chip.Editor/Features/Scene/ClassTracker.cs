@@ -6,8 +6,8 @@ using Chip.Editor.Framework;
 namespace Chip.Editor.Features.Scene;
 
 /// <summary>
-/// Keeps <see cref="EntityClasses"/> on the Godot project the level exports into (else the one it's saved in), reloading
-/// the addon's manifest when it changes, and says so in the status bar.
+/// Keeps <see cref="EntityClasses"/> on the game project the level exports into (else the one it's saved in), reloading
+/// its manifest when it changes, and says so in the status bar.
 /// </summary>
 public sealed class ClassTracker
 {

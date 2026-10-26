@@ -34,7 +34,7 @@ public static partial class DocumentSerializer
         float? TexelDensity = null,    // px per metre; files without it predate the setting and were built at 512
         string? Dressing = null);      // dressing rules file, relative to the level (optional, no version bump)
 
-    sealed record MeshDto(int Id, string Name, bool Hidden, List<float[]> Positions, List<FaceDto> Faces,
+    sealed record MeshDto(int Id, string? Name, bool Hidden, List<float[]> Positions, List<FaceDto> Faces,
         bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null,
         string[]? Tags = null,  // dressing tags (optional, no version bump)
         DressingDto? Dressing = null);
@@ -66,7 +66,7 @@ public static partial class DocumentSerializer
         catch (ArgumentException e) { throw new InvalidDataException($"{where}: {e.Message}"); }
     }
 
-    sealed record EntityDto(int Id, string ClassName, string Name, float[] Position, float[] Rotation, bool Hidden,
+    sealed record EntityDto(int Id, string? ClassName, string? Name, float[]? Position, float[]? Rotation, bool Hidden,
         Dictionary<string, JsonElement>? Properties,
         bool Locked = false); // stream H
 
@@ -110,7 +110,7 @@ public static partial class DocumentSerializer
         {
             var mesh = new PolyMesh
             {
-                Id = m.Id, Name = m.Name, Hidden = m.Hidden, Locked = m.Locked, Collision = m.Collision,
+                Id = m.Id, Name = m.Name ?? "mesh", Hidden = m.Hidden, Locked = m.Locked, Collision = m.Collision,
                 Positions = m.Positions.Select(Vec).ToList(), Tags = TagsFromDto(m.Tags, $"Mesh {m.Id}"),
                 Dressing = DressingFromDto(m.Dressing, m.Id),
             };
@@ -142,7 +142,9 @@ public static partial class DocumentSerializer
             {
                 var entity = new Entity
                 {
-                    Id = e.Id, ClassName = e.ClassName, Name = e.Name, Position = Vec(e.Position), Rotation = Vec(e.Rotation),
+                    // Hand-written levels (scripts, agents) may leave out what an unnamed entity at the origin doesn't need.
+                    Id = e.Id, ClassName = e.ClassName ?? "", Name = e.Name ?? "",
+                    Position = e.Position is { } p ? Vec(p) : Vector3.Zero, Rotation = e.Rotation is { } r ? Vec(r) : Vector3.Zero,
                     Hidden = e.Hidden, Properties = e.Properties?.ToDictionary(kv => kv.Key, kv => kv.Value.Clone()) ?? new(),
                     Locked = e.Locked,
                 };

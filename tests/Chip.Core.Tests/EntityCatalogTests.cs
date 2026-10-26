@@ -215,7 +215,7 @@ public class EntityCatalogTests : IDisposable
         if (manifest != null)
         {
             Directory.CreateDirectory(Path.Combine(_dir, ".chip"));
-            File.WriteAllText(Path.Combine(_dir, EntityClassTracker.ManifestPath), manifest);
+            File.WriteAllText(Path.Combine(_dir, GameProject.DefaultManifest), manifest);
         }
         return Path.Combine(_dir, "levels", "level01.chip");
     }
@@ -240,12 +240,12 @@ public class EntityCatalogTests : IDisposable
         t.Track(level);
         int revision = t.Revision;
 
-        File.WriteAllText(Path.Combine(_dir, EntityClassTracker.ManifestPath), Manifest.Replace("\"door\"", "\"gate\""));
+        File.WriteAllText(Path.Combine(_dir, GameProject.DefaultManifest), Manifest.Replace("\"door\"", "\"gate\""));
         Assert.True(t.Track(level));
         Assert.NotNull(t.Current.Find("gate"));
         Assert.True(t.Revision > revision);
 
-        File.WriteAllText(Path.Combine(_dir, EntityClassTracker.ManifestPath), "{ \"classes\": ");
+        File.WriteAllText(Path.Combine(_dir, GameProject.DefaultManifest), "{ \"classes\": ");
         Assert.True(t.Track(level));
         Assert.NotNull(t.Current.Find("gate"));
         Assert.Contains("Can't read the entity classes", t.Problem);
@@ -354,7 +354,7 @@ public class GlobalClasses : IDisposable
     {
         Directory.CreateDirectory(Path.Combine(_dir, ".chip"));
         File.WriteAllText(Path.Combine(_dir, "project.godot"), "");
-        var manifest = Path.Combine(_dir, EntityClassTracker.ManifestPath);
+        var manifest = Path.Combine(_dir, GameProject.DefaultManifest);
         File.WriteAllText(manifest, EntityCatalogTests.Manifest);
         EntityClasses.Use(EntityCatalog.Parse(EntityCatalogTests.Manifest, manifest));
     }

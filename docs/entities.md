@@ -124,7 +124,9 @@ A list is `"type": "array"` with its item type in `"of"` (any type above but `ar
 `type/hint:hint_string` export hint, so an `Array[Node3D]` lists Node3D entities and an `Array[Vector2i]` has whole
 numbers. A node list's default is always empty: the nodes in a scene's own list mean nothing in a level.
 
-The format doesn't depend on Godot: another engine's plugin could write it.
+The format doesn't depend on Godot: other engines write it themselves, from a `chip.project.json` that says where it is
+([engines.md](engines.md)). They can also use the neutral type names `entity` (for `node`) and `asset` (for
+`resource`). [`skills/chip/reference/manifest.md`](../skills/chip/reference/manifest.md) lists every field.
 
 ## Levels and export
 
@@ -171,6 +173,8 @@ Nothing here stops a level from loading or exporting.
 - `src/Chip.Core/Scene/EntityValues.cs`: typed values, tolerant readers (v2 strings, colour forms), `Coerce` against a spec.
 - `src/Chip.Core/Scene/Entities.cs`: `EntityClasses` (the classes in use) and `EntityClassTracker` (finds the project,
   reloads the manifest).
+- `src/Chip.Core/Scene/GameProject.cs`: finding the project (`chip.project.json` or `project.godot`) and its engine
+  conventions. `EntityManifestCheck.cs`: `--entities-check`.
 - `src/Chip.Editor/Features/Scene/EntitySection.cs` (inspector), `ClassPicker.cs`, `ClassTracker.cs` (polls twice a second).
 - `godot/addons/chip_import/`: `chip_manifest.gd` (+ `_cli.gd`), `chip_processor.gd`, `entities/` (built-in classes).
 - `godot/` is the addon's dev project: sample classes in `godot/entities/`, a demo level in `godot/levels/`.

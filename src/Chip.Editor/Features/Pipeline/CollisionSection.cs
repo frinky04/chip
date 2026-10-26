@@ -6,7 +6,7 @@ using static Chip.Editor.UI.Widgets;
 
 namespace Chip.Editor.Features.Pipeline;
 
-/// <summary>Per-mesh export collision for the selected objects (Godot import suffixes).</summary>
+/// <summary>Per-mesh export collision for the selected objects (<c>chip_collider</c> extras, and Godot import suffixes in Godot projects).</summary>
 public sealed class CollisionSection : IInspectorSection
 {
     public static readonly (CollisionMode Mode, string Label, string Tip)[] Modes =

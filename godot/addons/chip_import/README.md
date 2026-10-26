@@ -55,7 +55,7 @@ file, but nothing writes the manifest, so Chip only offers its built-in classes.
 ## Material remap
 
 In Chip, File > Export settings > Material remap maps a Chip material (e.g. `brick`) to a Godot resource (e.g.
-`res://materials/brick.tres`). The path is written to the glTF material's `extras.godot_path` and to each mesh node's
+`res://materials/brick.tres`). The path is written to the glTF material's `extras.chip_path` (files from older Chips: `extras.godot_path`) and to each mesh node's
 `extras.chip_remap`. If the path doesn't exist when Godot imports, the plugin prints a warning and keeps the imported
 material.
 

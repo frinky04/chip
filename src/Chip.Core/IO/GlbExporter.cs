@@ -22,14 +22,17 @@ public sealed record ExportResult(byte[] Data, IReadOnlyList<SideFile> SideFiles
 /// Writes a glTF 2.0 binary. One node per mesh at the world origin (stable across re-exports), one primitive per material,
 /// per-corner normals (flat, or smoothed across soft edges unless <see cref="ExportSettings.Smoothing"/> is off), explicit
 /// UVs where present else the face projection, and material images embedded as PNG (or referenced, see
-/// <see cref="ExportSettings.EmbedTextures"/>). Collision follows Godot's import suffixes: <c>-col</c> (render + trimesh
-/// collider, from <see cref="Document.ExportCollision"/> or <see cref="CollisionMode.Default"/>), <c>-colonly</c> and
-/// <c>-convcolonly</c> (<see cref="CollisionMode.ConvexOnly"/>). Collision-only nodes carry no material.
+/// <see cref="ExportSettings.EmbedTextures"/>). Colliding nodes carry <c>extras.chip_collider</c> (<c>trimesh</c> or
+/// <c>convex</c>) and, when they aren't drawn, <c>extras.chip_render = false</c>. When the project wants them
+/// (<see cref="GameProject.CollisionSuffixes"/>, Godot's, and the default outside a project) node names also get Godot's
+/// import suffixes: <c>-col</c> (render + trimesh collider, from <see cref="Document.ExportCollision"/> or
+/// <see cref="CollisionMode.Default"/>), <c>-colonly</c> and <c>-convcolonly</c> (<see cref="CollisionMode.ConvexOnly"/>).
+/// Collision-only nodes carry no material.
 /// Tool materials (<see cref="ToolMaterial"/>): nodraw and skip faces never render; clip faces, and nodraw faces of a
 /// colliding mesh, go to a <c>name_clip-colonly</c> node (<c>extras.chip_tool = "clip"</c>); trigger faces go to
 /// <c>name_trigger-colonly</c> with <c>extras.chip_tool = "trigger"</c>.
 /// Mesh nodes carry <c>extras.chip_mesh</c>/<c>chip_id</c> (and <c>chip_remap</c>, material name to path, for the remaps
-/// they use); remapped materials carry <c>extras.godot_path</c>. Entities
+/// they use); remapped materials carry <c>extras.chip_path</c>. Entities
 /// follow as empty nodes (translation, rotation) with <c>extras = { chip_class, chip_id, chip_uid?, chip_scene?,
 /// chip_name?, properties }</c>: the class's engine scene, and the values the entity sets, typed by its class.
 /// </summary>
@@ -62,6 +65,7 @@ public static class GlbExporter
         var sideFiles = new List<SideFile>();
         var warnings = new List<string>();
         float s = doc.ExportScale;
+        bool suffixes = EntityClasses.Project?.CollisionSuffixes ?? true;
         int meshCount = 0, entityCount = 0;
 
         int View(ReadOnlySpan<byte> data, int? target)
@@ -103,7 +107,7 @@ public static class GlbExporter
             }
             else pbr["baseColorFactor"] = new JsonArray(1f, 0f, 1f, 1f);
             var mat = new JsonObject { ["name"] = name, ["pbrMetallicRoughness"] = pbr };
-            if (opt.Remap(name) is { } path) mat["extras"] = new JsonObject { ["godot_path"] = path };
+            if (opt.Remap(name) is { } path) mat["extras"] = new JsonObject { ["chip_path"] = path };
             gltfMaterials.Add(mat);
             return materialIndex[name] = gltfMaterials.Count - 1;
         }
@@ -212,14 +216,19 @@ public static class GlbExporter
             entityCount++;
         }
 
+        // Every collider says what it is in extras; Godot projects also get the name suffix its importer reads.
         void AddNode(string name, string suffix, JsonArray primitives, JsonObject extras)
         {
             if (primitives.Count == 0) return;
+            // A trigger is a volume, not a wall: chip_tool says what it is, so it never claims to collide.
+            bool trigger = extras["chip_tool"]?.GetValue<string>() == "trigger";
+            if (suffix.Length > 0 && !trigger) extras["chip_collider"] = suffix.StartsWith("-conv", StringComparison.Ordinal) ? "convex" : "trimesh";
+            if (suffix.EndsWith("only", StringComparison.Ordinal)) extras["chip_render"] = false;
             meshes.Add(new JsonObject { ["name"] = name, ["primitives"] = primitives });
-            nodes.Add(new JsonObject { ["name"] = name + suffix, ["mesh"] = meshes.Count - 1, ["extras"] = extras });
+            nodes.Add(new JsonObject { ["name"] = suffixes ? name + suffix : name, ["mesh"] = meshes.Count - 1, ["extras"] = extras });
         }
 
-        // Positions and triangles only: Godot builds the shape from them and drops the mesh.
+        // Positions and triangles only: the engine builds the shape from them and drops the mesh.
         JsonArray CollisionPrimitive(Vector3[] positions, int[] triangles)
         {
             if (triangles.Length == 0) return new JsonArray();

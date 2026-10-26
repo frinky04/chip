@@ -16,8 +16,11 @@ if (args.Length >= 2 && args[0] == "--rules-check")
         return 4;
     }
 }
-// Headless export: Chip --export level.chip [out.glb] (default: the level's export path). Entity classes come from the
-// Godot project the output or the level is in, as in the editor. Dressing rules aren't applied.
+// Headless entity manifest check: Chip --entities-check <level|folder|manifest> [--json] (docs/engines.md).
+if (args.Length >= 2 && args[0] == "--entities-check")
+    return Chip.Core.Scene.EntityManifestCheck.Run(args[1], Console.Out, json: args.Contains("--json"));
+// Headless export: Chip --export level.chip [out.glb] (default: the level's export path). Entity classes and engine
+// conventions come from the game project the output or the level is in, as in the editor. Dressing rules aren't applied.
 if (args.Length >= 2 && args[0] == "--export")
 {
     try

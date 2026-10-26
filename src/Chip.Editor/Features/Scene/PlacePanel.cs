@@ -9,7 +9,7 @@ using static Chip.Editor.UI.Widgets;
 namespace Chip.Editor.Features.Scene;
 
 /// <summary>
-/// The Place tab of the dock: everything you can put in the level that isn't geometry. Entity classes (from the Godot
+/// The Place tab of the dock: everything you can put in the level that isn't geometry. Entity classes (from the game
 /// project, else the built-ins) and reference models. Click one to arm the entity tool with it, then click in the
 /// viewport; Esc puts the tool down.
 /// </summary>

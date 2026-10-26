@@ -4,7 +4,7 @@ using NativeFileDialogSharp;
 namespace Chip.Editor.Features.Pipeline;
 
 /// <summary>
-/// The Godot pipeline (SPEC §11): export settings, per-mesh collision, export on save (watch mode), OBJ export and
+/// The export pipeline (SPEC §11): export settings, per-mesh collision, export on save (watch mode), OBJ export and
 /// glTF/OBJ import. Watch mode hooks <c>Session.Saved</c>, so every way of saving re-exports.
 /// </summary>
 public sealed class PipelineFeature : IEditorFeature

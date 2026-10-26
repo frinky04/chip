@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Chip.Core\Chip.Core.csproj" />
+    <!-- The sample custom-engine game: ToyGameTests load Chip's exports with its loader. -->
+    <ProjectReference Include="..\..\samples\toy-game\game\ToyGame.csproj" />
   </ItemGroup>
 
 </Project>

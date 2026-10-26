@@ -5,7 +5,7 @@ extends RefCounted
 ##   - Entity nodes (extras.chip_class) become instances of their class's scene (extras.chip_uid, else
 ##     extras.chip_scene), with the level's property values applied. The instance stays linked to its scene, so editing
 ##     the scene updates every level. A class whose scene can't be found becomes a Marker3D carrying the data.
-##   - Materials with extras.godot_path (or listed in a mesh node's extras.chip_remap) are swapped for that resource.
+##   - Materials with extras.chip_path (or listed in a mesh node's extras.chip_remap) are swapped for that resource.
 ##   - Trigger volumes (extras.chip_tool == "trigger") become Area3D.
 ## Collision (-col, -colonly, -convcolonly) is left to Godot's built-in name suffix handling.
 ## Safe to run twice: converted nodes no longer carry the extras that trigger a conversion.
@@ -244,7 +244,8 @@ static func _remap_materials(node: Node) -> void:
 static func _remapped(mat: Material, table: Dictionary) -> Material:
 	if mat == null:
 		return null
-	var path := str(_extras(mat).get("godot_path", ""))
+	# godot_path: files exported before Chip used the engine-neutral chip_path.
+	var path := str(_extras(mat).get("chip_path", _extras(mat).get("godot_path", "")))
 	if path.is_empty():
 		path = str(table.get(mat.resource_name, ""))
 	if path.is_empty():

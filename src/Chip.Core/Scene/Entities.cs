@@ -5,9 +5,9 @@ using Chip.Core.Picking;
 namespace Chip.Core.Scene;
 
 /// <summary>
-/// The entity classes in use: the Godot project's (found by walking up from the level or its export path to
-/// <c>project.godot</c>, read from the manifest the Chip import addon keeps in <c>.chip/entities.json</c>), else the
-/// built-in ones. <see cref="Track"/> follows the project and reloads the manifest when it changes; a manifest that
+/// The entity classes in use: the game project's (found by walking up from the level or its export path to
+/// <c>chip.project.json</c> or <c>project.godot</c>, see <see cref="GameProject"/>), read from its entity manifest, else
+/// the built-in ones. <see cref="Track"/> follows the project and reloads the manifest when it changes; a manifest that
 /// can't be read keeps the last good classes and says why in <see cref="Problem"/>.
 /// </summary>
 public static class EntityClasses
@@ -17,8 +17,12 @@ public static class EntityClasses
     public static EntityCatalog Current => Tracker.Current;
     /// <summary>Changes whenever <see cref="Current"/> does, so caches of class boxes can rebuild.</summary>
     public static int Revision => Tracker.Revision;
-    /// <summary>The Godot project folder the level is in, or null.</summary>
+    /// <summary>The game project the level is in, or null.</summary>
+    public static GameProject? Project => Tracker.Project;
+    /// <summary>The project folder the level is in, or null.</summary>
     public static string? ProjectRoot => Tracker.ProjectRoot;
+    /// <summary>The engine's name for messages: the project's, else Godot (whose classes the built-ins are).</summary>
+    public static string Engine => Tracker.Project?.Engine ?? "Godot";
     /// <summary>Why the project's classes aren't in use (no manifest yet, or one that can't be read); null when they are.</summary>
     public static string? Problem => Tracker.Problem;
 
@@ -47,59 +51,52 @@ public static class EntityClasses
     };
 }
 
-/// <summary>Follows the Godot project a level is in and the entity classes its manifest declares (see <see cref="EntityClasses"/>).</summary>
+/// <summary>Follows the game project a level is in and the entity classes its manifest declares (see <see cref="EntityClasses"/>).</summary>
 public sealed class EntityClassTracker
 {
-    /// <summary>Where the addon writes the manifest, relative to the project folder.</summary>
-    public static readonly string ManifestPath = Path.Combine(".chip", "entities.json");
-
     public EntityCatalog Current { get; private set; } = EntityCatalog.BuiltIn;
     public int Revision { get; private set; }
-    public string? ProjectRoot { get; private set; }
+    public GameProject? Project { get; private set; }
+    public string? ProjectRoot => Project?.Root;
     public string? Problem { get; private set; }
 
-    /// <summary>The folder holding <c>project.godot</c> at or above <paramref name="path"/> (a file or folder), or null.</summary>
-    public static string? FindProject(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return null;
-        try
-        {
-            var dir = Path.GetFullPath(path);
-            if (!Directory.Exists(dir)) dir = Path.GetDirectoryName(dir);
-            for (; dir != null; dir = Path.GetDirectoryName(dir))
-                if (File.Exists(Path.Combine(dir, "project.godot"))) return dir;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
-        return null;
-    }
-
-    string? _manifest;
+    string? _key;
     long _stamp;
 
     /// <summary>
     /// Uses the project found from the first of <paramref name="near"/> that is inside one (the level's export path,
-    /// then the level), reloading its manifest when it changed on disk. True when the classes changed.
+    /// then the level), reloading its manifest when it or the project file changed on disk. True when the classes changed.
     /// </summary>
     public bool Track(params string?[] near)
     {
-        string? root = near.Select(FindProject).FirstOrDefault(r => r != null);
-        string? manifest = root != null ? Path.Combine(root, ManifestPath) : null;
-        long stamp = manifest != null ? Stamp(manifest) : 0;
-        if (manifest == _manifest && stamp == _stamp) return false;
-        _manifest = manifest;
+        string? root = near.Select(GameProject.FindRoot).FirstOrDefault(r => r != null);
+        string? projectFile = root != null ? Path.Combine(root, GameProject.FileName) : null;
+        long projectStamp = projectFile != null ? Stamp(projectFile) : 0;
+        // The project file names the manifest, so it's read first; a change to either reloads.
+        string? problem = null;
+        var project = root != null ? GameProject.Find(root, out problem) : null;
+        string? manifest = project?.Manifest;
+        long stamp = (manifest != null ? Stamp(manifest) : 0) ^ (projectStamp * 31);
+        string? key = project != null ? $"{root}|{manifest}" : null;
+        if (key == _key && stamp == _stamp) return false;
+        _key = key;
         _stamp = stamp;
-        ProjectRoot = root;
-        if (root == null) Set(EntityCatalog.BuiltIn, null);
-        else if (stamp == 0)
-            Set(EntityCatalog.BuiltIn, $"{Path.GetFileName(root)} has no entity classes yet. Enable the Chip import plugin in Godot " +
-                "(Project > Project Settings > Plugins); until then Chip offers its built-in classes");
+        Project = project;
+        if (project == null) Set(EntityCatalog.BuiltIn, null);
+        else if (problem != null) Set(EntityCatalog.BuiltIn, problem + "; until it's fixed Chip offers its built-in classes");
+        else if (!File.Exists(manifest))
+            Set(EntityCatalog.BuiltIn, project.IsGodot && project.File == null
+                ? $"{Path.GetFileName(root)} has no entity classes yet. Enable the Chip import plugin in Godot " +
+                  "(Project > Project Settings > Plugins); until then Chip offers its built-in classes"
+                : $"{Path.GetFileName(root)} has no entity classes yet: write {project.Relative(manifest!)} " +
+                  "(docs/engines.md); until then Chip offers its built-in classes");
         else
             try { Set(EntityCatalog.Parse(File.ReadAllText(manifest!), manifest), null); }
             catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException)
             {
                 // Keep the project's last good classes (the addon may be mid-write; the next change reloads).
                 Set(Current.Source == manifest ? Current : EntityCatalog.BuiltIn,
-                    $"Can't read the entity classes in {Path.Combine(Path.GetFileName(root), ManifestPath)}: {e.Message}");
+                    $"Can't read the entity classes in {Path.Combine(Path.GetFileName(root)!, project.Relative(manifest!))}: {e.Message}");
             }
         return true;
     }
@@ -107,9 +104,9 @@ public sealed class EntityClassTracker
     /// <summary>Uses <paramref name="catalog"/> until the next <see cref="Track"/> that finds a change.</summary>
     public void Use(EntityCatalog catalog)
     {
-        _manifest = catalog.Source;
-        _stamp = catalog.Source != null ? Stamp(catalog.Source) : 0;
-        ProjectRoot = catalog.Source != null ? FindProject(catalog.Source) : null;
+        Project = catalog.Source != null ? GameProject.Find(catalog.Source) : null;
+        _key = Project != null ? $"{Project.Root}|{catalog.Source}" : null;
+        _stamp = catalog.Source != null ? Stamp(catalog.Source) ^ (Project?.File is { } f ? Stamp(f) * 31 : 0) : 0;
         Set(catalog, null);
     }
 

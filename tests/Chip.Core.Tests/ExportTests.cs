@@ -170,7 +170,7 @@ public class ExportTests
     }
 
     [Fact]
-    public void Remapped_materials_carry_their_godot_path_in_extras()
+    public void Remapped_materials_carry_their_engine_path_in_extras()
     {
         var doc = new Document();
         var box = doc.Add(Box(Vector3.Zero, Vector3.One, "brick"));
@@ -179,7 +179,7 @@ public class ExportTests
         var json = Glb.Json(GlbExporter.Build(doc, new MaterialLibrary()));
         var materials = json["materials"]!.AsArray();
         var brick = materials.Single(m => m!["name"]!.GetValue<string>() == "brick")!;
-        Assert.Equal("res://materials/brick.tres", brick["extras"]!["godot_path"]!.GetValue<string>());
+        Assert.Equal("res://materials/brick.tres", brick["extras"]!["chip_path"]!.GetValue<string>());
         Assert.Null(materials.Single(m => m!["name"]!.GetValue<string>() == "concrete")!["extras"]);
         var remap = json["nodes"]![0]!["extras"]!["chip_remap"]!.AsObject();
         Assert.Equal("res://materials/brick.tres", Assert.Single(remap).Value!.GetValue<string>());
