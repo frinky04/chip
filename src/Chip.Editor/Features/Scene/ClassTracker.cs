@@ -45,12 +45,14 @@ public sealed class ClassTracker
     /// Moves values and connections stored under a class's old names (<c>"was"</c>) to the current ones, once per level and
     /// set of classes, as one undo step, so a rename in the game never strands what levels hold.
     /// </summary>
-    void Migrate(EditorContext ctx)
+    public void Migrate(EditorContext ctx)
     {
         if (ReferenceEquals(ctx.Doc, _migratedDoc) && EntityClasses.Revision == _migratedRevision) return;
+        // Mid-gesture, wait: the next check after the tool lets go does it (marking it done now would skip it for good).
+        if (ctx.Interacting) return;
         _migratedDoc = ctx.Doc;
         _migratedRevision = EntityClasses.Revision;
-        if (EntityClasses.Current.Source == null || ctx.Interacting) return;
+        if (EntityClasses.Current.Source == null) return;
         // Renames touch entities only: try them on copies first, so a level with nothing to rename gets no undo step.
         var probe = new Document { Entities = ctx.Doc.Entities.Select(e => e.Clone()).ToList() };
         if (LevelMigration.Apply(probe, EntityClasses.Current) == 0) return;

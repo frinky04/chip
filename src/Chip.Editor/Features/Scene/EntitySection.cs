@@ -158,9 +158,7 @@ public sealed class EntitySection : IInspectorSection
 
         if (spec.Type == PropType.Array)
         {
-            var items = value.ValueKind == JsonValueKind.Array ? value.EnumerateArray().ToList() : [];
-            ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(Theme.TextDim, items.Count == 0 ? "Empty" : items.Count == 1 ? "1 item" : $"{items.Count} items");
+            ValueFields.ListCount(value);
             ImGui.SameLine(labelW + fieldW + ImGui.GetStyle().ItemSpacing.X);
         }
         else
@@ -178,36 +176,7 @@ public sealed class EntitySection : IInspectorSection
         }
         else ImGui.Dummy(new Vector2(resetW, 0));
 
-        if (spec.Type == PropType.Array) ListItems(ctx, e, spec, value, labelW, fieldW, resetW, Commit);
-    }
-
-    /// <summary>
-    /// A list's items under its row: the number in the label column, a field of the item type, and a remove button in
-    /// the × column; then a button that adds an item (the last one again, so a run of similar items is quick).
-    /// </summary>
-    void ListItems(EditorContext ctx, Entity e, PropSpec spec, JsonElement value, float labelW, float fieldW, float buttonW, Action<JsonElement> commit)
-    {
-        var items = value.ValueKind == JsonValueKind.Array ? value.EnumerateArray().ToList() : [];
-        var item = spec.Item;
-        for (int i = 0; i < items.Count; i++)
-        {
-            int at = i;
-            ImGui.PushID(i);
-            ImGui.AlignTextToFramePadding();
-            ImGui.SetCursorPosX(labelW - ImGui.CalcTextSize($"{i + 1}").X - Theme.Px(8));
-            ImGui.TextColored(Theme.TextDisabled, $"{i + 1}");
-            ImGui.SameLine(labelW);
-            ImGui.SetNextItemWidth(fieldW);
-            _fields.Draw(ctx, e, item, items[i], $"{spec.Name}[{i}]", fieldW, v => commit(EntityValues.List(items.Select((x, j) => j == at ? v : x))));
-            ImGui.SameLine();
-            if (IconButton("remove", Icon.Trash, $"Remove item {i + 1}", buttonW))
-                commit(EntityValues.List(items.Where((_, j) => j != at)));
-            ImGui.PopID();
-        }
-        ImGui.SetCursorPosX(labelW);
-        if (ImGui.Button("Add item", new Vector2(fieldW, 0)))
-            commit(EntityValues.List([.. items, items.Count > 0 && item.Type != PropType.Node ? items[^1] : ValueFields.NewItem(item)]));
-        Tip(item.Type == PropType.Node || items.Count == 0 ? $"Add a {EntityValues.TypeName(item.Type)}" : "Add a copy of the last item");
+        if (spec.Type == PropType.Array) _fields.ListItems(ctx, e, spec, value, spec.Name, labelW, fieldW, resetW, Commit);
     }
 
     static string FieldTip(PropSpec spec, bool set, string? error)

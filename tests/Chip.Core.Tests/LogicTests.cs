@@ -205,6 +205,29 @@ public sealed class LogicTests : IDisposable
     }
 
     [Fact]
+    public void A_tag_offers_only_inputs_whose_arguments_suit_every_tagged_class()
+    {
+        var catalog = EntityCatalog.Parse("""
+            {"classes":{
+              "watcher_a":{"inputs":[{"name":"look_at","params":[{"name":"who","type":"entity","class":"door"}]},{"name":"wake"}]},
+              "watcher_b":{"inputs":[{"name":"look_at","params":[{"name":"who","type":"entity","class":"light"}]},{"name":"wake"}]},
+              "door":{}, "light":{}, "button":{"outputs":[{"name":"pressed"}]}}}
+            """, null);
+        var doc = new Document();
+        var a = doc.Add(new Entity { ClassName = "watcher_a", Tags = TagSet.Of("watchers") });
+        doc.Add(new Entity { ClassName = "watcher_b", Tags = TagSet.Of("watchers") });
+        var door = doc.Add(new Entity { ClassName = "door" });
+        var button = doc.Add(new Entity { ClassName = "button" });
+        var target = new ConnectionTarget(TargetKind.Tag, Name: "watchers");
+
+        // Same name and type, but one accepts a door and the other a light: no argument suits both.
+        Assert.Equal(["wake"], LogicOps.InputsFor(doc, catalog, null, button, target).Select(i => i.Name));
+        button.Outputs.Add(new Connection { On = "pressed", Target = target, Do = "look_at", Args = { ["who"] = EntityValues.Ref(door.Id) } });
+        Assert.Contains(LogicOps.Check(doc, catalog, null), p => p.Message.EndsWith("look_at is not an input of the target"));
+        Assert.Single(LogicOps.InputsFor(doc, catalog, null, button, new ConnectionTarget(TargetKind.Entity, a.Id)), i => i.Name == "look_at");
+    }
+
+    [Fact]
     public void Duplicating_entities_points_their_connections_at_the_copies_and_adding_drops_outside_targets()
     {
         var doc = new Document();

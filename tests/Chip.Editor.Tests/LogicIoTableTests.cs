@@ -58,6 +58,18 @@ public sealed class LogicIoTableTests : IDisposable
     }
 
     [Fact]
+    public void A_list_argument_reads_as_its_items()
+    {
+        var (ctx, button, lamp, door) = Level();
+        Features.Scene.EntitySection.Edit(ctx, button.Id, "List", x =>
+        {
+            x.Outputs[1].Args["who"] = EntityValues.List([EntityValues.Ref(lamp.Id), EntityValues.Ref(door.Id)]);
+            return null;
+        });
+        Assert.Equal("lamp, door", IoRows.Outgoing(ctx, button.Id)[1].Value);
+    }
+
+    [Fact]
     public void A_connection_that_cant_work_is_marked_with_why()
     {
         var (ctx, button, _, _) = Level();

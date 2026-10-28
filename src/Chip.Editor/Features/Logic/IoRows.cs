@@ -125,6 +125,7 @@ public static class IoRows
         JsonValueKind.Object when v.TryGetProperty("payload", out var b) && b.ValueKind == JsonValueKind.True => "← value",
         JsonValueKind.Object when EntityValues.RefId(v) is { } id => doc.FindEntity(id) is { } e ? SceneOps.DisplayName(e) : $"missing #{id}",
         JsonValueKind.String when v.GetString() is { Length: 0 } => "\"\"",
+        JsonValueKind.Array => v.GetArrayLength() == 0 ? "none" : string.Join(", ", v.EnumerateArray().Select(item => ArgText(doc, item))),
         _ => EntityValues.Text(v),
     };
 }

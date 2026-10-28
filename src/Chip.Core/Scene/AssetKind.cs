@@ -114,24 +114,26 @@ public sealed record AssetKind : IDisposable
     }
 
     /// <summary>Reads <c>"kinds"</c>. Throws <see cref="InvalidDataException"/> with what's wrong.</summary>
-    internal static IReadOnlyDictionary<string, AssetKind> Parse(JsonElement o, string root) => o.EnumerateObject().ToDictionary(p => p.Name, p =>
-    {
-        var v = p.Value;
-        string? Text(string key) => v.TryGetProperty(key, out var x) ? x.GetString() : null;
-        var store = Text("store") ?? "path";
-        if (store is not ("path" or "stem")) throw new InvalidDataException($"Kind {p.Name}: store must be path or stem");
-        return new AssetKind
+    internal static IReadOnlyDictionary<string, AssetKind> Parse(JsonElement o, string root) =>
+        ProjectJson.Entries(o, "\"kinds\"").ToDictionary(p => p.Name, p =>
         {
-            Name = p.Name,
-            ProjectRoot = root,
-            Root = Path.GetFullPath(Path.Combine(root, Text("root") ?? throw new InvalidDataException($"Kind {p.Name} needs a root"))),
-            Extensions = v.TryGetProperty("ext", out var ext) ? ext.EnumerateArray().Select(x => x.GetString()!).ToArray() : [],
-            Folders = v.TryGetProperty("folders", out var f) && f.GetBoolean(),
-            Store = store == "stem" ? AssetStore.Stem : AssetStore.Path,
-            LabelField = Text("label"),
-            Doc = Text("doc") ?? "",
-        };
-    });
+            var v = ProjectJson.Entry(p, "kind");
+            string what = $"kind {p.Name}";
+            var store = ProjectJson.Text(v, "store", what) ?? "path";
+            if (store is not ("path" or "stem")) throw new InvalidDataException($"{what}: \"store\" should be \"path\" or \"stem\"");
+            var folder = ProjectJson.Text(v, "root", what) ?? throw new InvalidDataException($"{what} needs a \"root\" folder");
+            return new AssetKind
+            {
+                Name = p.Name,
+                ProjectRoot = root,
+                Root = Path.GetFullPath(Path.Combine(root, folder)),
+                Extensions = ProjectJson.Texts(v, "ext", what),
+                Folders = ProjectJson.Flag(v, "folders", what),
+                Store = store == "stem" ? AssetStore.Stem : AssetStore.Path,
+                LabelField = ProjectJson.Text(v, "label", what),
+                Doc = ProjectJson.Text(v, "doc", what) ?? "",
+            };
+        });
 }
 
 public enum FlagType { Bool, Int }
@@ -148,22 +150,56 @@ public sealed record FlagSpec
     public string Doc { get; init; } = "";
 
     /// <summary>Reads <c>"flags"</c>. Throws <see cref="InvalidDataException"/> with what's wrong.</summary>
-    internal static IReadOnlyDictionary<string, FlagSpec> Parse(JsonElement o) => o.EnumerateObject().ToDictionary(p => p.Name, p =>
-    {
-        var v = p.Value;
-        var type = v.GetProperty("type").GetString();
-        var scope = v.TryGetProperty("scope", out var s) ? s.GetString() : "level";
-        if (type is not ("bool" or "int") || scope is not ("level" or "game")) throw new InvalidDataException($"Flag {p.Name}: invalid type or scope");
-        var d = v.TryGetProperty("default", out var value) ? value.Clone() : type == "bool" ? EntityValues.Of(false) : EntityValues.Of(0L);
-        bool readable = type == "bool" ? d.ValueKind is JsonValueKind.True or JsonValueKind.False : d.ValueKind == JsonValueKind.Number && d.TryGetInt32(out _);
-        if (!readable) throw new InvalidDataException($"Flag {p.Name}: invalid default");
-        return new FlagSpec
+    internal static IReadOnlyDictionary<string, FlagSpec> Parse(JsonElement o) =>
+        ProjectJson.Entries(o, "\"flags\"").ToDictionary(p => p.Name, p =>
         {
-            Name = p.Name,
-            Type = type == "bool" ? FlagType.Bool : FlagType.Int,
-            Scope = scope == "game" ? FlagScope.Game : FlagScope.Level,
-            Default = d,
-            Doc = v.TryGetProperty("doc", out var doc) ? doc.GetString()! : "",
-        };
-    });
+            var v = ProjectJson.Entry(p, "flag");
+            string what = $"flag {p.Name}";
+            var type = ProjectJson.Text(v, "type", what);
+            var scope = ProjectJson.Text(v, "scope", what) ?? "level";
+            if (type is not ("bool" or "int")) throw new InvalidDataException($"{what}: \"type\" should be \"bool\" or \"int\"");
+            if (scope is not ("level" or "game")) throw new InvalidDataException($"{what}: \"scope\" should be \"level\" or \"game\"");
+            var d = v.TryGetProperty("default", out var value) ? value.Clone() : type == "bool" ? EntityValues.Of(false) : EntityValues.Of(0L);
+            bool readable = type == "bool" ? d.ValueKind is JsonValueKind.True or JsonValueKind.False : d.ValueKind == JsonValueKind.Number && d.TryGetInt32(out _);
+            if (!readable) throw new InvalidDataException($"{what}: \"default\" should be {(type == "bool" ? "true or false" : "a whole number")}");
+            return new FlagSpec
+            {
+                Name = p.Name,
+                Type = type == "bool" ? FlagType.Bool : FlagType.Int,
+                Scope = scope == "game" ? FlagScope.Game : FlagScope.Level,
+                Default = d,
+                Doc = ProjectJson.Text(v, "doc", what) ?? "",
+            };
+        });
+}
+
+/// <summary>
+/// Shape checks for the project file's <c>kinds</c> and <c>flags</c>: each reader throws <see cref="InvalidDataException"/>
+/// naming the field, so a hand-edited mistake takes the "can't read the project file" path instead of crashing.
+/// </summary>
+static class ProjectJson
+{
+    public static IEnumerable<JsonProperty> Entries(JsonElement o, string what) =>
+        o.ValueKind == JsonValueKind.Object ? o.EnumerateObject() : throw new InvalidDataException($"{what} should be an object of named entries");
+
+    public static JsonElement Entry(JsonProperty p, string what) =>
+        p.Value.ValueKind == JsonValueKind.Object ? p.Value : throw new InvalidDataException($"{what} {p.Name} should be an object");
+
+    public static string? Text(JsonElement o, string key, string what) => !o.TryGetProperty(key, out var v) ? null
+        : v.ValueKind == JsonValueKind.String ? v.GetString() : throw new InvalidDataException($"{what}: \"{key}\" should be text");
+
+    public static bool Flag(JsonElement o, string key, string what) => o.TryGetProperty(key, out var v) && v.ValueKind switch
+    {
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        _ => throw new InvalidDataException($"{what}: \"{key}\" should be true or false"),
+    };
+
+    public static IReadOnlyList<string> Texts(JsonElement o, string key, string what)
+    {
+        if (!o.TryGetProperty(key, out var v)) return [];
+        if (v.ValueKind != JsonValueKind.Array || v.EnumerateArray().Any(x => x.ValueKind != JsonValueKind.String))
+            throw new InvalidDataException($"{what}: \"{key}\" should be a list of text");
+        return v.EnumerateArray().Select(x => x.GetString()!).ToArray();
+    }
 }

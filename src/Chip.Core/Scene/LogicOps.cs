@@ -51,9 +51,17 @@ public static class LogicOps
             : [set, new InputSpec { Name = "add", Params = [new() { Name = "amount", Type = PropType.Int, Default = EntityValues.Of(1L) }] }];
     }
 
-    /// <summary>Same name and params (names and types), so one connection can drive both.</summary>
+    /// <summary>
+    /// Same name and params, down to what each param accepts, so any argument valid for one is valid for both: checking
+    /// a tag connection against its first target's input then holds for every target.
+    /// </summary>
     static bool SameShape(InputSpec a, InputSpec b) => a.Name == b.Name && a.Params.Count == b.Params.Count
-        && a.Params.Zip(b.Params).All(p => p.First.Name == p.Second.Name && p.First.Type == p.Second.Type && p.First.ItemType == p.Second.ItemType);
+        && a.Params.Zip(b.Params).All(p => SameParam(p.First, p.Second));
+
+    static bool SameParam(PropSpec a, PropSpec b) => a.Name == b.Name && a.Type == b.Type && a.ItemType == b.ItemType
+        && a.Classes.SequenceEqual(b.Classes) && a.Trait == b.Trait && a.Kind == b.Kind && a.Range == b.Range
+        && a.OrGreater == b.OrGreater && a.OrLess == b.OrLess && a.Integer == b.Integer
+        && a.Options.Count == b.Options.Count && a.Options.Zip(b.Options).All(o => EntityValues.Same(o.First.Value, o.Second.Value));
 
     public static IReadOnlyList<EntityLink> ReferencesTo(Document doc, EntityCatalog catalog, int entityId) =>
         Links(doc, catalog).Where(l => l.Target.Id == entityId).ToArray();

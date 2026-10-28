@@ -327,17 +327,8 @@ public sealed class ConnectionEditor
                 : "The output passes no value of this type any more. Set one instead");
             ImGui.SameLine(PropertyColumn + fieldW);
         }
-        else
-        {
-            var value = set ? own : p.Default;
-            _fields.Draw(ctx, e, p, value, $"io{index}/{p.Name}", fieldW, v =>
-                Change(ctx, e, index, $"Set {p.Label}", x =>
-                {
-                    if (EntityValues.Coerce(p, v, out _) is not { } typed) return;
-                    if (EntityValues.Same(typed, p.Default)) x.Outputs[index].Args.Remove(p.Name);
-                    else x.Outputs[index].Args[p.Name] = typed;
-                }));
-        }
+        else if (p.Type == PropType.Array) ValueFields.ListCount(set ? own : p.Default);
+        else _fields.Draw(ctx, e, p, set ? own : p.Default, $"io{index}/{p.Name}", fieldW, v => SetArgument(ctx, e, index, p, v));
         if (canBind || bound)
         {
             ImGui.SameLine(0, gap);
@@ -352,8 +343,23 @@ public sealed class ConnectionEditor
                     else x.Outputs[index].Args[p.Name] = Payload;
                 });
         }
+        // A list argument's items follow under its row, as a list property's do.
+        if (p.Type == PropType.Array && !bound)
+        {
+            _fields.ListItems(ctx, e, p, set ? own : p.Default, $"io{index}/{p.Name}", PropertyColumn,
+                ImGui.GetContentRegionAvail().X - PropertyColumn - button - gap, button, v => SetArgument(ctx, e, index, p, v));
+        }
         ImGui.PopID();
     }
+
+    /// <summary>Sets an argument, typed by its param; a value equal to the param's default is left out.</summary>
+    static void SetArgument(EditorContext ctx, Entity e, int index, PropSpec p, JsonElement v) =>
+        Change(ctx, e, index, $"Set {p.Label}", x =>
+        {
+            if (EntityValues.Coerce(p, v, out _) is not { } typed) return;
+            if (EntityValues.Same(typed, p.Default)) x.Outputs[index].Args.Remove(p.Name);
+            else x.Outputs[index].Args[p.Name] = typed;
+        });
 
     static readonly JsonElement Payload = JsonSerializer.SerializeToElement(new Dictionary<string, bool> { ["payload"] = true });
 

@@ -61,7 +61,7 @@ An entity's `outputs` in the level, and its `chip_io` in the export:
 | Target | Means | Inputs |
 |---|---|---|
 | `{ "entity": 7 }` | that entity, by id | its class's |
-| `{ "tag": "corridor_lights" }` | every entity carrying the tag (`chip_tags`) when the input runs | those all of them have |
+| `{ "tag": "corridor_lights" }` | every entity carrying the tag (`chip_tags`) when the input runs | those all of them have with the same params, down to what each accepts |
 | `{ "special": "self" }` | the entity holding the connection | its class's |
 | `{ "special": "activator" }` | whoever started the chain, usually the player | any; known only at runtime |
 | `{ "special": "caller" }` | the entity whose output fired this connection | any; known only at runtime |

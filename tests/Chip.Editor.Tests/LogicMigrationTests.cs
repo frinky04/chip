@@ -44,4 +44,43 @@ public sealed class LogicMigrationTests : IDisposable
         ctx.Commands.Execute("edit.undo");
         Assert.Equal("func_door", Assert.Single(ctx.Doc.Entities).ClassName);
     }
+
+    [Fact]
+    public void Renames_wait_for_a_tool_gesture_to_finish_instead_of_being_skipped()
+    {
+        File.WriteAllText(Path.Combine(_dir, GameProject.FileName), """{ "version": 1 }""");
+        Directory.CreateDirectory(Path.Combine(_dir, ".chip"));
+        File.WriteAllText(Path.Combine(_dir, GameProject.DefaultManifest), """{ "version": 1, "classes": { "door": { "was": ["func_door"] } } }""");
+        var level = Path.Combine(_dir, "level.chip");
+        var doc = new Document();
+        doc.Add(new Entity { ClassName = "func_door" });
+        Core.IO.DocumentSerializer.Save(doc, level);
+
+        var ctx = RegistryTests.Headless();
+        ctx.Session.Reset(Core.IO.DocumentSerializer.Load(level), level);
+        EntityClasses.Track(level);
+        var tracker = new ClassTracker();
+        var busy = new BusyTool();
+        ctx.SetTool(busy);
+        tracker.Migrate(ctx);
+        Assert.Equal("func_door", Assert.Single(ctx.Doc.Entities).ClassName); // not mid-gesture
+
+        busy.Busy = false;
+        tracker.Migrate(ctx);
+        Assert.Equal("door", Assert.Single(ctx.Doc.Entities).ClassName); // once it lets go
+    }
+
+    sealed class BusyTool : Framework.IViewportTool
+    {
+        public string Id => "test.busy";
+        public string Name => "Busy";
+        public UI.Icon Icon => UI.Icon.Select;
+        public string? Hotkey => null;
+        public int Order => 0;
+        public bool Busy { get; set; } = true;
+        public (string Key, string Action)[] Hints => [];
+        public bool Cancel(Framework.EditorContext ctx) => false;
+        public void Update(Framework.EditorContext ctx) { }
+        public void Draw(Framework.EditorContext ctx, ImGuiNET.ImDrawListPtr dl, System.Numerics.Vector2 origin) { }
+    }
 }
