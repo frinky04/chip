@@ -73,8 +73,8 @@ A game's dispatcher follows these rules, so levels behave the same in every game
 
 - An output fires its connections in their stored order.
 - The `when` guard is checked when the output fires, not when the delay ends.
-- A delayed connection runs after `delay` seconds of game time. A zero delay runs at once, before the output's next
-  connection.
+- A delayed connection runs after `delay` seconds of game time. Zero-delay connections run in the same frame, in the
+  order they were queued: all of an output's connections, then whatever those fire.
 - A `once` connection that fired never fires again, including after a save and load.
 - A `tag` target resolves when the input runs, so entities that gained or lost the tag in the meantime count.
 - The activator travels down the chain: an input that fires outputs passes on the activator it was given.
