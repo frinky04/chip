@@ -18,7 +18,7 @@ namespace Chip.Editor.Features.Scene;
 public sealed class EntitySection : IInspectorSection
 {
     readonly TextEdits _text = new();
-    string _newKey = "", _newValue = "", _classFilter = "";
+    string _newKey = "", _newValue = "", _classFilter = "", _refFilter = "";
     // A value being dragged or picked, committed as one step when the field lets go.
     (int Entity, string Prop)? _draftKey;
     Vector4 _draft;
@@ -298,7 +298,7 @@ public sealed class EntitySection : IInspectorSection
                 break;
             }
             case PropType.Node:
-                ReferenceCombo(ctx, e, value, Commit);
+                ReferenceField(ctx, e, spec, value, name, fieldW, Commit);
                 break;
             case PropType.Resource:
                 if (_text.Field($"##r{id}/{name}", EntityValues.Text(value), out var path, hint: AssetHint(), width: fieldW))
@@ -311,21 +311,69 @@ public sealed class EntitySection : IInspectorSection
         }
     }
 
-    /// <summary>Picks another entity (or none) for a node property.</summary>
-    static void ReferenceCombo(EditorContext ctx, Entity e, JsonElement value, Action<JsonElement> commit)
+    /// <summary>
+    /// Picks another entity (or none) for a reference: a searchable list of the entities the property accepts, an
+    /// eyedropper to click one in the viewport, and a button that selects the current target.
+    /// </summary>
+    void ReferenceField(EditorContext ctx, Entity e, PropSpec spec, JsonElement value, string name, float fieldW, Action<JsonElement> commit)
     {
+        float button = ImGui.GetFrameHeight();
+        float gap = ImGui.GetStyle().ItemSpacing.X;
         var target = EntityValues.RefId(value) is { } tid ? ctx.Doc.FindEntity(tid) : null;
-        string preview = target != null ? SceneOps.DisplayName(target) : EntityValues.RefId(value) is { } missing ? $"Missing entity {missing}" : "None";
-        if (!ImGui.BeginCombo("##v", preview, ImGuiComboFlags.HeightLarge)) return;
-        if (ImGui.Selectable("None", target == null)) commit(EntityValues.Null);
-        foreach (var other in ctx.Doc.Entities)
+        bool fits = target == null || Logic.EntityRefs.Accepts(spec, target);
+        string owner = $"{e.Id}/{name}";
+        bool armed = Logic.LogicFeature.Picker.Armed(ctx, owner);
+        string preview = armed ? "Click one in the viewport…"
+            : target != null ? SceneOps.DisplayName(target)
+            : EntityValues.RefId(value) is { } missing ? $"Missing entity {missing}" : "None";
+
+        ImGui.SetNextItemWidth(fieldW - (button + gap) * 2);
+        if (!fits) ImGui.PushStyleColor(ImGuiCol.Text, Theme.Error);
+        bool open = ImGui.BeginCombo("##v", preview, ImGuiComboFlags.HeightLarge);
+        if (!fits) ImGui.PopStyleColor();
+        if (!open)
         {
-            if (other.Id == e.Id || EntityClasses.Get(other.ClassName).EditorOnly) continue;
-            string label = SceneOps.DisplayName(other);
-            if (label != other.ClassName) label += $"  ({other.ClassName})";
-            if (ImGui.Selectable($"{label}##{other.Id}", other == target) && other != target) commit(EntityValues.Ref(other.Id));
+            if (ImGui.IsItemHovered() && target != null) Logic.LinkDraw.Highlight = target.Id;
+            if (!fits) Tip($"{SceneOps.DisplayName(target!)} isn't {Logic.EntityRefs.Wants(spec)}. Pick another");
         }
-        ImGui.EndCombo();
+        else
+        {
+            if (ImGui.IsWindowAppearing()) { _refFilter = ""; ImGui.SetKeyboardFocusHere(); }
+            ImGui.SetNextItemWidth(-1);
+            ImGui.InputTextWithHint("##filter", "Search", ref _refFilter, 64);
+            if (ImGui.Selectable("None", target == null)) commit(EntityValues.Null);
+            int shown = 0;
+            foreach (var other in ctx.Doc.Entities)
+            {
+                if (other.Id == e.Id || !Logic.EntityRefs.Accepts(spec, other)) continue;
+                string label = SceneOps.DisplayName(other);
+                if (label != other.ClassName) label += $"  ({EntityClasses.Get(other.ClassName).Label})";
+                if (_refFilter.Length > 0 && !label.Contains(_refFilter, StringComparison.OrdinalIgnoreCase)) continue;
+                shown++;
+                if (ImGui.Selectable($"{label}##{other.Id}", other == target) && other != target) commit(EntityValues.Ref(other.Id));
+                if (ImGui.IsItemHovered()) Logic.LinkDraw.Highlight = other.Id;
+            }
+            if (shown == 0) ImGui.TextColored(Theme.TextDisabled, _refFilter.Length > 0 ? "No match" : $"The level has no {Logic.EntityRefs.Wants(spec, plural: true)}");
+            ImGui.EndCombo();
+        }
+
+        ImGui.SameLine(0, gap);
+        if (IconButton("pick", Icon.Target, $"Pick {Logic.EntityRefs.Wants(spec)} in the viewport", button))
+        {
+            if (armed) Logic.LogicFeature.Picker.Cancel(ctx);
+            else
+            {
+                int id = e.Id;
+                Logic.LogicFeature.Picker.Start(ctx, owner, Logic.EntityRefs.Wants(spec),
+                    other => other.Id != id && Logic.EntityRefs.Accepts(spec, other),
+                    other => commit(EntityValues.Ref(other.Id)));
+            }
+        }
+        ImGui.SameLine(0, gap);
+        ImGui.BeginDisabled(target == null);
+        if (IconButton("goto", Icon.ChevronRight, target != null ? $"Select {SceneOps.DisplayName(target)}" : "Nothing to select", button) && target != null)
+            Logic.EntityRefs.Select(ctx, target);
+        ImGui.EndDisabled();
     }
 
     static (double Min, double Max) Limits(PropSpec spec, double lo, double hi) => spec.Range is { } r
