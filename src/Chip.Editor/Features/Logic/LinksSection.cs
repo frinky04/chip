@@ -8,23 +8,26 @@ using static Chip.Editor.UI.Widgets;
 namespace Chip.Editor.Features.Logic;
 
 /// <summary>
-/// The selected entity's links: what it points at, and what points at it, which no single field shows. A row selects the
-/// other entity on click and rings it in the viewport on hover. Shown only when there is a link.
+/// The selected entity's references: which entities its reference properties point at, and whose point at it, which no
+/// single field shows. (Connections have their own tables under Entity IO.) A row selects the other entity on click and
+/// rings it in the viewport on hover. Shown only when there is a reference.
 /// </summary>
 public sealed class LinksSection : IInspectorSection
 {
     public string Id => "links";
     public int Order => 112;
 
-    public bool Visible(EditorContext ctx) => ctx.Sel.Entities(ctx.Doc) is [var e]
-        && (EntityLinks.From(ctx, e.Id).Count > 0 || EntityLinks.To(ctx, e.Id).Count > 0);
+    public bool Visible(EditorContext ctx) => ctx.Sel.Entities(ctx.Doc) is [var e] && (From(ctx, e.Id).Count > 0 || To(ctx, e.Id).Count > 0);
+
+    static List<Link> From(EditorContext ctx, int id) => EntityLinks.From(ctx, id).Where(l => !l.Connection).ToList();
+    static List<Link> To(EditorContext ctx, int id) => EntityLinks.To(ctx, id).Where(l => !l.Connection).ToList();
 
     public void Draw(EditorContext ctx)
     {
         var e = ctx.Sel.Entities(ctx.Doc)[0];
-        var from = EntityLinks.From(ctx, e.Id);
-        var to = EntityLinks.To(ctx, e.Id);
-        if (!Heading("Links", $"{from.Count + to.Count}")) return;
+        var from = From(ctx, e.Id);
+        var to = To(ctx, e.Id);
+        if (!Heading("References", $"{from.Count + to.Count}")) return;
         if (from.Count > 0) Rows(ctx, "Points at", from, outgoing: true);
         if (to.Count > 0) Rows(ctx, "Referenced by", to, outgoing: false);
     }

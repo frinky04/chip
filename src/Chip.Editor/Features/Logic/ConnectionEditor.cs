@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Chip.Core.Scene;
 using Chip.Editor.Features.Scene;
@@ -11,126 +10,35 @@ using static Chip.Editor.UI.Widgets;
 namespace Chip.Editor.Features.Logic;
 
 /// <summary>
-/// The selected entity's connections, under each output of its class: what each one does, to whom, after how long, and
-/// when. Every field is a pick from what the target can take (its inputs, their typed arguments, the project's flags), so
-/// a connection can't name an input that doesn't exist. A timeline output (a sequence's cues) also draws its connections
-/// on a time axis, where dragging a cue changes its delay. Every committed change is one undo step.
+/// The fields of one connection, under the table that lists it: its output, target, input, arguments, delay, once and
+/// condition, each a pick from what that end can take (the class's outputs, the target's inputs and their typed
+/// arguments, the project's flags), so a connection can't name an input that doesn't exist. Also the target menu new
+/// connections start from, and the time axis of a timeline output. Every committed change is one undo step.
 /// </summary>
-public sealed class OutputsSection : IInspectorSection
+public sealed class ConnectionEditor
 {
     readonly ValueFields _fields = new();
     string _filter = "";
-    // A cue being dragged on a timeline: its connection and the delay it shows until the mouse lets go.
+    // A delay being dragged (in the field or on a timeline): its connection and the delay it shows until the mouse lets go.
     (int Entity, int Connection)? _dragging;
     float _dragDelay;
 
-    public string Id => "outputs";
-    public int Order => 111;
-
-    public bool Visible(EditorContext ctx) => ctx.Sel.Entities(ctx.Doc) is [var e]
-        && (EntityClasses.Get(e.ClassName).Outputs.Count > 0 || e.Outputs.Count > 0);
-
-    public void Draw(EditorContext ctx)
+    /// <summary>Edits connection <paramref name="index"/> of <paramref name="e"/> (which may be another entity than the selection).</summary>
+    public void Draw(EditorContext ctx, Entity e, int index)
     {
-        var e = ctx.Sel.Entities(ctx.Doc)[0];
-        var cls = EntityClasses.Get(e.ClassName);
-        if (!Heading("Outputs", e.Outputs.Count == 0 ? null : $"{e.Outputs.Count}")) return;
-
-        foreach (var output in cls.Outputs) Output(ctx, e, output.Name, output);
-        // Connections on names the class no longer has (renamed without an alias, or a level from elsewhere).
-        foreach (var name in e.Outputs.Select(c => c.On).Where(n => cls.Output(n) == null).Distinct().ToList()) Output(ctx, e, name, null);
-
-        var problems = LevelProblems.For(ctx, e.Id);
-        if (problems.Count > 0)
-        {
-            ImGui.Dummy(Theme.Px(0, 2));
-            // Messages lead with the entity's name for the command line; here it's the selection, so drop it.
-            string lead = (e.Name.Length > 0 ? e.Name : $"{e.ClassName} #{e.Id}") + ": ";
-            foreach (var p in problems)
-            {
-                ImGui.PushStyleColor(ImGuiCol.Text, p.Severity == Severity.Error ? Theme.Error : Theme.Hover);
-                ImGui.TextWrapped(p.Message.StartsWith(lead, StringComparison.Ordinal) ? p.Message[lead.Length..] : p.Message);
-                ImGui.PopStyleColor();
-            }
-        }
-    }
-
-    // ---- One output and its connections ----
-
-    void Output(EditorContext ctx, Entity e, string name, OutputSpec? output)
-    {
-        ImGui.PushID($"out:{name}");
-        var indices = Enumerable.Range(0, e.Outputs.Count).Where(i => e.Outputs[i].On == name).ToList();
-        float button = ImGui.GetFrameHeight();
-        ImGui.Dummy(Theme.Px(0, 2));
-        ImGui.AlignTextToFramePadding();
-        string label = output?.Label ?? EntityClass.Humanize(name);
-        if (output == null) ImGui.TextColored(Theme.Error, label);
-        else if (indices.Count > 0) { ImGui.PushFont(Fonts.Strong); ImGui.Text(label); ImGui.PopFont(); }
-        else ImGui.TextColored(Theme.TextDim, label);
-        Tip(OutputTip(e, name, output));
-        if (output?.Payload is { } payload)
-        {
-            ImGui.SameLine();
-            float room = ImGui.GetContentRegionMax().X - button - ImGui.GetCursorPosX() - ImGui.GetStyle().ItemSpacing.X;
-            ImGui.TextColored(Theme.TextDisabled, Ellipsize($"({EntityValues.TypeName(payload)})", room));
-            Tip($"It passes a {EntityValues.TypeName(payload)} along, which an argument can take");
-        }
-        if (output != null)
-        {
-            ImGui.SameLine(ImGui.GetContentRegionMax().X - button);
-            if (IconButton("add", Icon.Plus, $"Connect {label.ToLowerInvariant()} to something", button)) { _filter = ""; ImGui.OpenPopup("##addtarget"); }
-            if (TargetMenuPopup(ctx, e, "##addtarget", null) is { } target) Add(ctx, e, name, target);
-        }
-        else Dim($"{EntityClasses.Get(e.ClassName).Label} has no output called {name}, so these never fire. Remove them, or add the output in {EntityClasses.Engine}");
-
-        if (output is { Timeline: true } && indices.Count > 0) Timeline(ctx, e, indices);
-        foreach (int i in output is { Timeline: true } ? indices.OrderBy(i => e.Outputs[i].Delay).ToList() : indices)
-        {
-            ImGui.PushID(i);
-            Connection(ctx, e, output, i);
-            ImGui.PopID();
-        }
-        ImGui.PopID();
-    }
-
-    static string OutputTip(Entity e, string name, OutputSpec? output)
-    {
-        if (output == null) return $"{name}: not an output of {EntityClasses.Get(e.ClassName).Label}";
-        var lines = new List<string>();
-        if (output.Doc.Length > 0) lines.Add(output.Doc);
-        lines.Add(output.Timeline ? $"{name}: each connection fires at its own delay after the start" : $"{name}: fires its connections in order");
-        if (output.Required) lines.Add("The game expects this to be connected");
-        return string.Join("\n", lines);
-    }
-
-    void Add(EditorContext ctx, Entity e, string on, ConnectionTarget target)
-    {
-        var inputs = Inputs(ctx, e, target);
-        var c = new Connection { On = on, Target = target, Do = inputs.FirstOrDefault()?.Name ?? "" };
-        // A timeline's next cue starts a beat after its last, so new cues don't stack on zero.
-        if (EntityClasses.Get(e.ClassName).Output(on) is { Timeline: true } && e.Outputs.Where(x => x.On == on).Select(x => x.Delay).DefaultIfEmpty(-1).Max() is var last and >= 0)
-            c.Delay = MathF.Round(last + 0.5f, 2);
-        EntitySection.Edit(ctx, e.Id, "Add Connection", x => { x.Outputs.Add(c); return null; });
-    }
-
-    // ---- One connection ----
-
-    void Connection(EditorContext ctx, Entity e, OutputSpec? output, int index)
-    {
+        if (index >= e.Outputs.Count) return;
         var c = e.Outputs[index];
+        var cls = EntityClasses.Get(e.ClassName);
+        var output = cls.Output(c.On);
         float button = ImGui.GetFrameHeight();
         float gap = ImGui.GetStyle().ItemSpacing.X;
-        float indent = Theme.Px(10);
-        var dl = ImGui.GetWindowDrawList();
-        var top = ImGui.GetCursorScreenPos();
-        dl.ChannelsSplit(2);
-        dl.ChannelsSetCurrent(1);
-        ImGui.Indent(indent);
-        float w = ImGui.GetContentRegionAvail().X;
+        ImGui.PushID($"io:{e.Id}/{index}");
 
-        // Target, eyedropper, remove.
-        ImGui.SetNextItemWidth(w - (button + gap) * 2);
+        Label("Output", OutputTip(e, c.On, output));
+        OutputCombo(ctx, e, index, c, cls, output);
+
+        Label("Target", "What this connection acts on");
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - button - gap);
         TargetCombo(ctx, e, index, c);
         ImGui.SameLine(0, gap);
         string owner = $"io:{e.Id}/{index}";
@@ -141,19 +49,17 @@ public sealed class OutputsSection : IInspectorSection
                 other => other.Id != e.Id && EntityClasses.Get(other.ClassName).Inputs.Count > 0,
                 other => Retarget(ctx, e, index, new ConnectionTarget(TargetKind.Entity, other.Id)));
         }
-        ImGui.SameLine(0, gap);
-        if (IconButton("remove", Icon.Trash, "Remove this connection", button))
-            Change(ctx, e, index, "Remove Connection", x => x.Outputs.RemoveAt(index));
 
-        // Input, delay, once.
         var inputs = Inputs(ctx, e, c.Target);
         var input = inputs.FirstOrDefault(i => i.Name == c.Do);
-        float delayW = Theme.Px(64);
-        float onceW = ImGui.GetFrameHeight() + ImGui.CalcTextSize("Once").X + ImGui.GetStyle().ItemInnerSpacing.X;
-        ImGui.SetNextItemWidth(w - delayW - onceW - gap * 2);
+        Label("Input", "What the target does");
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
         InputCombo(ctx, e, index, c, inputs, input);
-        ImGui.SameLine(0, gap);
-        ImGui.SetNextItemWidth(delayW);
+        if (input != null)
+            foreach (var p in input.Params) Argument(ctx, e, index, c, output, p);
+
+        Label("Delay", "Seconds after the output fires. 0: in the same frame, after the output's other connections");
+        ImGui.SetNextItemWidth(Theme.Px(80));
         float delay = _dragging == (e.Id, index) ? _dragDelay : c.Delay;
         if (ImGui.DragFloat("##delay", ref delay, 0.02f, 0, 3600, "%.2f s", ImGuiSliderFlags.AlwaysClamp)) { _dragging = (e.Id, index); _dragDelay = delay; }
         if (ImGui.IsItemDeactivatedAfterEdit() && _dragging == (e.Id, index))
@@ -162,26 +68,71 @@ public sealed class OutputsSection : IInspectorSection
             float d = MathF.Round(_dragDelay, 3);
             Change(ctx, e, index, "Set Delay", x => x.Outputs[index].Delay = d);
         }
-        Tip("Seconds after the output fires. 0: straight away, before anything else happens");
-        ImGui.SameLine(0, gap);
+        ImGui.SameLine(0, gap * 2);
         bool once = c.Once;
         if (ImGui.Checkbox("Once", ref once)) Change(ctx, e, index, once ? "Fire Once" : "Fire Every Time", x => x.Outputs[index].Once = once);
         Tip("Fires the first time only; after that this connection does nothing");
 
-        if (input != null)
-            foreach (var p in input.Params) Argument(ctx, e, index, c, output, p);
         Condition(ctx, e, index, c);
-        ImGui.Unindent(indent);
+        ImGui.PopID();
+    }
 
-        // A faint card behind the rows, with a rail in the link colour, drawn under them.
-        var bottom = ImGui.GetCursorScreenPos();
-        dl.ChannelsSetCurrent(0);
-        var min = top + new Vector2(Theme.Px(2), -Theme.Px(2));
-        var max = new Vector2(top.X + ImGui.GetContentRegionAvail().X, bottom.Y);
-        dl.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(Theme.Frame with { W = 0.35f }), Theme.Px(3));
-        dl.AddRectFilled(min, new Vector2(min.X + Theme.Px(2), max.Y), LinkDraw.OutColor, Theme.Px(1));
-        dl.ChannelsMerge();
-        ImGui.Dummy(Theme.Px(0, 3));
+    static void Label(string text, string tip)
+    {
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextColored(Theme.TextDim, text);
+        Tip(tip);
+        ImGui.SameLine(PropertyColumn);
+    }
+
+    public static string OutputTip(Entity e, string name, OutputSpec? output)
+    {
+        if (output == null) return $"{EntityClasses.Get(e.ClassName).Label} has no output called {name}, so this never fires. Pick one it has";
+        var lines = new List<string>();
+        if (output.Doc.Length > 0) lines.Add(output.Doc);
+        if (output.Payload is { } payload) lines.Add($"Passes a {EntityValues.TypeName(payload)} along, which an argument can take (←)");
+        if (output.Timeline) lines.Add("A timeline: each connection plays at its own delay after the start");
+        if (output.Required) lines.Add("The game expects this to be connected");
+        return string.Join("\n", lines.DefaultIfEmpty(name));
+    }
+
+    void OutputCombo(EditorContext ctx, Entity e, int index, Connection c, EntityClass cls, OutputSpec? output)
+    {
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
+        if (output == null) ImGui.PushStyleColor(ImGuiCol.Text, Theme.Error);
+        bool open = ImGui.BeginCombo("##on", output?.Label ?? EntityClass.Humanize(c.On));
+        if (output == null) ImGui.PopStyleColor();
+        if (!open) return;
+        foreach (var o in cls.Outputs)
+        {
+            if (ImGui.Selectable(o.Label, o == output) && o != output)
+            {
+                var name = o.Name;
+                // A payload binding means nothing on an output that carries no such value.
+                Change(ctx, e, index, "Change Output", x =>
+                {
+                    x.Outputs[index].On = name;
+                    if (o.Payload == null) foreach (var key in x.Outputs[index].Args.Where(a => IsPayload(a.Value)).Select(a => a.Key).ToList()) x.Outputs[index].Args.Remove(key);
+                });
+            }
+            Tip(OutputTip(e, o.Name, o));
+        }
+        if (cls.Outputs.Count == 0) ImGui.TextColored(Theme.TextDisabled, $"{cls.Label} has no outputs");
+        ImGui.EndCombo();
+    }
+
+    /// <summary>
+    /// Adds a connection on <paramref name="on"/> to <paramref name="target"/>, doing the target's first input, and
+    /// returns its index. A timeline's new cue lands half a second after its last, so new cues don't stack on zero.
+    /// </summary>
+    public static int? Add(EditorContext ctx, Entity e, string on, ConnectionTarget target)
+    {
+        var inputs = Inputs(ctx, e, target);
+        var c = new Connection { On = on, Target = target, Do = inputs.FirstOrDefault()?.Name ?? "" };
+        if (EntityClasses.Get(e.ClassName).Output(on) is { Timeline: true } && e.Outputs.Where(x => x.On == on).Select(x => x.Delay).DefaultIfEmpty(-1).Max() is var last and >= 0)
+            c.Delay = MathF.Round(last + 0.5f, 2);
+        int index = e.Outputs.Count;
+        return EntitySection.Edit(ctx, e.Id, "Add Connection", x => { x.Outputs.Add(c); return null; }) ? index : null;
     }
 
     // ---- Target ----
@@ -191,7 +142,7 @@ public sealed class OutputsSection : IInspectorSection
         var (text, ok) = TargetText(ctx.Doc, e, c);
         if (LogicFeature.Picker.Armed(ctx, $"io:{e.Id}/{index}")) (text, ok) = ("Click one in the viewport…", true);
         if (!ok) ImGui.PushStyleColor(ImGuiCol.Text, Theme.Error);
-        bool open = ImGui.BeginCombo("##target", "→ " + text, ImGuiComboFlags.HeightLarge);
+        bool open = ImGui.BeginCombo("##target", text, ImGuiComboFlags.HeightLarge);
         if (!ok) ImGui.PopStyleColor();
         if (!open)
         {
@@ -204,9 +155,11 @@ public sealed class OutputsSection : IInspectorSection
         ImGui.EndCombo();
     }
 
-    ConnectionTarget? TargetMenuPopup(EditorContext ctx, Entity e, string id, ConnectionTarget? current)
+    /// <summary>The target menu in a popup opened with <c>ImGui.OpenPopup(id)</c>; returns the pick, closing it.</summary>
+    public ConnectionTarget? TargetMenuPopup(EditorContext ctx, Entity e, string id, ConnectionTarget? current)
     {
         if (!ImGui.BeginPopup(id)) return null;
+        if (ImGui.IsWindowAppearing()) _filter = "";
         var picked = TargetMenu(ctx, e, current);
         if (picked != null) ImGui.CloseCurrentPopup();
         ImGui.EndPopup();
@@ -239,7 +192,8 @@ public sealed class OutputsSection : IInspectorSection
         var entities = ctx.Doc.Entities.Where(o => o.Id != e.Id && EntityClasses.Get(o.ClassName).Inputs.Count > 0)
             .Select(o => (Entity: o, Label: Describe(o))).Where(x => Match(x.Label)).ToList();
         if (entities.Count > 0) Header("Entities");
-        foreach (var (o, label) in entities) Item($"{label}##{o.Id}", new(TargetKind.Entity, o.Id), $"{SceneOps.DisplayName(o)}: what its {EntityClasses.Get(o.ClassName).Label.ToLowerInvariant()} can do", o.Id);
+        foreach (var (o, label) in entities)
+            Item($"{label}##{o.Id}", new(TargetKind.Entity, o.Id), $"{SceneOps.DisplayName(o)}: what its {EntityClasses.Get(o.ClassName).Label.ToLowerInvariant()} can do", o.Id);
 
         var tags = ctx.Doc.Entities.SelectMany(o => o.Tags).Distinct().Order(StringComparer.Ordinal).Where(Match).ToList();
         if (tags.Count > 0) Header("Tagged");
@@ -269,7 +223,8 @@ public sealed class OutputsSection : IInspectorSection
         return label != o.ClassName ? $"{label}  ({EntityClasses.Get(o.ClassName).Label})" : label;
     }
 
-    static (string Text, bool Ok) TargetText(Document doc, Entity e, Connection c)
+    /// <summary>The target in words, and whether it names something that exists.</summary>
+    public static (string Text, bool Ok) TargetText(Document doc, Entity e, Connection c)
     {
         if (c.UnknownTarget != null) return ("Unknown target", false);
         var t = c.Target;
@@ -294,7 +249,7 @@ public sealed class OutputsSection : IInspectorSection
         };
 
     /// <summary>Points the connection somewhere else, keeping its input and arguments where the new target has them.</summary>
-    void Retarget(EditorContext ctx, Entity e, int index, ConnectionTarget target)
+    static void Retarget(EditorContext ctx, Entity e, int index, ConnectionTarget target)
     {
         var inputs = Inputs(ctx, e, target);
         Change(ctx, e, index, "Change Target", x =>
@@ -316,12 +271,12 @@ public sealed class OutputsSection : IInspectorSection
     /// The inputs a target offers. Activator and caller are only known in the game, so they offer every input any class
     /// has, the first class's version of each name.
     /// </summary>
-    static IReadOnlyList<InputSpec> Inputs(EditorContext ctx, Entity e, ConnectionTarget target) =>
+    public static IReadOnlyList<InputSpec> Inputs(EditorContext ctx, Entity e, ConnectionTarget target) =>
         target is { Kind: TargetKind.Special, Name: "activator" or "caller" }
             ? EntityClasses.Current.Classes.SelectMany(k => k.Inputs).DistinctBy(i => i.Name).OrderBy(i => i.Name, StringComparer.Ordinal).ToList()
             : LogicOps.InputsFor(ctx.Doc, EntityClasses.Current, EntityClasses.Project, e, target);
 
-    void InputCombo(EditorContext ctx, Entity e, int index, Connection c, IReadOnlyList<InputSpec> inputs, InputSpec? input)
+    static void InputCombo(EditorContext ctx, Entity e, int index, Connection c, IReadOnlyList<InputSpec> inputs, InputSpec? input)
     {
         bool ok = input != null;
         string preview = input?.Label ?? (c.Do.Length > 0 ? EntityClass.Humanize(c.Do) : inputs.Count == 0 ? "Nothing to do" : "Pick an input");
@@ -353,22 +308,24 @@ public sealed class OutputsSection : IInspectorSection
         ImGui.PushID($"arg:{p.Name}");
         float button = ImGui.GetFrameHeight();
         float gap = ImGui.GetStyle().ItemSpacing.X;
-        float labelW = PropertyColumn;
         bool set = c.Args.TryGetValue(p.Name, out var own);
         bool bound = set && IsPayload(own);
         bool canBind = output?.Payload is { } payload && payload.Type == p.Type && payload.ItemType == p.ItemType;
 
         ImGui.AlignTextToFramePadding();
-        ImGui.TextColored(set ? Theme.Accent : Theme.TextDim, Ellipsize(p.Label, labelW - ImGui.GetCursorPosX() - Theme.Px(4)));
+        ImGui.TextColored(set ? Theme.Accent : Theme.TextDim, Ellipsize(p.Label, PropertyColumn - ImGui.GetCursorPosX() - Theme.Px(4)));
         Tip((p.Doc.Length > 0 ? p.Doc + "\n" : "") + $"{p.Name}: {EntityValues.TypeName(p)}" + (set ? "" : $". Default: {EntityValues.Text(p.Default)}"));
-        ImGui.SameLine(labelW);
+        ImGui.SameLine(PropertyColumn);
         float fieldW = ImGui.GetContentRegionAvail().X - (canBind || bound ? button + gap : 0);
         ImGui.SetNextItemWidth(fieldW);
         if (bound)
         {
             ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(ImGui.ColorConvertU32ToFloat4(LinkDraw.OutColor), $"← {(output != null ? output.Label.ToLowerInvariant() : "the output")}'s {(output?.Payload is { } pp ? EntityValues.TypeName(pp) : "value")}");
-            Tip(canBind ? "Takes the value the output passes along" : "The output passes no value of this type any more. Set one instead");
+            ImGui.TextColored(ImGui.ColorConvertU32ToFloat4(LinkDraw.OutColor), Ellipsize("← output's value", fieldW));
+            Tip(canBind
+                ? $"Takes the {(output?.Payload is { } pp ? EntityValues.TypeName(pp) : "value")} that {output!.Label.ToLowerInvariant()} passes along"
+                : "The output passes no value of this type any more. Set one instead");
+            ImGui.SameLine(PropertyColumn + fieldW);
         }
         else
         {
@@ -406,12 +363,13 @@ public sealed class OutputsSection : IInspectorSection
     // ---- Condition ----
 
     /// <summary>"Only when" a flag holds a value (or, for a number, reaches one). Checked when the output fires.</summary>
-    void Condition(EditorContext ctx, Entity e, int index, Connection c)
+    static void Condition(EditorContext ctx, Entity e, int index, Connection c)
     {
         var flags = EntityClasses.Project?.Flags;
         if (c.When is not { } when)
         {
             if (flags is not { Count: > 0 }) return;
+            ImGui.SetCursorPosX(PropertyColumn);
             ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
             bool add = ImGui.SmallButton("+ Only when…");
             ImGui.PopStyleColor();
@@ -429,9 +387,7 @@ public sealed class OutputsSection : IInspectorSection
         float gap = ImGui.GetStyle().ItemSpacing.X;
         float button = ImGui.GetFrameHeight();
         var flag = flags?.GetValueOrDefault(when.Flag);
-        ImGui.AlignTextToFramePadding();
-        ImGui.TextColored(Theme.TextDim, "Only when");
-        ImGui.SameLine(PropertyColumn);
+        Label("Only when", "Fires only while the flag holds; checked when the output fires");
         float rest = ImGui.GetContentRegionAvail().X - button - gap;
         float flagW = MathF.Floor(rest * 0.45f), opW = MathF.Floor(rest * 0.25f), valueW = rest - flagW - opW - gap * 2;
 
@@ -496,11 +452,12 @@ public sealed class OutputsSection : IInspectorSection
     // ---- Timeline ----
 
     /// <summary>
-    /// A timeline output's connections as cues on a time axis, labelled with what they do. Drag a cue to move it in time
-    /// (snapped to a twentieth of a second, Shift for free); the list below follows in time order.
+    /// A timeline output's connections as cues on a time axis. Drag a cue to move it in time (snapped to a twentieth of a
+    /// second, Shift for free). Returns the cue clicked, so the table can select it.
     /// </summary>
-    void Timeline(EditorContext ctx, Entity e, List<int> indices)
+    public int? Timeline(EditorContext ctx, Entity e, IReadOnlyList<int> indices, int? selected)
     {
+        int? clicked = null;
         float h = Theme.Px(34);
         float w = ImGui.GetContentRegionAvail().X;
         var origin = ImGui.GetCursorScreenPos();
@@ -539,7 +496,7 @@ public sealed class OutputsSection : IInspectorSection
             var p = new Vector2(X(t), axisY - Theme.Px(12));
             bool near = ImGui.IsItemHovered() && Vector2.Distance(mouse, p) < Theme.Px(7);
             if (near) hover = i;
-            uint col = near || _dragging == (e.Id, i) ? Theme.HoverU32 : LinkDraw.OutColor;
+            uint col = near || _dragging == (e.Id, i) ? Theme.HoverU32 : i == selected ? Theme.AccentU32 : LinkDraw.OutColor;
             dl.AddLine(new Vector2(p.X, p.Y), new Vector2(p.X, axisY), col, Theme.Px(1));
             dl.AddCircleFilled(p, Theme.Px(4.5f), col);
         }
@@ -549,7 +506,12 @@ public sealed class OutputsSection : IInspectorSection
             var c = e.Outputs[hi];
             ImGui.SetTooltip($"{c.Delay:0.00} s  {TargetText(ctx.Doc, e, c).Text} → {EntityClass.Humanize(c.Do).ToLowerInvariant()}\nDrag to move it in time");
             if (c.Target.Kind == TargetKind.Entity) LinkDraw.Highlight = c.Target.Entity;
-            if (ImGui.IsItemActivated()) { _dragging = (e.Id, hi); _dragDelay = c.Delay; }
+            if (ImGui.IsItemActivated())
+            {
+                _dragging = (e.Id, hi);
+                _dragDelay = c.Delay;
+                clicked = hi;
+            }
         }
         if (_dragging is { } d && d.Entity == e.Id && indices.Contains(d.Connection))
         {
@@ -567,39 +529,17 @@ public sealed class OutputsSection : IInspectorSection
                 if (delay != e.Outputs[at].Delay) Change(ctx, e, at, "Move Cue", x => x.Outputs[at].Delay = delay);
             }
         }
-        ImGui.Dummy(Theme.Px(0, 2));
+        return clicked;
     }
 
     // ---- Shared ----
 
-    /// <summary>One undo step on the entity's connections; abandoned when the connection is gone (another edit removed it).</summary>
-    static void Change(EditorContext ctx, Entity e, int index, string label, Action<Entity> edit) =>
+    /// <summary>One undo step on an entity's connections; abandoned when the connection is gone (another edit removed it).</summary>
+    public static void Change(EditorContext ctx, Entity e, int index, string label, Action<Entity> edit) =>
         EntitySection.Edit(ctx, e.Id, label, x =>
         {
             if (index >= x.Outputs.Count) return "That connection no longer exists";
             edit(x);
             return null;
         });
-
-    static void Dim(string text)
-    {
-        ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);
-        ImGui.TextWrapped(text);
-        ImGui.PopStyleColor();
-    }
-}
-
-/// <summary>The level's logic problems (<see cref="LogicOps.Check"/>), worked out once per edit and listed per entity.</summary>
-public static class LevelProblems
-{
-    static readonly ConditionalWeakTable<EditorContext, Rendering.FrameCache<(EntityCatalog Catalog, ILookup<int?, LevelProblem> Problems)>> Cache = new();
-
-    public static IReadOnlyList<LevelProblem> For(EditorContext ctx, int entity)
-    {
-        var cache = Cache.GetValue(ctx, _ => new Rendering.FrameCache<(EntityCatalog, ILookup<int?, LevelProblem>)>(selection: false));
-        // The catalog reloads when the game's manifest changes; problems follow it as well as the level's edits.
-        if (!cache.IsCurrent(ctx.Session) || cache.Value.Catalog != EntityClasses.Current)
-            cache.Store(ctx.Session, (EntityClasses.Current, LogicOps.Check(ctx.Doc, EntityClasses.Current, EntityClasses.Project).ToLookup(p => p.Entity)));
-        return cache.Value.Problems[entity].ToList();
-    }
 }

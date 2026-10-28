@@ -28,14 +28,26 @@ Kept from Source: connections live on the entity that fires them, delays and fir
 
 ## In the editor
 
-- **Outputs** (inspector, an entity with outputs): each output of its class with its connections. **+** adds one,
-  asking for the target first. A connection's row picks the target (with the eyedropper to click one), then what it
-  does, its delay and Once; argument fields follow the input's types, and **←** passes the output's value instead.
-  **+ Only when…** adds a flag condition. Problems with the entity's connections show in red under the list.
-- **Timeline outputs** (a sequence's `cue`) also show their connections as beats on a time axis; drag one to move it.
-- **Links** (inspector) lists what the entity points at and what points at it, through references and connections;
-  click a row to select that entity. In the viewport, selected entities draw lines to what they point at (cyan) and from
-  what points at them (violet).
+- **Entity IO** (inspector): the selected entity's wiring as tables, one row per connection.
+  - **Outgoing** lists its own connections (Output, Target, Input, Value, Delay).
+  - **Incoming** lists every connection from anywhere that reaches it (Source, Output, Input, Value, Delay), by id, a tag
+    or `self`. An entity without outputs opens on Incoming.
+  - **Row colours:** red can't work, amber may not. Hover a row for the whole wire and what's wrong. Click a header to
+    sort.
+  - **Editing:** selecting a row edits that connection underneath, even one that lives on another entity: its output,
+    its target (with the eyedropper to click one), its input, its arguments (**←** passes the output's value instead),
+    its delay, Once, and **+ Only when…** for a flag condition.
+  - **Double-click** a row to jump to the entity at the other end.
+  - **Add** picks the output, then the target; **Duplicate** and **Remove** act on the selected row.
+- **Wiring** (View > Wiring, `Ctrl+Shift+I`, or the list button under Entity IO): every connection in the level in one
+  sortable table, with a When column (once, flag conditions). Filter it by text, show only what touches the selection,
+  or only the problems. Click a row to select its source with that connection open; double-click also frames it. The
+  selected connection can be edited at the bottom of the window.
+- **Timeline outputs** (a sequence's `cue`) also show their connections as beats on a time axis above the table; drag
+  one to move it, click one to select its row.
+- **References** (inspector) lists what the entity's reference properties point at and whose point at it; click a row
+  to select that entity. In the viewport, selected entities draw lines to what they point at (cyan) and from what points
+  at them (violet), through references and connections alike.
 - **References** list only the entities their class or trait accepts, with search, the eyedropper and a button that
   selects the target.
 - **Asset fields** with a kind are a searchable list of the project's files, which follows the folder as files come and

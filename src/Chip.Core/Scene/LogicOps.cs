@@ -85,33 +85,65 @@ public static class LogicOps
     /// <summary>Everything <c>--check-levels</c> reports for one level, in entity order, then zero-delay loops.</summary>
     public static IReadOnlyList<LevelProblem> Check(Document doc, EntityCatalog catalog, GameProject? project)
     {
-        var problems = new List<LevelProblem>();
+        var check = new Checker(doc, catalog, project);
+        foreach (var e in doc.Entities) check.Entity(e);
         foreach (var e in doc.Entities)
+            if (LoopsBack(doc, e, e, new HashSet<int>())) check.Add(e, "cycle of connections with zero delay", Severity.Warning);
+        return check.Problems;
+    }
+
+    /// <summary>
+    /// What <see cref="Check"/> reports about one connection of <paramref name="source"/> (empty when its class is
+    /// unknown, which is the entity's problem): the editor marks the rows of its connection tables with it.
+    /// </summary>
+    public static IReadOnlyList<LevelProblem> CheckConnection(Document doc, EntityCatalog catalog, GameProject? project, Entity source, Connection c)
+    {
+        var check = new Checker(doc, catalog, project);
+        if (catalog.Find(source.ClassName) is { } cls) check.Connection(source, cls, c);
+        return check.Problems;
+    }
+
+    // Whether zero-delay connections from e lead back to start.
+    static bool LoopsBack(Document doc, Entity start, Entity e, HashSet<int> visited)
+    {
+        if (!visited.Add(e.Id)) return false;
+        foreach (var c in e.Outputs.Where(c => c.Delay == 0))
+            foreach (var target in TargetsOf(doc, e, c.Target))
+                if (target.Id == start.Id || LoopsBack(doc, start, target, visited)) return true;
+        return false;
+    }
+
+    static bool IsPayload(JsonElement v) =>
+        v.ValueKind == JsonValueKind.Object && v.TryGetProperty("payload", out var b) && b.ValueKind == JsonValueKind.True;
+
+    /// <summary>The checks, collecting problems against one level, its classes and its project.</summary>
+    sealed class Checker(Document doc, EntityCatalog catalog, GameProject? project)
+    {
+        public readonly List<LevelProblem> Problems = [];
+
+        public void Add(Entity e, string message, Severity severity = Severity.Error) =>
+            Problems.Add(new(severity, e.Id, $"{(e.Name.Length > 0 ? e.Name : $"{e.ClassName} #{e.Id}")}: {message}"));
+
+        public void Entity(Entity e)
         {
-            if (catalog.Find(e.ClassName) is not { } cls) { Add(e, $"unknown class {e.ClassName}"); continue; }
+            if (catalog.Find(e.ClassName) is not { } cls) { Add(e, $"unknown class {e.ClassName}"); return; }
             foreach (var key in e.Properties.Keys)
                 if (cls.Prop(key) == null) Add(e, $"unused property {key}", Severity.Warning);
             foreach (var p in cls.Props)
-                if (e.Properties.TryGetValue(p.Name, out var value)) CheckValue(e, p, value);
-                else if (!EntityValues.IsNull(p.Default)) CheckValue(e, p, p.Default);
+                if (e.Properties.TryGetValue(p.Name, out var value)) Value(e, p, value);
+                else if (!EntityValues.IsNull(p.Default)) Value(e, p, p.Default);
             foreach (var o in cls.Outputs.Where(o => o.Required && !e.Outputs.Any(c => c.On == o.Name)))
                 Add(e, $"required output {o.Name} has no connection", Severity.Warning);
-            foreach (var c in e.Outputs) CheckConnection(e, cls, c);
+            foreach (var c in e.Outputs) Connection(e, cls, c);
         }
-        foreach (var e in doc.Entities)
-            if (LoopsBack(e, e, new HashSet<int>())) Add(e, "cycle of connections with zero delay", Severity.Warning);
-        return problems;
-
-        void Add(Entity e, string message, Severity severity = Severity.Error) =>
-            problems.Add(new(severity, e.Id, $"{(e.Name.Length > 0 ? e.Name : $"{e.ClassName} #{e.Id}")}: {message}"));
 
         // A value its type can read, references to existing entities the property accepts, assets that exist.
-        void CheckValue(Entity e, PropSpec p, JsonElement v)
+        void Value(Entity e, PropSpec p, JsonElement v)
         {
             if (EntityValues.Coerce(p, v, out var error) is not { } typed) { Add(e, error ?? $"{p.Name} has an invalid value"); return; }
             if (p.Type == PropType.Array && typed.ValueKind == JsonValueKind.Array)
             {
-                foreach (var item in typed.EnumerateArray()) CheckValue(e, p.Item, item);
+                foreach (var item in typed.EnumerateArray()) Value(e, p.Item, item);
                 return;
             }
             if (p.Type == PropType.Node)
@@ -125,7 +157,7 @@ public static class LogicOps
                 Add(e, $"{p.Name} asset {asset} does not exist");
         }
 
-        void CheckConnection(Entity e, EntityClass cls, Connection c)
+        public void Connection(Entity e, EntityClass cls, Connection c)
         {
             var output = cls.Output(c.On);
             if (output == null) Add(e, $"{c.On} is not an output");
@@ -134,7 +166,7 @@ public static class LogicOps
             if (t.Kind == TargetKind.Entity && doc.FindEntity(t.Entity) == null) Add(e, $"connection points at missing entity #{t.Entity}");
             if (t.Kind == TargetKind.Tag && TargetsOf(doc, e, t).Count == 0) Add(e, $"no entity carries tag {t.Name}", Severity.Warning);
             if (t.Kind == TargetKind.Flag && project?.Flags.ContainsKey(t.Name) != true) Add(e, $"undeclared flag {t.Name}");
-            if (c.When is { } w) CheckGuard(e, w);
+            if (c.When is { } w) Guard(e, w);
             // The game alone knows who the activator and caller are, so their inputs can't be checked here.
             if (t is { Kind: TargetKind.Special, Name: "activator" or "caller" }) return;
 
@@ -149,38 +181,25 @@ public static class LogicOps
             {
                 var p = input.Params.FirstOrDefault(p => p.Name == key);
                 if (p == null) Add(e, $"{c.Do} has no parameter {key}");
-                else if (IsPayload(v)) CheckPayload(e, output, p, key);
-                else CheckValue(e, p, v);
+                else if (IsPayload(v)) Payload(e, output, p, key);
+                else Value(e, p, v);
             }
         }
 
-        void CheckGuard(Entity e, Guard w)
+        void Guard(Entity e, Guard w)
         {
             if (project?.Flags.GetValueOrDefault(w.Flag) is not { } flag) Add(e, $"guard names undeclared flag {w.Flag}");
             else if (w.AtLeast != null && flag.Type != FlagType.Int) Add(e, $"atLeast needs an int flag, but {w.Flag} is bool");
-            else if (w.Is is { } v) CheckValue(e, new() { Name = w.Flag, Type = flag.Type == FlagType.Bool ? PropType.Bool : PropType.Int }, v);
+            else if (w.Is is { } v) Value(e, new() { Name = w.Flag, Type = flag.Type == FlagType.Bool ? PropType.Bool : PropType.Int }, v);
         }
 
         // The payload's type must be the param's; for references, every class the payload may be must suit the param.
-        void CheckPayload(Entity e, OutputSpec? output, PropSpec p, string key)
+        void Payload(Entity e, OutputSpec? output, PropSpec p, string key)
         {
             if (output?.Payload is not { } payload || payload.Type != p.Type || payload.ItemType != p.ItemType)
                 Add(e, $"payload type does not match {key}");
             else if (IsReference(p) && catalog.Classes.Where(payload.Accepts).Any(t => !p.Accepts(t)))
                 Add(e, $"payload reference type does not match {key}");
         }
-
-        // Whether zero-delay connections from e lead back to start.
-        bool LoopsBack(Entity start, Entity e, HashSet<int> visited)
-        {
-            if (!visited.Add(e.Id)) return false;
-            foreach (var c in e.Outputs.Where(c => c.Delay == 0))
-                foreach (var target in TargetsOf(doc, e, c.Target))
-                    if (target.Id == start.Id || LoopsBack(start, target, visited)) return true;
-            return false;
-        }
     }
-
-    static bool IsPayload(JsonElement v) =>
-        v.ValueKind == JsonValueKind.Object && v.TryGetProperty("payload", out var b) && b.ValueKind == JsonValueKind.True;
 }
