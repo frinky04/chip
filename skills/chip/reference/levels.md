@@ -26,6 +26,8 @@ editing the file, or the next save overwrites your edit.
   table. A reference is `{ "entity": <id> }`.
 - A mesh entity lists its meshes: `"meshes": [13]`. Its `position` is its origin (a hinge), not the meshes' position.
   A mesh belongs to one entity at most ([`surfaces.md`](surfaces.md)).
+- `tags` (optional) is the entity's tags, `["corridor_lights"]`, and `outputs` (optional) its connections, in the
+  shape [`logic.md`](logic.md) gives, leaving out defaults.
 - `export` (optional) holds the export settings: `bakeCollision`, `collisionHulls`, `tessellate`, `smoothing`,
   `embedTextures`, `materialRemap` and the rest.
 
@@ -63,13 +65,16 @@ looks materials up by name.
 | Command | Does | Exit |
 |---|---|---|
 | `--entities-check <path> [--json]` (any path inside the project, or the manifest itself) | Reads the project file and the manifest, lints the manifest, lists the classes | 0 clean, 1 warnings, 2 errors, 3 not found |
+| `--check-levels <game root \| level> [--json]` | Checks every `.chip` under the root (skipping `bin`, `obj`, `artifacts`, `dist` and dot folders) against the classes: unknown classes, dangling or wrongly typed references and connections, missing assets, undeclared flags, zero-delay cycles ([`logic.md`](logic.md), Checks) | 0 clean, 1 warnings, 2 errors, 3 no project or manifest |
+| `--migrate <game root \| level>` | Moves values and connections stored under old names (`was`) to the current ones and saves each level it changed | 0 done, 2 unreadable, 3 no project or manifest |
 | `--export <level.chip> [out.glb]` | Exports with the project's classes and conventions; prints warnings for values left out | 0 written, 2 no output path, 4 unreadable |
-| `--shot <level.chip> <out.png> [objects\|faces\|empty]` | Renders the editor with the level open, so you can look at it ("saved" in the capture is the level's state; the file is only read) | 0 written |
+| `--shot <level.chip> <out.png> [objects\|faces\|entity\|empty]` | Renders the editor with the level open, so you can look at it ("saved" in the capture is the level's state; the file is only read). `entity` selects one entity to show its inspector: the first, or `CHIP_SHOT_ENTITY=<name or id>` | 0 written |
 | `--rules-check <level.chip> [--json]` | Dresses the level headlessly and reports rule problems | 0 clean, 1 warnings, 2 errors, 3 no rules file |
 | `--rules-schema [out.json]` | The JSON Schema for dressing rules files | 0 |
 
 `--export` skips dressing; the editor's Export (`Ctrl+E`) applies it. A level whose look depends on its dressing has
-to be exported from the editor.
+to be exported from the editor. `--export`, `--check-levels` and the editor apply the `was` renames as they load a
+level; only `--migrate` (and saving in the editor) writes them back.
 
 ## Dressing
 

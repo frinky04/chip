@@ -19,7 +19,7 @@ Tell nodes apart by their `extras`. Check `chip_class` and `chip_volume` before 
 
 | Node | Has a mesh | `extras` |
 |---|---|---|
-| Entity | no | `chip_class`, `chip_id`, `properties`; `chip_name` when named; `chip_scene` / `chip_uid` when the manifest gives them; a mesh entity has its meshes as `children` |
+| Entity | no | `chip_class`, `chip_id`, `properties`; `chip_name` when named; `chip_scene` / `chip_uid` when the manifest gives them; `chip_tags` when tagged; `chip_io` when it has connections; a mesh entity has its meshes as `children` |
 | Render mesh | yes | `chip_mesh` (the mesh's name), `chip_id`; `chip_collider: "trimesh"` when it is its own collider; `chip_collision` when it isn't Default (`None`, `Only`, `ConvexOnly`); `chip_remap` (material name → engine path) |
 | Collider only | yes | `chip_collider: "trimesh"` or `"convex"`, `chip_render: false`; no material |
 | Surface collider | yes | `chip_surface` (`clip`, `nodraw`, or the game's `monster_clip`), `chip_collider: "trimesh"`, `chip_render: false`; `chip_tool: "clip"` for Chip's clip |
@@ -69,6 +69,13 @@ world collision. Entities can carry tags through a manifest property (`type: "ar
 - Values the class doesn't declare (the class changed after the level was made) still go out as they were. Ignore
   unknown keys, and log unknown `chip_class` names.
 - Node names are the entity's name, else `<class>_<id>`. Look entities up by `chip_id` or `chip_name`.
+- `chip_tags` is the entity's tags, a sorted array of strings, which `tag` connection targets select by.
+- `chip_io` is the entity's connections, every field written out:
+  `[{ "on": "opened", "target": { "entity": 12 }, "do": "turn_off", "args": {}, "delay": 0.5, "once": false }]`,
+  plus `when` when guarded. A connection to an entity that wasn't exported is left out (Chip warns).
+  [`logic.md`](logic.md) gives the target forms and how a game must run them.
+- When the project declares flags, the glTF scene's `extras.chip_flags` lists them all:
+  `{ "power_on": { "type": "bool", "default": false, "scope": "game" } }`.
 - A mesh entity's `children` are its geometry: render meshes, colliders and volumes as in the table, in its space.
   They move with it and never join the baked world collision. Under a mesh entity, collider names carry no Godot
   suffixes.

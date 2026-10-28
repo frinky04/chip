@@ -1,6 +1,6 @@
 ---
 name: chip
-description: Chip level editor pipeline. Use when connecting a game or engine to Chip, defining its entity classes or surfaces (chip.project.json, the entity manifest), or editing and exporting .chip levels and the .glb files Chip exports.
+description: Chip level editor pipeline. Use when connecting a game or engine to Chip, defining its entity classes, surfaces or asset kinds (chip.project.json, the entity manifest), wiring level logic (entity IO: inputs, outputs, connections, flags), or editing, checking and exporting .chip levels and the .glb files Chip exports.
 ---
 
 # Chip
@@ -28,9 +28,12 @@ read its path from `CHIP_EXE`.
 
 1. **Find the source of truth**: where the game declares its entity types, their fields and their defaults (component
    classes, prefab files, a data table). Done when you can name the files and how a field's type and default are declared.
-2. **Write `chip.project.json`** at the game's root ([`reference/manifest.md`](reference/manifest.md), Project file).
+2. **Write `chip.project.json`** at the game's root ([`reference/manifest.md`](reference/manifest.md), Project file),
+   with a kind for every sort of file a property names (sounds, models, item files). Done when no asset property will
+   be free text.
 3. **Generate the manifest** from the source of truth with a small tool or build step in the game's own language, and
-   commit its output ([`reference/manifest.md`](reference/manifest.md), Format and Generate it from the game).
+   commit its output ([`reference/manifest.md`](reference/manifest.md), Format and Generate it from the game). Asset
+   fields carry their `kind`, references their `class` or `trait`.
 4. **Check it**: `Chip.exe --entities-check <game root>` exits 0.
 5. **Write the loader** against [`reference/export.md`](reference/export.md): entities by `chip_class` with their
    values over the game's defaults, references resolved by `chip_id`, colliders, triggers, clip.
@@ -38,13 +41,28 @@ read its path from `CHIP_EXE`.
    class, each with at least one value changed from its default, plus a reference, a trigger and a floor. Export it with
    `Chip.exe --export` and load it with the game's loader, ideally from an automated test. Done when every class
    arrives with its changed values, the reference points at the right entity, and the floor collides.
+7. **Check the levels in the game's tests**: `Chip.exe --check-levels <game root>` exits 0 or 1 (warnings only).
 
 ## Change entity classes
 
 1. Edit the source of truth, regenerate the manifest, and run `--entities-check` until it exits 0.
-2. A renamed class or property orphans the values levels already hold. Rename the keys (`className`, or the key
-   inside `properties`) in every `.chip` file that uses them. Done when a search of the levels finds no old name.
+2. For a renamed class, property, input or output, keep the old name in its `was`
+   ([`reference/manifest.md`](reference/manifest.md), Renames), then run `Chip.exe --migrate <game root>`. Done when
+   `--check-levels` reports no unused values or unknown classes from the rename.
 3. A property type the loader hasn't read before needs a loader change. Repeat the round trip for that class.
+
+## Add level logic
+
+Read [`reference/logic.md`](reference/logic.md) first: ports, connections, flags, sequences and how a game must run them.
+
+1. **Declare ports in the code**: an input per thing the level may make the class do, an output per event a designer
+   may react to, a trait per capability several classes share. Regenerate the manifest; `--entities-check` exits 0 and
+   lists them.
+2. **Run connections in the game**: read `chip_io`, `chip_tags` and `chip_flags` in the loader, resolve entity targets
+   after every entity exists, and dispatch by the rules in Running them. Flag state and pending delays go into saves.
+3. **Prove it** with a code-built test per rule: a delay, `once`, a guard, a tag target, a payload argument, a flag
+   change, a sequence cancelled halfway, and a zero-delay loop that stays capped. Then wire one real connection in a
+   test level, export it, and watch it fire in the game. Done when the tests pass and the connection fires.
 
 ## Add a surface or mesh class
 
@@ -62,17 +80,21 @@ of level geometry with settings of its own (a door, a platform, a screen with it
 ## Edit or export levels
 
 Read [`reference/levels.md`](reference/levels.md) for the `.chip` format, the commands and dressing. Done when
-`--export` exits 0 without warnings and a `--shot` capture of the level, which you have looked at, shows the change.
+`--check-levels` reports nothing new, `--export` exits 0 without warnings, and a `--shot` capture of the level, which
+you have looked at, shows the change.
 
 ## Reference
 
-- [`reference/manifest.md`](reference/manifest.md): `chip.project.json`, the manifest format, property types and
-  values, generating the manifest, `--entities-check`.
+- [`reference/manifest.md`](reference/manifest.md): `chip.project.json` and asset kinds, the manifest format, property
+  types and values, generating the manifest, renames, `--entities-check`.
+- [`reference/logic.md`](reference/logic.md): inputs, outputs and traits, connections and their targets, the rules a
+  game's dispatcher follows, flags, sequences, `--check-levels`.
 - [`reference/export.md`](reference/export.md): what the `.glb` holds and how a loader reads it: space and units, node
-  kinds, entities, references, materials.
+  kinds, entities, references, connections, materials.
 - [`reference/surfaces.md`](reference/surfaces.md): surfaces (built-in tool materials and the game's own) and mesh
   entities.
 - [`reference/levels.md`](reference/levels.md): the `.chip` format, every headless command, dressing rules.
 - `samples/toy-game` in the Chip repository is a worked example: entity classes in C# (`game/Entities.cs`, including
-  a `screen` mesh class), the manifest generator (`game/Manifest.cs`), a loader (`game/Level.cs`), surfaces in
-  `chip.project.json`, and a test level (`levels/demo.chip`).
+  a `screen` mesh class and ports), the manifest generator (`game/Manifest.cs`), a loader that reads connections
+  (`game/Level.cs`), surfaces, a kind and flags in `chip.project.json`, and a test level (`levels/demo.chip`) with a
+  connection of every target form.
