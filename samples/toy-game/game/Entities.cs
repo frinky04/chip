@@ -32,6 +32,7 @@ public sealed class PropAttribute : Attribute
 
 public abstract class GameEntity
 {
+    public List<LogicConnection> Outputs = [];
     public int Id;
     public string Name = "";
     public Vector3 Position;
@@ -80,3 +81,6 @@ public sealed class Light : GameEntity
     [Prop(Min = 0, Suffix = " m")] public float Range = 8;
     [Prop(Doc = "Lights that switch on and off with this one.")] public List<Light> Linked = [];
 }
+
+[Entity("logic_relay", Doc = "Forwards a trigger to its connections.")]
+public sealed class LogicRelay : GameEntity { }

@@ -29,6 +29,18 @@ public static class Manifest
             c["props"] = props;
             if (attr.Bounds is { Length: 6 } b) c["bounds"] = new JsonArray(new JsonArray(b[0], b[1], b[2]), new JsonArray(b[3], b[4], b[5]));
             if (attr.Mesh) c["mesh"] = true;
+            if (attr.Name is "door" or "light")
+            {
+                c["traits"] = new JsonArray("toggleable");
+                c["inputs"] = JsonNode.Parse("""[{"name":"enable","params":[{"name":"enabled","type":"bool","default":true}]}]""");
+                c["outputs"] = JsonNode.Parse("""[{"name":"changed","payload":{"type":"bool"}}]""");
+            }
+            if (attr.Name == "logic_relay")
+            {
+                c["logic"] = true;
+                c["inputs"] = JsonNode.Parse("""[{"name":"trigger"}]""");
+                c["outputs"] = JsonNode.Parse("""[{"name":"fired"}]""");
+            }
             classes[attr.Name] = c;
         }
         var root = new JsonObject { ["version"] = 1, ["classes"] = classes };

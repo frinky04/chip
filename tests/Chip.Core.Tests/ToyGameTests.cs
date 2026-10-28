@@ -70,6 +70,10 @@ public class ToyGameTests : IDisposable
         Assert.Equal(["key_red"], doors["left_door"].Keys);
         Assert.Equal("assets/sounds/door.wav", doors["left_door"].Sound); // not set in the level: the class default
 
+        var wire = doors["left_door"].Outputs[0];
+        Assert.Equal(11, wire.Target.Entity); Assert.Equal("entity", wire.Target.Kind);
+        Assert.True(wire.Args["enabled"].GetBoolean());
+        Assert.Equal(4, doors["left_door"].Outputs.Count);
         var pickups = level.All<Pickup>().OrderBy(p => p.Amount).ToList();
         Assert.Equal(("key_red", 1, false), (pickups[0].Item, pickups[0].Amount, pickups[0].Respawns));
         Assert.Equal(("coin", 5, true), (pickups[1].Item, pickups[1].Amount, pickups[1].Respawns));

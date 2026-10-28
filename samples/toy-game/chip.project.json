@@ -14,5 +14,26 @@
       "doc": "Blocks monsters, lets players through",
       "look": { "color": "#d0406a" }
     }
+  },
+  "kinds": {
+    "sound": {
+      "root": "assets/sounds",
+      "ext": [
+        ".wav"
+      ],
+      "store": "stem"
+    }
+  },
+  "flags": {
+    "power_on": {
+      "type": "bool",
+      "default": false,
+      "scope": "game"
+    },
+    "generators_fixed": {
+      "type": "int",
+      "default": 0,
+      "scope": "level"
+    }
   }
 }
