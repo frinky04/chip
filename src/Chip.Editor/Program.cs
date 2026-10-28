@@ -2,6 +2,11 @@
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
 
+if (args.Length >= 2 && args[0] == "--check-levels")
+    return Chip.Core.Scene.LevelCheck.Run(args[1], Console.Out, args.Contains("--json"));
+if (args.Length >= 2 && args[0] == "--migrate")
+    return Chip.Core.Scene.LevelMigration.Run(args[1], Console.Out);
+
 // Headless dressing tools (no window): docs/dressing.md.
 if (args.Length >= 2 && args[0] == "--rules-check")
 {
@@ -36,6 +41,7 @@ if (args.Length >= 2 && args[0] == "--export")
         }
         Chip.Core.Scene.EntityClasses.Track(output, levelPath);
         if (Chip.Core.Scene.EntityClasses.Problem is { } problem) Console.Error.WriteLine(problem);
+        Chip.Core.Scene.LevelMigration.Apply(level, Chip.Core.Scene.EntityClasses.Current);
         var materials = Chip.Core.Scene.MaterialLibrary.LoadFolder(Path.Combine(AppContext.BaseDirectory, "assets", "textures"));
         var r = Chip.Core.IO.GlbExporter.Export(level, materials, output);
         foreach (var w in r.Warnings) Console.Error.WriteLine(w);

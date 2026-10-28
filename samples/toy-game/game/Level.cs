@@ -10,6 +10,10 @@ namespace ToyGame;
 /// A collision shape in world space: triangles, three corners each. <see cref="Surface"/> names the game surface it was
 /// painted with (<c>monster_clip</c>), if any; <see cref="Owner"/> is the mesh entity it belongs to, if any.
 /// </summary>
+public sealed record LogicTarget(string Kind, int? Entity, string? Name);
+public sealed record LogicGuard(string Flag, JsonElement? Is, int? AtLeast);
+public sealed record LogicConnection(string On, LogicTarget Target, string Do, Dictionary<string, JsonElement> Args, float Delay, bool Once, LogicGuard? When);
+
 public sealed record Collider(string Node, Vector3[] Triangles, bool Convex, bool Rendered, string? Surface, GameEntity? Owner);
 
 /// <summary>A volume (faces painted with a volume surface such as Chip's trigger), as its world-space box.</summary>
@@ -109,6 +113,14 @@ public sealed class Level
         Matrix4x4.Decompose(world, out _, out e.Rotation, out e.Position);
         e.Id = extras["chip_id"]?.GetValue<int>() ?? 0;
         e.Name = extras["chip_name"]?.GetValue<string>() ?? "";
+        foreach (var io in extras["chip_io"]?.AsArray() ?? [])
+        {
+            var target = io!["target"]!.AsObject().First();
+            var args = io["args"]!.AsObject().ToDictionary(p => p.Key, p => JsonSerializer.SerializeToElement(p.Value));
+            var w = io["when"];
+            e.Outputs.Add(new(io["on"]!.GetValue<string>(), new(target.Key, target.Key == "entity" ? target.Value!.GetValue<int>() : null, target.Key == "entity" ? null : target.Value!.GetValue<string>()),
+                io["do"]!.GetValue<string>(), args, io["delay"]!.GetValue<float>(), io["once"]!.GetValue<bool>(), w == null ? null : new(w["flag"]!.GetValue<string>(), w["is"] == null ? null : JsonSerializer.SerializeToElement(w["is"]), w["atLeast"]?.GetValue<int>())));
+        }
         // Only values the designer changed are in the file; every other field keeps the default the manifest showed.
         var values = extras["properties"] as JsonObject ?? [];
         foreach (var (field, _) in Manifest.Props(type))

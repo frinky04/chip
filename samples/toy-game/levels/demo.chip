@@ -1597,6 +1597,55 @@
    }
   },
   {
+   "tags": ["doors"],
+   "outputs": [
+    {
+     "on": "changed",
+     "target": {
+      "entity": 11
+     },
+     "do": "enable",
+     "args": {
+      "enabled": true
+     }
+    },
+    {
+     "on": "changed",
+     "target": {
+      "tag": "corridor_lights"
+     },
+     "do": "enable",
+     "args": {
+      "enabled": {
+       "payload": true
+      }
+     },
+     "delay": 0.5
+    },
+    {
+     "on": "changed",
+     "target": {
+      "special": "self"
+     },
+     "do": "enable",
+     "delay": 1,
+     "once": true
+    },
+    {
+     "on": "changed",
+     "target": {
+      "flag": "power_on"
+     },
+     "do": "set",
+     "args": {
+      "value": true
+     },
+     "when": {
+      "flag": "generators_fixed",
+      "atLeast": 1
+     }
+    }
+   ],
    "id": 9,
    "className": "door",
    "name": "left_door",
@@ -1644,6 +1693,7 @@
    }
   },
   {
+   "tags": ["corridor_lights"],
    "id": 11,
    "className": "light",
    "name": "",

@@ -257,6 +257,12 @@ public static class GlbExporter
             if (cls.Scene != null) extras["chip_scene"] = cls.Scene;
             if (e.Name.Length > 0) extras["chip_name"] = e.Name;
             extras["properties"] = EntityProperties(e, cls, exportedIds, warnings);
+            if (!e.Tags.IsEmpty) extras["chip_tags"] = new JsonArray(e.Tags.Select(t => (JsonNode)JsonValue.Create(t)!).ToArray());
+            var io = new JsonArray();
+            foreach (var c in e.Outputs)
+                if (c.Target.Kind == TargetKind.Entity && !exportedIds.Contains(c.Target.Entity)) warnings.Add($"{SceneOps.DisplayName(e)}: connection {c.On} points at an entity that isn't exported; left out");
+                else io.Add(c.ToJson(defaults: true));
+            if (io.Count > 0) extras["chip_io"] = io;
             node["extras"] = extras;
             if (children.TryGetValue(e.Id, out var kids)) node["children"] = new JsonArray(kids.Select(k => (JsonNode)k).ToArray());
             nodes.Add(node);
@@ -357,6 +363,12 @@ public static class GlbExporter
             ["bufferViews"] = bufferViews,
             ["buffers"] = new JsonArray(new JsonObject { ["byteLength"] = Align4(bin.Length) }),
         };
+        if (EntityClasses.Project is { Flags.Count: > 0 } project)
+        {
+            var flags = new JsonObject();
+            foreach (var f in project.Flags.Values) flags[f.Name] = new JsonObject { ["type"] = f.Type.ToString().ToLowerInvariant(), ["default"] = JsonNode.Parse(f.Default.GetRawText()), ["scope"] = f.Scope.ToString().ToLowerInvariant() };
+            root["scenes"]![0]!["extras"] = new JsonObject { ["chip_flags"] = flags };
+        }
         if (images.Count > 0)
         {
             root["images"] = images;
