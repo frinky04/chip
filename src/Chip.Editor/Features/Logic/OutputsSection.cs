@@ -72,7 +72,8 @@ public sealed class OutputsSection : IInspectorSection
         if (output?.Payload is { } payload)
         {
             ImGui.SameLine();
-            ImGui.TextColored(Theme.TextDisabled, $"({EntityValues.TypeName(payload)})");
+            float room = ImGui.GetContentRegionMax().X - button - ImGui.GetCursorPosX() - ImGui.GetStyle().ItemSpacing.X;
+            ImGui.TextColored(Theme.TextDisabled, Ellipsize($"({EntityValues.TypeName(payload)})", room));
             Tip($"It passes a {EntityValues.TypeName(payload)} along, which an argument can take");
         }
         if (output != null)
@@ -510,7 +511,8 @@ public sealed class OutputsSection : IInspectorSection
         float end = MathF.Max(1, indices.Max(i => _dragging == (e.Id, i) ? _dragDelay : e.Outputs[i].Delay));
         end = MathF.Ceiling(end * 1.15f * 2) / 2; // a little room past the last cue, on a half second
         float X(float t) => left + (right - left) * (t / end);
-        float axisY = origin.Y + h - Theme.Px(10);
+        // Second labels sit under the axis, inside the strip.
+        float axisY = origin.Y + h - Fonts.SmallSize - Theme.Px(3);
 
         dl.AddRectFilled(origin, origin + new Vector2(w, h), ImGui.ColorConvertFloat4ToU32(Theme.Track), Theme.Px(3));
         uint tick = ImGui.ColorConvertFloat4ToU32(Theme.TextDisabled);
@@ -519,7 +521,12 @@ public sealed class OutputsSection : IInspectorSection
         {
             bool whole = MathF.Abs(t - MathF.Round(t)) < 1e-3f;
             dl.AddLine(new Vector2(X(t), axisY - Theme.Px(whole ? 4 : 2)), new Vector2(X(t), axisY), tick, 1);
-            if (whole) dl.AddText(Fonts.Small, Fonts.SmallSize, new Vector2(X(t) + Theme.Px(2), axisY - Theme.Px(2)), tick, $"{t:0}s");
+            if (!whole) continue;
+            string label = $"{t:0}s";
+            float labelW = ImGui.CalcTextSize(label).X * (Fonts.SmallSize / Fonts.BodySize);
+            // Labels sit right of their tick, except where that would run out of the strip.
+            float lx = X(t) + Theme.Px(2) + labelW > origin.X + w ? X(t) - Theme.Px(2) - labelW : X(t) + Theme.Px(2);
+            dl.AddText(Fonts.Small, Fonts.SmallSize, new Vector2(lx, axisY + Theme.Px(1)), tick, label);
         }
         dl.AddLine(new Vector2(left, axisY), new Vector2(right, axisY), tick, 1);
 

@@ -28,8 +28,10 @@ public sealed class TagsSection(TagsPopup popup) : IInspectorSection
         if (!Heading("Tags", tags.Count == 0 ? "none" : null)) return;
 
         // The chips flow in the field column, wrapping back to it, with "+ Tag" as the last one.
-        bool meshes = ctx.Sel.Mode == SelectMode.Object;
-        RowLabel(meshes ? "Meshes" : "Faces", meshes ? "Tags on the selected meshes (object mode)" : "Tags on the selected faces");
+        bool objects = ctx.Sel.Mode == SelectMode.Object;
+        RowLabel(objects ? "Objects" : "Faces", objects
+            ? "Tags on the selected meshes and entities (object mode). A connection can target every entity with a tag"
+            : "Tags on the selected faces");
         string? remove = null, complete = null, selectAll = null;
         float right = ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X;
         float gap = Theme.Px(4);
