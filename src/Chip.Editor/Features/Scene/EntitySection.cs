@@ -18,10 +18,8 @@ namespace Chip.Editor.Features.Scene;
 public sealed class EntitySection : IInspectorSection
 {
     readonly TextEdits _text = new();
+    readonly ValueFields _fields = new();
     string _newKey = "", _newValue = "", _classFilter = "";
-    // A value being dragged or picked, committed as one step when the field lets go.
-    (int Entity, string Prop)? _draftKey;
-    Vector4 _draft;
 
     public string Id => "entity";
     public int Order => 110;
@@ -118,9 +116,6 @@ public sealed class EntitySection : IInspectorSection
             : $"Entity classes come from {source}"
         : EntityClasses.Problem ?? "Built-in classes. Save the level inside a game project (a Godot project with the Chip import plugin, or a folder with chip.project.json) to use its classes";
 
-    /// <summary>The resource field's hint: the project's asset prefix ("res://…"), else a plain path.</summary>
-    static string AssetHint() => (EntityClasses.Project?.AssetPrefix ?? "res://") is { Length: > 0 } prefix ? prefix + "…" : "path…";
-
     // ---- Class properties ----
 
     void DrawClassProperties(EditorContext ctx, Entity e, EntityClass cls)
@@ -163,15 +158,13 @@ public sealed class EntitySection : IInspectorSection
 
         if (spec.Type == PropType.Array)
         {
-            var items = value.ValueKind == JsonValueKind.Array ? value.EnumerateArray().ToList() : [];
-            ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(Theme.TextDim, items.Count == 0 ? "Empty" : items.Count == 1 ? "1 item" : $"{items.Count} items");
+            ValueFields.ListCount(value);
             ImGui.SameLine(labelW + fieldW + ImGui.GetStyle().ItemSpacing.X);
         }
         else
         {
             ImGui.SetNextItemWidth(fieldW);
-            ValueField(ctx, e, spec, value, spec.Name, fieldW, Commit);
+            _fields.Draw(ctx, e, spec, value, spec.Name, fieldW, Commit);
             ImGui.SameLine();
         }
 
@@ -183,160 +176,8 @@ public sealed class EntitySection : IInspectorSection
         }
         else ImGui.Dummy(new Vector2(resetW, 0));
 
-        if (spec.Type == PropType.Array) ListItems(ctx, e, spec, value, labelW, fieldW, resetW, Commit);
+        if (spec.Type == PropType.Array) _fields.ListItems(ctx, e, spec, value, spec.Name, labelW, fieldW, resetW, Commit);
     }
-
-    /// <summary>
-    /// A list's items under its row: the number in the label column, a field of the item type, and a remove button in
-    /// the × column; then a button that adds an item (the last one again, so a run of similar items is quick).
-    /// </summary>
-    void ListItems(EditorContext ctx, Entity e, PropSpec spec, JsonElement value, float labelW, float fieldW, float buttonW, Action<JsonElement> commit)
-    {
-        var items = value.ValueKind == JsonValueKind.Array ? value.EnumerateArray().ToList() : [];
-        var item = spec.Item;
-        for (int i = 0; i < items.Count; i++)
-        {
-            int at = i;
-            ImGui.PushID(i);
-            ImGui.AlignTextToFramePadding();
-            ImGui.SetCursorPosX(labelW - ImGui.CalcTextSize($"{i + 1}").X - Theme.Px(8));
-            ImGui.TextColored(Theme.TextDisabled, $"{i + 1}");
-            ImGui.SameLine(labelW);
-            ImGui.SetNextItemWidth(fieldW);
-            ValueField(ctx, e, item, items[i], $"{spec.Name}[{i}]", fieldW, v => commit(EntityValues.List(items.Select((x, j) => j == at ? v : x))));
-            ImGui.SameLine();
-            if (IconButton("remove", Icon.Trash, $"Remove item {i + 1}", buttonW))
-                commit(EntityValues.List(items.Where((_, j) => j != at)));
-            ImGui.PopID();
-        }
-        ImGui.SetCursorPosX(labelW);
-        if (ImGui.Button("Add item", new Vector2(fieldW, 0)))
-            commit(EntityValues.List([.. items, items.Count > 0 && item.Type != PropType.Node ? items[^1] : NewItem(item)]));
-        Tip(item.Type == PropType.Node || items.Count == 0 ? $"Add a {EntityValues.TypeName(item.Type)}" : "Add a copy of the last item");
-    }
-
-    /// <summary>A fresh item: the first choice, white, zero, empty text, or none.</summary>
-    static JsonElement NewItem(PropSpec item) => item.Type switch
-    {
-        PropType.Bool => EntityValues.Of(false),
-        PropType.Int => EntityValues.Of(0L),
-        PropType.Float => EntityValues.Of(0.0),
-        PropType.String => EntityValues.Of(""),
-        PropType.Enum when item.Options.Count > 0 => item.Options[0].Value,
-        PropType.Color => EntityValues.Color(Vector4.One),
-        PropType.Vector2 => EntityValues.Array(0, 0),
-        PropType.Vector3 => EntityValues.Array(0, 0, 0),
-        _ => EntityValues.Null,
-    };
-
-    /// <summary>The field for one value of a single-valued type, its width already set. <paramref name="name"/> tells it from the entity's other fields.</summary>
-    void ValueField(EditorContext ctx, Entity e, PropSpec spec, JsonElement value, string name, float fieldW, Action<JsonElement> Commit)
-    {
-        int id = e.Id;
-        var key = (id, name);
-        switch (spec.Type)
-        {
-            case PropType.Bool:
-            {
-                bool v = EntityValues.Bool(value) == true;
-                if (ImGui.Checkbox("##v", ref v)) Commit(EntityValues.Of(v));
-                break;
-            }
-            case PropType.Int:
-            {
-                int v = _draftKey == key ? (int)_draft.X : (int)(EntityValues.Number(value) ?? 0);
-                var (min, max) = Limits(spec, int.MinValue, int.MaxValue);
-                if (ImGui.DragInt("##v", ref v, 0.1f, (int)min, (int)max, "%d" + Suffix(spec), Clamp(spec))) { _draftKey = key; _draft.X = v; }
-                if (ImGui.IsItemDeactivatedAfterEdit() && _draftKey == key) { _draftKey = null; Commit(EntityValues.Of((long)_draft.X)); }
-                break;
-            }
-            case PropType.Float:
-            {
-                float v = _draftKey == key ? _draft.X : (float)(EntityValues.Number(value) ?? 0);
-                var (min, max) = Limits(spec, -1e9, 1e9);
-                float speed = spec.Range is { } rg && rg.Max > rg.Min ? (float)(rg.Max - rg.Min) / 300 : MathF.Max(0.001f, MathF.Abs(v) * 0.01f);
-                if (ImGui.DragFloat("##v", ref v, speed, (float)min, (float)max, "%.3g" + Suffix(spec), Clamp(spec))) { _draftKey = key; _draft.X = v; }
-                if (ImGui.IsItemDeactivatedAfterEdit() && _draftKey == key) { _draftKey = null; Commit(EntityValues.Of(_draft.X)); }
-                break;
-            }
-            case PropType.String:
-                if (_text.Field($"##s{id}/{name}", EntityValues.Text(value), out var text, width: fieldW)) Commit(EntityValues.Of(text));
-                break;
-            case PropType.Enum:
-            {
-                var current = spec.Options.FirstOrDefault(o => EntityValues.Same(o.Value, value));
-                if (ImGui.BeginCombo("##v", current?.Label ?? EntityValues.Text(value)))
-                {
-                    foreach (var o in spec.Options)
-                        if (ImGui.Selectable(o.Label, o == current) && o != current) Commit(o.Value);
-                    ImGui.EndCombo();
-                }
-                break;
-            }
-            case PropType.Color:
-            {
-                var v = _draftKey == key ? _draft : EntityValues.Color(value) ?? Vector4.One;
-                if (ImGui.ColorEdit4("##v", ref v, ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.AlphaPreviewHalf)) { _draftKey = key; _draft = v; }
-                // The picker popup keeps editing after the field lets go: commit once nothing is being edited.
-                if (_draftKey == key && !ImGui.IsAnyItemActive() && !ImGui.IsPopupOpen("", ImGuiPopupFlags.AnyPopupId | ImGuiPopupFlags.AnyPopupLevel))
-                {
-                    _draftKey = null;
-                    Commit(EntityValues.Color(_draft));
-                }
-                break;
-            }
-            case PropType.Vector2 or PropType.Vector3:
-            {
-                int n = spec.Type == PropType.Vector2 ? 2 : 3;
-                var v = EntityValues.Vector(value, n) ?? new float[n];
-                string[] tags = n == 2 ? ["X", "Y"] : ["X", "Y", "Z"];
-                if (TaggedFields("##v", tags, Theme.AxisU32, v, new bool[n], spec.Integer ? "%.0f" : "%.3f", out int axis, out float av, fieldW))
-                {
-                    v[axis] = av;
-                    Commit(EntityValues.Array(v));
-                }
-                break;
-            }
-            case PropType.Node:
-                ReferenceCombo(ctx, e, value, Commit);
-                break;
-            case PropType.Resource:
-                if (_text.Field($"##r{id}/{name}", EntityValues.Text(value), out var path, hint: AssetHint(), width: fieldW))
-                    Commit(path.Trim().Length == 0 ? EntityValues.Null : EntityValues.Of(path.Trim()));
-                break;
-            default:
-                ImGui.AlignTextToFramePadding();
-                ImGui.TextColored(Theme.TextDisabled, $"Set in {EntityClasses.Engine} ({spec.EngineType})");
-                break;
-        }
-    }
-
-    /// <summary>Picks another entity (or none) for a node property.</summary>
-    static void ReferenceCombo(EditorContext ctx, Entity e, JsonElement value, Action<JsonElement> commit)
-    {
-        var target = EntityValues.RefId(value) is { } tid ? ctx.Doc.FindEntity(tid) : null;
-        string preview = target != null ? SceneOps.DisplayName(target) : EntityValues.RefId(value) is { } missing ? $"Missing entity {missing}" : "None";
-        if (!ImGui.BeginCombo("##v", preview, ImGuiComboFlags.HeightLarge)) return;
-        if (ImGui.Selectable("None", target == null)) commit(EntityValues.Null);
-        foreach (var other in ctx.Doc.Entities)
-        {
-            if (other.Id == e.Id || EntityClasses.Get(other.ClassName).EditorOnly) continue;
-            string label = SceneOps.DisplayName(other);
-            if (label != other.ClassName) label += $"  ({other.ClassName})";
-            if (ImGui.Selectable($"{label}##{other.Id}", other == target) && other != target) commit(EntityValues.Ref(other.Id));
-        }
-        ImGui.EndCombo();
-    }
-
-    static (double Min, double Max) Limits(PropSpec spec, double lo, double hi) => spec.Range is { } r
-        ? (spec.OrLess ? lo : r.Min, spec.OrGreater ? hi : r.Max)
-        : (lo, hi);
-
-    /// <summary>Hard ranges clamp what you type; open ones (or_greater / or_less) only guide the drag.</summary>
-    static ImGuiSliderFlags Clamp(PropSpec spec) =>
-        spec.Range != null && !spec.OrGreater && !spec.OrLess ? ImGuiSliderFlags.AlwaysClamp : ImGuiSliderFlags.None;
-
-    static string Suffix(PropSpec spec) => spec.Suffix.Length > 0 ? " " + spec.Suffix.Replace("%", "%%") : "";
 
     static string FieldTip(PropSpec spec, bool set, string? error)
     {

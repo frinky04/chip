@@ -64,6 +64,7 @@ public static class EntityOverlay
         }
         var visibility = VisibilityCache.GetValue(ctx, _ => new EntityVisibilityFrameCache());
         bool occlusion = !BenchmarkSkipOcclusion && doc.Entities.Count <= OcclusionLimit;
+        IReadOnlyList<Entity> linked = objectMode ? sel.Entities(doc) : [];
 
         for (int i = 0; i < paneCount; i++)
         {
@@ -77,10 +78,12 @@ public static class EntityOverlay
                 bool occluded = occlusion && !view.IsOrthographic && !visibility.Get(ctx.Session, view.Eye, ctx.Backfaces, e, ctx.Picks);
                 EntityDraw.Draw(dl, pane.Origin, view, e, look, occluded, e.Locked, geometry.Value.Boxes[e.Id]);
             }
+            Logic.LinkDraw.Draw(ctx, dl, pane.Origin, view, linked, geometry.Value.Boxes, labels: pane == layout.Active);
             if (pane == layout.Active && ctx.ActiveTool == ctx.DefaultTool && !sel.IsEmpty && sel.Entities(doc).Count > 0 && ctx.SelectionPivot() is { } pivot)
                 ctx.Gizmo.Draw(dl, pane.Origin, view, pivot);
             dl.PopClipRect();
         }
+        Logic.LinkDraw.EndFrame();
         ImGui.End();
     }
 }

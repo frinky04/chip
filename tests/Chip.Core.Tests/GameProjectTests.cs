@@ -95,6 +95,24 @@ public class GameProjectTests : IDisposable
         Assert.NotNull(t.Current.Find("player_start"));
     }
 
+    [Theory]
+    [InlineData("""{ "kinds": [] }""", "\"kinds\" should be an object")]
+    [InlineData("""{ "kinds": { "sound": 3 } }""", "kind sound should be an object")]
+    [InlineData("""{ "kinds": { "sound": { "root": 42 } } }""", "kind sound: \"root\" should be text")]
+    [InlineData("""{ "kinds": { "sound": { "root": "s", "ext": ".wav" } } }""", "\"ext\" should be a list of text")]
+    [InlineData("""{ "kinds": { "sound": { "root": "s", "folders": "yes" } } }""", "\"folders\" should be true or false")]
+    [InlineData("""{ "flags": { "power": { "type": 1 } } }""", "flag power: \"type\" should be text")]
+    [InlineData("""{ "flags": { "power": { "scope": "game" } } }""", "\"type\" should be \"bool\" or \"int\"")]
+    [InlineData("""{ "flags": { "power": { "type": "int", "default": true } } }""", "should be a whole number")]
+    public void A_malformed_kind_or_flag_is_reported_not_thrown(string projectFile, string says)
+    {
+        Write("chip.project.json", projectFile);
+        var p = GameProject.Find(_dir, out var problem);
+        Assert.NotNull(p);
+        Assert.Contains(says, problem);
+        Assert.Empty(p!.Kinds);
+    }
+
     [Fact]
     public void A_hand_written_entity_needs_only_its_id_and_class()
     {

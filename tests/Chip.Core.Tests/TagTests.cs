@@ -245,4 +245,29 @@ public class TagTests
         Assert.Contains(ElementRef.Object(a.Id), sel.Items);
         Assert.DoesNotContain(ElementRef.Object(hidden.Id), sel.Items);
     }
+
+    [Fact]
+    public void Object_mode_tags_entities_with_the_meshes_and_selects_them_by_tag()
+    {
+        var doc = new Document();
+        var mesh = doc.Add(Box(Vector3.Zero, Vector3.One));
+        var light = doc.Add(new Entity { ClassName = "light_point" });
+        var other = doc.Add(new Entity { ClassName = "light_point" });
+        var sel = new Selection(); // object mode
+        sel.Add(ElementRef.Object(mesh.Id));
+        sel.Add(ElementRef.Object(light.Id));
+
+        Assert.Equal(2, TagOps.TargetCount(doc, sel));
+        Assert.Equal(2, TagOps.Set(doc, sel, "corridor_lights", on: true));
+        Assert.True(light.Tags.Contains("corridor_lights"));
+        Assert.False(other.Tags.Contains("corridor_lights"));
+        Assert.Equal((2, 2), TagOps.Coverage(doc, sel, "corridor_lights"));
+        Assert.Equal([("corridor_lights", 2)], TagOps.OnSelection(doc, sel));
+        Assert.Equal(new TagUse("corridor_lights", 0, 2), Assert.Single(TagOps.Usage(doc)));
+
+        Assert.Equal(2, TagOps.Select(doc, sel, "corridor_lights", SelectMode.Object));
+        Assert.Contains(ElementRef.Object(light.Id), sel.Items);
+        Assert.Equal(1, TagOps.Set(doc, new Selection { Items = { ElementRef.Object(light.Id) } }, "corridor_lights", on: false));
+        Assert.True(light.Tags.IsEmpty);
+    }
 }

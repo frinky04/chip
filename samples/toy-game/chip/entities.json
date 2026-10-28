@@ -64,6 +64,29 @@
           2,
           0.05
         ]
+      ],
+      "traits": [
+        "toggleable"
+      ],
+      "inputs": [
+        {
+          "name": "enable",
+          "params": [
+            {
+              "name": "enabled",
+              "type": "bool",
+              "default": true
+            }
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "changed",
+          "payload": {
+            "type": "bool"
+          }
+        }
       ]
     },
     "light": {
@@ -99,6 +122,45 @@
           "class": "light",
           "doc": "Lights that switch on and off with this one.",
           "default": []
+        }
+      ],
+      "traits": [
+        "toggleable"
+      ],
+      "inputs": [
+        {
+          "name": "enable",
+          "params": [
+            {
+              "name": "enabled",
+              "type": "bool",
+              "default": true
+            }
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "changed",
+          "payload": {
+            "type": "bool"
+          }
+        }
+      ]
+    },
+    "logic_relay": {
+      "label": "Logic relay",
+      "doc": "Forwards a trigger to its connections.",
+      "props": [],
+      "logic": true,
+      "inputs": [
+        {
+          "name": "trigger"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "fired"
         }
       ]
     },

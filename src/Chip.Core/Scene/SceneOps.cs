@@ -107,18 +107,35 @@ public static class SceneOps
     }
 
     /// <summary>
-    /// Points <c>{ "entity": id }</c> values (and those in lists) through <paramref name="map"/>; unmapped ones stay, or go
-    /// when <paramref name="dropOthers"/>.
+    /// Points <c>{ "entity": id }</c> values (and those in lists), connection targets and connection arguments through
+    /// <paramref name="map"/>; unmapped ones stay, or go when <paramref name="dropOthers"/> (a connection with them).
     /// </summary>
     public static void RemapReferences(IEnumerable<Entity> entities, IReadOnlyDictionary<int, int> map, bool dropOthers)
     {
+        int? Map(int id) => map.TryGetValue(id, out var to) ? to : dropOthers ? null : id;
         foreach (var e in entities)
-            foreach (var (key, value) in e.Properties.ToList())
+        {
+            Remap(e.Properties);
+            foreach (var c in e.Outputs.ToList())
             {
-                var mapped = EntityValues.MapRefs(value, id => map.TryGetValue(id, out var to) ? to : dropOthers ? null : id, out _);
-                if (mapped is { } v) e.Properties[key] = v;
-                else e.Properties.Remove(key);
+                if (c.Target.Kind == TargetKind.Entity)
+                {
+                    if (Map(c.Target.Entity) is not { } to) { e.Outputs.Remove(c); continue; }
+                    c.Target = c.Target with { Entity = to };
+                }
+                Remap(c.Args);
             }
+        }
+
+        void Remap(Dictionary<string, System.Text.Json.JsonElement> values)
+        {
+            foreach (var (key, value) in values.ToList())
+            {
+                var mapped = EntityValues.MapRefs(value, Map, out _);
+                if (mapped is { } v) values[key] = v;
+                else values.Remove(key);
+            }
+        }
     }
 
     public static void SetHidden(Document doc, IEnumerable<int> ids, bool hidden)

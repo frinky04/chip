@@ -15,12 +15,17 @@ public sealed class ClassTracker
     static readonly TimeSpan CheckEvery = TimeSpan.FromSeconds(0.5);
     readonly Stopwatch _sinceCheck = new();
     string? _lastSource, _lastProblem;
+    // The level and the classes the last renames were applied for.
+    Document? _migratedDoc;
+    int _migratedRevision = -1;
 
     public void Update(EditorContext ctx)
     {
         if (_sinceCheck.IsRunning && _sinceCheck.Elapsed < CheckEvery) return;
         _sinceCheck.Restart();
-        if (!EntityClasses.Track(PipelineActions.ResolveExportPath(ctx), ctx.Session.Path)) return;
+        bool changed = EntityClasses.Track(PipelineActions.ResolveExportPath(ctx), ctx.Session.Path);
+        Migrate(ctx);
+        if (!changed) return;
 
         var source = EntityClasses.Current.Source;
         var problem = EntityClasses.Problem;
@@ -34,5 +39,26 @@ public sealed class ClassTracker
         }
         _lastSource = source;
         _lastProblem = problem;
+    }
+
+    /// <summary>
+    /// Moves values and connections stored under a class's old names (<c>"was"</c>) to the current ones, once per level and
+    /// set of classes, as one undo step, so a rename in the game never strands what levels hold.
+    /// </summary>
+    public void Migrate(EditorContext ctx)
+    {
+        if (ReferenceEquals(ctx.Doc, _migratedDoc) && EntityClasses.Revision == _migratedRevision) return;
+        // Mid-gesture, wait: the next check after the tool lets go does it (marking it done now would skip it for good).
+        if (ctx.Interacting) return;
+        _migratedDoc = ctx.Doc;
+        _migratedRevision = EntityClasses.Revision;
+        if (EntityClasses.Current.Source == null) return;
+        // Renames touch entities only: try them on copies first, so a level with nothing to rename gets no undo step.
+        var probe = new Document { Entities = ctx.Doc.Entities.Select(e => e.Clone()).ToList() };
+        if (LevelMigration.Apply(probe, EntityClasses.Current) == 0) return;
+        int renamed = 0;
+        ctx.Session.Do("Apply Renamed Names", [], () => renamed = LevelMigration.Apply(ctx.Doc, EntityClasses.Current));
+        _migratedDoc = ctx.Doc;
+        ctx.Status($"Moved {renamed} value{(renamed == 1 ? "" : "s")} to the names {EntityClasses.Engine} uses now. Undo to see the old ones");
     }
 }

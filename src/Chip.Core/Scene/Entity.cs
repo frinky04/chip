@@ -1,4 +1,5 @@
 using System.Numerics;
+using Chip.Core.Geometry;
 using System.Text.Json;
 
 namespace Chip.Core.Scene;
@@ -26,11 +27,15 @@ public sealed class Entity
     /// <summary>The meshes this entity is made of (ids). Empty for a point entity. A mesh belongs to at most one entity.</summary>
     public List<int> Meshes = new();
 
+    public TagSet Tags;
+    public List<Connection> Outputs = new();
+
     public bool IsMeshEntity => Meshes.Count > 0;
 
     public Entity Clone() => new()
     {
         Id = Id, ClassName = ClassName, Name = Name, Position = Position, Rotation = Rotation, Hidden = Hidden, Locked = Locked,
+        Tags = Tags, Outputs = Outputs.Select(c => c.Clone()).ToList(),
         Properties = new Dictionary<string, JsonElement>(Properties), Meshes = new List<int>(Meshes),
     };
 }

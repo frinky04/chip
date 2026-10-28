@@ -101,9 +101,17 @@ public sealed partial class EditorApp
                 ctx.SetMode(SelectMode.Object);
                 ctx.Sel.Add(ElementRef.Object(reference.Id));
                 break;
-            case "entity" when doc.Entities.Find(e => !Core.Scene.EntityClasses.Get(e.ClassName).EditorOnly) is { } entity: // its class's properties
+            // Its class's properties. CHIP_SHOT_ENTITY=<name or id> picks which entity (default: the first);
+            // CHIP_SHOT_FOLD=selection,entity folds those inspector sections, to bring the ones below into view;
+            // CHIP_SHOT_CONNECTION=<index> opens that connection under Entity IO.
+            case "entity" when doc.Entities.Find(e => !Core.Scene.EntityClasses.Get(e.ClassName).EditorOnly
+                && (Environment.GetEnvironmentVariable("CHIP_SHOT_ENTITY") is not { Length: > 0 } pick || e.Name == pick || $"{e.Id}" == pick)) is { } entity:
                 ctx.SetMode(SelectMode.Object);
                 ctx.Sel.Add(ElementRef.Object(entity.Id));
+                foreach (var section in (Environment.GetEnvironmentVariable("CHIP_SHOT_FOLD") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    _settings.Current.CollapsedSections.Add(section); // captures keep their settings in memory
+                if (int.TryParse(Environment.GetEnvironmentVariable("CHIP_SHOT_CONNECTION"), out int connection))
+                    Features.Logic.IoFocus.Show(ctx, entity, connection);
                 break;
             case "outliner-menu" when doc.Entities.Count > 0: // the Scene tab with the first entity's right-click menu open
                 ctx.SetMode(SelectMode.Object);

@@ -24,7 +24,12 @@ public sealed record PropSpec
     public string Suffix { get; init; } = "";
     public IReadOnlyList<EnumOption> Options { get; init; } = [];
     /// <summary>Node or resource class (<c>Node3D</c>, <c>Material</c>), when the engine restricts it.</summary>
-    public string? Class { get; init; }
+    public IReadOnlyList<string> Classes { get; init; } = [];
+    public string? Class { get => Classes.FirstOrDefault(); init => Classes = value == null ? [] : [value]; }
+    public string? Trait { get; init; }
+    public string? Kind { get; init; }
+    public IReadOnlyList<string> Was { get; init; } = [];
+    public bool Accepts(EntityClass target) => Classes.Count == 0 && Trait == null || Classes.Contains(target.Name) || Trait != null && target.Traits.Contains(Trait);
     /// <summary>Whole-number vector components.</summary>
     public bool Integer { get; init; }
     /// <summary>The engine type of an <see cref="PropType.Unsupported"/> property (<c>Dictionary</c>).</summary>
@@ -70,6 +75,13 @@ public sealed class EntityClass
     /// as a point. Godot: a scene whose root is a <c>CollisionObject3D</c>.
     /// </summary>
     public bool IsMesh { get; init; }
+    public bool IsLogic { get; init; }
+    public IReadOnlyList<string> Traits { get; init; } = [];
+    public IReadOnlyList<string> Was { get; init; } = [];
+    public IReadOnlyList<InputSpec> Inputs { get; init; } = [];
+    public IReadOnlyList<OutputSpec> Outputs { get; init; } = [];
+    public InputSpec? Input(string name) => Inputs.FirstOrDefault(p => p.Name == name);
+    public OutputSpec? Output(string name) => Outputs.FirstOrDefault(p => p.Name == name);
 
     /// <summary>The doc's first line, cut to about a sentence's length, for lists and the inspector (the full doc is a tooltip).</summary>
     public string Summary => _summary ??= Summarize(Doc, 160);
@@ -159,7 +171,8 @@ public sealed class EntityCatalog
             foreach (var c in classes.EnumerateObject())
             {
                 if (c.Name == ReferenceModels.ClassName) continue; // Chip's own
-                list.Add(ParseClass(c.Name, c.Value, dir));
+                try { list.Add(ParseClass(c.Name, c.Value, dir)); }
+                catch (Exception e) when (e is InvalidOperationException or KeyNotFoundException or FormatException) { throw new InvalidDataException($"class {c.Name} has an invalid shape: {e.Message}", e); }
             }
             return new EntityCatalog(list, manifestPath);
         }
@@ -183,13 +196,21 @@ public sealed class EntityCatalog
         {
             Name = name, Label = Str(c, "label") ?? EntityClass.Humanize(name), Doc = Str(c, "doc") ?? "",
             Scene = Str(c, "scene"), Uid = Str(c, "uid"), Base = Str(c, "base") ?? "",
+            Traits = Strings(c, "traits"), Was = Strings(c, "was"), IsLogic = Flag(c, "logic"),
+            Inputs = c.TryGetProperty("inputs", out var ins) ? ins.EnumerateArray().Select(i => new InputSpec {
+                Name = Str(i, "name") ?? throw new InvalidDataException("Input needs a name"), Doc = Str(i, "doc") ?? "", Was = Strings(i, "was"),
+                Params = i.TryGetProperty("params", out var ps) ? ps.EnumerateArray().Select(p => ParseProp(name, p)).ToArray() : [] }).ToArray() : [],
+            Outputs = c.TryGetProperty("outputs", out var outs) ? outs.EnumerateArray().Select(o => new OutputSpec {
+                Name = Str(o, "name") ?? throw new InvalidDataException("Output needs a name"), Doc = Str(o, "doc") ?? "", Was = Strings(o, "was"),
+                Required = Flag(o, "required"), Timeline = Flag(o, "timeline"),
+                Payload = o.TryGetProperty("payload", out var pay) ? ParseProp(name, pay, "payload") : null }).ToArray() : [],
             BoxMin = min, BoxMax = max, Preview = preview, Props = props, IsMesh = Flag(c, "mesh"),
         };
     }
 
-    static PropSpec ParseProp(string cls, JsonElement p)
+    internal static PropSpec ParseProp(string cls, JsonElement p, string? implicitName = null)
     {
-        if (Str(p, "name") is not { Length: > 0 } name) throw new InvalidDataException($"class {cls} has a property without a name");
+        if ((implicitName ?? Str(p, "name")) is not { Length: > 0 } name) throw new InvalidDataException($"class {cls} has a property without a name");
         var type = TypeOf(Str(p, "type"));
         // A list of something Chip can't edit (lists of lists) can't be edited either.
         var itemType = type == PropType.Array ? TypeOf(Str(p, "of")) : PropType.Unsupported;
@@ -207,13 +228,16 @@ public sealed class EntityCatalog
         {
             Name = name, Type = type, Doc = Str(p, "doc") ?? "", Group = Str(p, "group") ?? "",
             Range = range, OrGreater = Flag(p, "or_greater"), OrLess = Flag(p, "or_less"), Suffix = Str(p, "suffix") ?? "",
-            Options = options, Class = Str(p, "class"), Integer = Flag(p, "integer"), ItemType = itemType,
+            Options = options, Classes = Strings(p, "class"), Trait = Str(p, "trait"), Kind = Str(p, "kind"), Was = Strings(p, "was"), Integer = Flag(p, "integer"), ItemType = itemType,
             EngineType = type == PropType.Unsupported ? Str(p, "engine") ?? Str(p, "godot") ?? Str(p, "type") : null,
             Default = p.TryGetProperty("default", out var d) ? d.Clone() : EntityValues.Null,
         };
         // Normalised to the type; a default it can't read (a hand-edited manifest) becomes "none".
         return spec with { Default = EntityValues.Coerce(spec, spec.Default, out _) ?? EntityValues.Null };
     }
+
+    static IReadOnlyList<string> Strings(JsonElement o, string key) => !o.TryGetProperty(key, out var v) ? [] :
+        v.ValueKind == JsonValueKind.String ? [v.GetString()!] : v.EnumerateArray().Select(x => x.GetString()!).ToArray();
 
     static PropType TypeOf(string? name) => name switch
     {
