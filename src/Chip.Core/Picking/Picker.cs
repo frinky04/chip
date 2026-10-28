@@ -43,7 +43,7 @@ public readonly record struct FaceHit(PolyMesh Mesh, int Face, float Distance, V
 /// <summary>
 /// Hit-testing for every selection mode. Hidden meshes are ignored, locked meshes can't be selected; back faces are ignored unless
 /// <c>backfaces</c> is set (Scythe-style backface selection, e.g. picking a room's inside from outside).
-/// In object mode, entities are picked by their box or glyph unless a surface is in front of them.
+/// In object mode, the objects under the cursor are ranked by <see cref="ObjectRanking"/>; <see cref="PickObjects"/> lists them all.
 /// </summary>
 public static class Picker
 {
@@ -85,16 +85,17 @@ public static class Picker
     }
 
     /// <param name="pixelScale">Display scale; pick radii are in logical pixels.</param>
-    public static ElementRef? Pick(Document doc, ViewInfo view, Vector2 mouse, SelectMode mode, float pixelScale = 1, bool backfaces = false)
+    /// <param name="filter">Object mode only: what may be picked.</param>
+    public static ElementRef? Pick(Document doc, ViewInfo view, Vector2 mouse, SelectMode mode, float pixelScale = 1, bool backfaces = false,
+        PickFilter filter = PickFilter.All)
     {
         var ray = view.ScreenRay(mouse);
-        var hit = RaycastFace(doc, ray, backfaces, selectable: true);
         switch (mode)
         {
             case SelectMode.Object:
-                if (PickEntity(doc, view, mouse, pixelScale, hit?.Distance) is { } ent) return ElementRef.Object(ent.Id);
-                return hit is { } h ? ElementRef.Object(h.Mesh.Id) : null;
-            case SelectMode.Face: return hit is { } hf ? ElementRef.Face(hf.Mesh.Id, hf.Face) : null;
+                return PickObjects(doc, view, mouse, pixelScale, backfaces, filter) is [var first, ..] ? first : null;
+            case SelectMode.Face:
+                return RaycastFace(doc, ray, backfaces, selectable: true) is { } hf ? ElementRef.Face(hf.Mesh.Id, hf.Face) : null;
         }
 
         // Every vertex/edge within the radius, nearest first; the first one that is actually visible wins.
@@ -175,7 +176,9 @@ public static class Picker
     }
 
     /// <summary>Elements inside a screen rectangle. Vertices and edges select through; faces must face the camera unless <paramref name="backfaces"/>.</summary>
-    public static List<ElementRef> Marquee(Document doc, ViewInfo view, Vector2 a, Vector2 b, SelectMode mode, bool backfaces = false)
+    /// <param name="filter">Object mode only: what may be picked. Entities count by their glyph (the centre of the box).</param>
+    public static List<ElementRef> Marquee(Document doc, ViewInfo view, Vector2 a, Vector2 b, SelectMode mode, bool backfaces = false,
+        PickFilter filter = PickFilter.All)
     {
         var min = Vector2.Min(a, b);
         var max = Vector2.Max(a, b);
@@ -201,37 +204,69 @@ public static class Picker
                         if (FrontFacing(mesh, f) && Inside(mesh.FaceCenter(f))) result.Add(ElementRef.Face(mesh.Id, f));
                     break;
                 case SelectMode.Object:
-                    if (Enumerable.Range(0, mesh.Faces.Count).Any(f => Inside(mesh.FaceCenter(f)))) result.Add(ElementRef.Object(mesh.Id));
+                    if (ObjectRanking.Accepts(filter, MeshEntityOps.OwnerOf(doc, mesh.Id) != null)
+                        && Enumerable.Range(0, mesh.Faces.Count).Any(f => Inside(mesh.FaceCenter(f)))) result.Add(ElementRef.Object(mesh.Id));
                     break;
             }
         }
-        if (mode == SelectMode.Object)
+        if (mode == SelectMode.Object && filter != PickFilter.Geometry)
             foreach (var e in doc.Entities)
-                if (!e.Hidden && !e.Locked && Inside(e.Position)) result.Add(ElementRef.Object(e.Id));
+                if (!e.Hidden && !e.Locked && Inside(EntityOps.Center(e))) result.Add(ElementRef.Object(e.Id));
         return result;
     }
 
     /// <summary>
-    /// The selectable entity under the mouse: the ray hits its box, or the cursor is on its glyph. The nearest wins, and only
-    /// when no surface closer than <paramref name="surfaceDistance"/> (along the ray) hides it.
+    /// The selectable entity under the mouse that no surface closer than <paramref name="surfaceDistance"/> (along the ray)
+    /// hides, best first by the <see cref="ObjectRanking"/> rules: a glyph under the cursor, then the box the ray leaves first.
     /// </summary>
     public static Entity? PickEntity(Document doc, ViewInfo view, Vector2 mouse, float pixelScale = 1, float? surfaceDistance = null)
     {
+        var list = new List<ObjectRanking.Candidate>();
+        ObjectRanking.AddEntities(doc, view, view.ScreenRay(mouse), mouse, pixelScale, surfaceDistance, list, ObjectRanking.Uncached);
+        list.RemoveAll(c => !c.Visible);
+        return ObjectRanking.Best(list) is var i && i >= 0 ? doc.FindEntity(list[i].Id) : null;
+    }
+
+    /// <summary>
+    /// Every object under the mouse that object mode can select, best first (<see cref="ObjectRanking"/>), one per
+    /// selectable unit: the first is what a click picks, the rest are what clicking again in the same spot cycles to.
+    /// Any drawn surface (locked or not) hides the entities behind it, which then come after it.
+    /// </summary>
+    public static List<ElementRef> PickObjects(Document doc, ViewInfo view, Vector2 mouse, float pixelScale = 1, bool backfaces = false,
+        PickFilter filter = PickFilter.All)
+    {
         var ray = view.ScreenRay(mouse);
-        float limit = surfaceDistance is { } s ? s * 1.02f + 0.02f : float.MaxValue;
-        Entity? best = null;
-        float bestT = float.MaxValue;
-        foreach (var e in doc.Entities)
+        var owners = new Dictionary<int, int>();
+        ObjectRanking.Owners(doc, owners);
+        var list = new List<ObjectRanking.Candidate>();
+        if (filter != PickFilter.Geometry)
+            ObjectRanking.AddEntities(doc, view, ray, mouse, pixelScale, RaycastFace(doc, ray, backfaces)?.Distance, list, ObjectRanking.Uncached);
+        for (int mi = 0; mi < doc.Meshes.Count; mi++)
         {
-            if (e.Hidden || e.Locked) continue;
-            float? t = EntityOps.RayHit(e, ray);
-            var center = EntityOps.Center(e);
-            // A loaded reference model has no glyph: its own surface is the target, and a doorway stays clickable.
-            if (t == null && ReferenceModels.Get(e).Model == null && view.Project(center, out var sc) && Vector2.Distance(sc, mouse) < EntityGlyphRadius * pixelScale)
-                t = MathF.Max(0, Vector3.Dot(center - ray.Origin, ray.Dir));
-            if (t is not { } d || d > limit || d >= bestT) continue;
-            bestT = d;
-            best = e;
+            var mesh = doc.Meshes[mi];
+            if (mesh.Hidden || mesh.Locked) continue;
+            int owner = owners.TryGetValue(mesh.Id, out var o) ? o : -1;
+            if (!ObjectRanking.Accepts(filter, owner >= 0)) continue;
+            if (NearestHit(mesh, ray, backfaces) is { } t) ObjectRanking.AddMesh(mesh.Id, owner, mi, t, list);
+        }
+        ObjectRanking.Finish(list, new HashSet<int>());
+        return list.Select(c => ElementRef.Object(c.Id)).ToList();
+    }
+
+    static float? NearestHit(PolyMesh mesh, Ray ray, bool backfaces)
+    {
+        float? best = null;
+        var tris = new List<int>();
+        for (int f = 0; f < mesh.Faces.Count; f++)
+        {
+            if (!backfaces && Vector3.Dot(mesh.FaceNormal(f), ray.Dir) >= 0) continue;
+            tris.Clear();
+            Triangulator.Triangulate(mesh, f, tris);
+            var verts = mesh.Faces[f].Verts;
+            for (int i = 0; i < tris.Count; i += 3)
+                if (RayTriangle(ray, mesh.Positions[verts[tris[i]]], mesh.Positions[verts[tris[i + 1]]], mesh.Positions[verts[tris[i + 2]]], out float t)
+                    && (best is not { } b || t < b))
+                    best = t;
         }
         return best;
     }

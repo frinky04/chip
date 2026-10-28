@@ -37,7 +37,7 @@ public sealed partial class EditorApp
         uint query = _gl.GenQuery();
         var results = new List<object>();
         string? filter = Environment.GetEnvironmentVariable("CHIP_BENCH_FILTER");
-        string[] scenarios = ["idle", "orbit", "hover-face", "hover-edge", "hover-vertex", "drag-1", "drag-200", "soft-edges", "outliner", "inspector-500", "four-pane", "empty"];
+        string[] scenarios = ["idle", "orbit", "hover-object", "hover-face", "hover-edge", "hover-vertex", "drag-1", "drag-200", "soft-edges", "outliner", "inspector-500", "four-pane", "empty"];
         foreach (string name in scenarios)
         {
             if (filter != null && !name.StartsWith(filter, StringComparison.Ordinal)) continue;

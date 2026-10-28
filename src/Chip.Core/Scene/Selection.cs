@@ -45,20 +45,26 @@ public sealed class Selection
         else if (Active == e) Active = null;
     }
 
-    public void SelectAll(Document doc)
-    {
-        foreach (var m in doc.Meshes.Where(m => !m.Hidden && !m.Locked))
-            Items.UnionWith(Elements(m, Mode));
-        if (Mode == SelectMode.Object) Items.UnionWith(SelectableEntities(doc));
-    }
+    /// <param name="filter">Object mode only: what may be selected (see <see cref="Picking.PickFilter"/>).</param>
+    public void SelectAll(Document doc, Picking.PickFilter filter = Picking.PickFilter.All) => Items.UnionWith(Selectable(doc, filter));
 
-    public void Invert(Document doc)
+    /// <inheritdoc cref="SelectAll"/>
+    public void Invert(Document doc, Picking.PickFilter filter = Picking.PickFilter.All)
     {
-        var all = doc.Meshes.Where(m => !m.Hidden && !m.Locked).SelectMany(m => Elements(m, Mode)).ToHashSet();
-        if (Mode == SelectMode.Object) all.UnionWith(SelectableEntities(doc));
+        var all = Selectable(doc, filter).ToHashSet();
         all.ExceptWith(Items);
         Clear();
         Items.UnionWith(all);
+    }
+
+    IEnumerable<ElementRef> Selectable(Document doc, Picking.PickFilter filter)
+    {
+        bool filtered = Mode == SelectMode.Object && filter != Picking.PickFilter.All;
+        foreach (var m in doc.Meshes)
+            if (!m.Hidden && !m.Locked && (!filtered || Picking.PickFilters.Accepts(doc, m.Id, filter)))
+                foreach (var e in Elements(m, Mode)) yield return e;
+        if (Mode == SelectMode.Object && filter != Picking.PickFilter.Geometry)
+            foreach (var e in SelectableEntities(doc)) yield return e;
     }
 
     /// <summary>

@@ -74,6 +74,9 @@ Tags: **[v1]** = first shippable slice. **[v2]** = next. **[later]** = backlog. 
 | Vertex / Edge / Face / Object modes | `1` `2` `3` `4` | v1 |
 | Triangle modes (verts, edges, faces) and toggle topology | `Shift+Ctrl+1/2/3`, `6` | later (n-gon only in v1) |
 | Click select. Shift add, Ctrl toggle | LMB | v1 |
+| Overlapping objects (object mode): a glyph under the cursor wins, then the box the ray leaves first (an entity inside a trigger volume beats the volume), then everything by depth (a wall inside a volume beats the volume; a volume around the camera comes last). Clicking again on the same spot, even on the gizmo, selects the next object under the cursor; a tag beside the cursor names the hovered entity and says "2 of 3" | LMB again | v2, shipped |
+| List everything under the cursor, nearest first; hover outlines, click selects (Shift adds, Ctrl toggles) | `Ctrl+RMB` / `Alt+S` | v2, shipped |
+| Pick filter for object mode: everything, geometry only, or entities only (entities and mesh entities' meshes). Applies to clicks, paint, box select and select all; the header shows it next to the modes | `5` (entities only, again for everything) | v2, shipped |
 | Paint select (Scythe): drag selects everything the cursor sweeps over; Shift+drag paints into the selection, Ctrl+drag paints out of it | LMB drag | v2, shipped |
 | Box (marquee) select, Unreal-style; Shift adds | `Ctrl+Alt+drag` | v1 (moved off plain drag) |
 | Select all / invert | `Ctrl+A` / `Ctrl+I` | v1 |
@@ -193,8 +196,9 @@ Each face stores a planar projection: U axis, V axis, offset (u, v), scale (u, v
 
 | Feature | Tag |
 |---|---|
-| Outliner (mesh list, rename, hide, lock) | v2 (done: `Ctrl+Shift+O`; groups, meshes and entities; rename by double-click/F2, eye and lock toggles, multi-select synced with the viewport, drag into groups, search, counts) |
+| Outliner (mesh list, rename, hide, lock) | v2 (done: `Ctrl+Shift+O`; folders, groups, meshes and entities, a mesh entity holding its meshes; rename by double-click/F2, eye and lock toggles, multi-select synced with the viewport, selecting in the viewport unfolds and scrolls to the row, arrow keys walk and fold rows, drag into folders and groups or beside a row, right-click menu (focus, rename, duplicate, delete, remove folder keeping contents, turn a group into a folder and back, new folder, move to top level, hide everything else), search, show only meshes or only entities, counts) |
 | Groups (nested; selecting a member selects the group; hide/lock per group) | v2 (done: `Ctrl+G` / `Ctrl+Alt+G`, "Select whole groups" toggle; stored as optional `groups` in the file) |
+| Folders (Unreal's outliner folders: organise without binding; members select one by one, empty folders stay) | v2 (done: Edit > New folder / Move to new folder, the outliner's folder button; a group with `folder: true` in the file, so older files read as groups) |
 | Lock selected / unlock all | v2 (done: `Ctrl+L` / `Ctrl+Shift+L`; meshes and entities) |
 | Visgroups / layers, hide/show by group | later |
 | Entities / markers (player start, lights, generic point entity with key-values) exported as glTF empty nodes with `extras` | v2 (editor done: entity tool `Shift+E`, glyphs in every pane, object-mode select/gizmo/delete/duplicate, inspector with key-values; glTF export is stream J) |

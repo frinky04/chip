@@ -93,6 +93,51 @@ public class OutlinerTests
         Assert.DoesNotContain(room.Children, c => c.Id == floor);
         Assert.Equal("2 objects", room.Detail);
     }
+
+    [Fact]
+    public void A_mesh_entity_holds_its_meshes_wherever_they_are_grouped()
+    {
+        var doc = Level(out int floor, out int wall, out int crate, out int light, out _);
+        var door = MeshEntityOps.Tie(doc, [wall, crate], "info_target")!;
+        var roots = OutlinerTree.Build(doc);
+        var row = Assert.Single(roots, r => r.Id == door.Id);
+        Assert.Equal([wall, crate], row.Children.Select(c => c.Id));
+        Assert.Equal(1, row.Children[0].Depth);
+        var all = OutlinerTree.Flatten(roots, new HashSet<int>());
+        Assert.Single(all, r => r.Id == wall); // not again under the room group
+        Assert.Equal(all.Count - 2, OutlinerTree.Flatten(roots, new HashSet<int> { door.Id }).Count);
+        Assert.Equal([door.Id], OutlinerTree.Ancestors(doc, wall)); // its row is under the door, which isn't grouped
+        Assert.Equal(new[] { "lights", "room" }, OutlinerTree.Ancestors(doc, light).Select(id => doc.FindGroup(id)!.Name));
+        Assert.Contains(floor, OutlinerTree.Objects(doc, roots[0]));
+    }
+
+    [Fact]
+    public void Folders_show_as_folders_and_stay_listed_when_empty()
+    {
+        var doc = Level(out _, out _, out int crate, out _, out _);
+        var props = GroupOps.CreateFolder(doc, [crate], "props");
+        var empty = GroupOps.CreateFolder(doc, [], "later");
+        var roots = OutlinerTree.Build(doc);
+        Assert.Equal(OutlinerKind.Folder, roots.Single(r => r.Id == props.Id).Kind);
+        var later = roots.Single(r => r.Id == empty.Id);
+        Assert.True(later.IsContainer);
+        Assert.Equal("empty", later.Detail);
+        Assert.DoesNotContain(OutlinerTree.Build(doc, show: OutlinerShow.Entities), r => r.Id == empty.Id); // narrowing hides it
+        Assert.Equal("2 folders, 2 groups, 3 meshes, 2 entities", OutlinerTree.Summary(doc));
+    }
+
+    [Fact]
+    public void Showing_one_kind_keeps_the_groups_that_hold_it()
+    {
+        var doc = Level(out _, out _, out int crate, out int light, out int spawn);
+        var entities = OutlinerTree.Build(doc, show: OutlinerShow.Entities);
+        Assert.Equal(["room", "info_player_start"], entities.Select(r => r.Name));
+        Assert.Equal(light, entities[0].Children.Single().Children.Single().Id); // room > lights > key light
+        var meshes = OutlinerTree.Build(doc, show: OutlinerShow.Meshes);
+        Assert.Equal(["room", "crate"], meshes.Select(r => r.Name));
+        Assert.Equal(["floor", "wall"], meshes[0].Children.Select(c => c.Name)); // the lights group held no meshes
+        Assert.Empty(OutlinerTree.Build(doc, "crate", OutlinerShow.Entities));
+    }
 }
 
 static class TestExtensions

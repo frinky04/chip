@@ -37,8 +37,8 @@ public sealed class EditFeature : IEditorFeature
             Hotkeys = [Hotkey.Parse("Esc")], Execute = Cancel,
         });
 
-        c.Add("select.all", "Select all", () => ctx.Sel.SelectAll(ctx.Doc), "Select", "Ctrl+A", group: "1-basic", order: 0);
-        c.Add("select.invert", "Invert selection", () => ctx.Sel.Invert(ctx.Doc), "Select", "Ctrl+I", group: "1-basic", order: 1);
+        c.Add("select.all", "Select all", () => ctx.Sel.SelectAll(ctx.Doc, ctx.PickFilter), "Select", "Ctrl+A", group: "1-basic", order: 0);
+        c.Add("select.invert", "Invert selection", () => ctx.Sel.Invert(ctx.Doc, ctx.PickFilter), "Select", "Ctrl+I", group: "1-basic", order: 1);
         c.Add("select.none", "Select none", () => ctx.Sel.Clear(), "Select", group: "1-basic", order: 2, canExecute: HasSelection);
 
         c.Add("edit.delete", "Delete", Delete, "Edit", "Del", HasSelection, "2-edit", 0);

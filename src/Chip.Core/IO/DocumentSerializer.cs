@@ -72,7 +72,7 @@ public static partial class DocumentSerializer
         int[]? Meshes = null); // a mesh entity's meshes (optional, no version bump)
 
     // stream H: a group's direct members are object ids; Parent 0 = top level.
-    sealed record GroupDto(int Id, string Name, int Parent, int[] Members, bool Hidden = false, bool Locked = false);
+    sealed record GroupDto(int Id, string Name, int Parent, int[] Members, bool Hidden = false, bool Locked = false, bool Folder = false);
 
     public static string Serialize(Document doc) => JsonSerializer.Serialize(new FileDto(
         CurrentVersion, doc.ExportScale, doc.ExportPath, doc.ExportCollision, doc.NextId,
@@ -90,7 +90,7 @@ public static partial class DocumentSerializer
                 e.Locked, e.Meshes.Count > 0 ? e.Meshes.ToArray() : null)).ToList()
             : null,
         ExportToDto(doc.Export),
-        doc.Groups.Count > 0 ? doc.Groups.Select(g => new GroupDto(g.Id, g.Name, g.Parent, g.Members.ToArray(), g.Hidden, g.Locked)).ToList() : null,
+        doc.Groups.Count > 0 ? doc.Groups.Select(g => new GroupDto(g.Id, g.Name, g.Parent, g.Members.ToArray(), g.Hidden, g.Locked, g.Folder)).ToList() : null,
         doc.TexelDensity, doc.DressingPath), Options);
 
     /// <summary>Density of levels saved before <see cref="Document.TexelDensity"/> existed (the old fixed 512 px/m).</summary>
@@ -158,7 +158,7 @@ public static partial class DocumentSerializer
         if (dto.Groups != null) // stream H
             foreach (var g in dto.Groups)
             {
-                doc.Groups.Add(new Group { Id = g.Id, Name = g.Name ?? "Group", Parent = g.Parent, Members = (g.Members ?? []).ToList(), Hidden = g.Hidden, Locked = g.Locked });
+                doc.Groups.Add(new Group { Id = g.Id, Name = g.Name ?? "Group", Parent = g.Parent, Members = (g.Members ?? []).ToList(), Hidden = g.Hidden, Locked = g.Locked, Folder = g.Folder });
                 doc.NextId = Math.Max(doc.NextId, g.Id + 1);
             }
         return doc;

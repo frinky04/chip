@@ -218,18 +218,26 @@ public static class EntityOps
     public static readonly Vector3 OriginMarker = new(0.15f);
 
     /// <summary>The entity's box in entity space: a loaded reference model's bounds, a mesh entity's origin marker, else the class box.</summary>
-    public static (Vector3 Min, Vector3 Max) Box(Entity e)
+    public static (Vector3 Min, Vector3 Max) Box(Entity e) => Box(e, ReferenceModels.Get(e).Model);
+
+    /// <summary><see cref="Box(Entity)"/> with the entity's model already looked up (picking caches it).</summary>
+    public static (Vector3 Min, Vector3 Max) Box(Entity e, ReferenceModel? model)
     {
         if (e.IsMeshEntity) return (-OriginMarker, OriginMarker);
-        if (ReferenceModels.Get(e).Model is { } model) return (model.Min, model.Max);
-        var c = EntityClasses.Get(e.ClassName);
-        return (c.BoxMin, c.BoxMax);
+        if (model != null) return (model.Min, model.Max);
+        // Find, not Get: an unknown class would allocate a generic one, and picking reads boxes every frame.
+        return EntityClasses.Current.Find(e.ClassName) is { } c ? (c.BoxMin, c.BoxMax) : (UnknownBox.BoxMin, UnknownBox.BoxMax);
     }
 
+    /// <summary>The box of a class nothing defines (the <see cref="EntityClass"/> default).</summary>
+    static readonly EntityClass UnknownBox = EntityClasses.Generic("");
+
     /// <summary>World-space centre of the box (where the glyph is drawn).</summary>
-    public static Vector3 Center(Entity e)
+    public static Vector3 Center(Entity e) => Center(e, ReferenceModels.Get(e).Model);
+
+    public static Vector3 Center(Entity e, ReferenceModel? model)
     {
-        var (min, max) = Box(e);
+        var (min, max) = Box(e, model);
         return Vector3.Transform((min + max) * 0.5f, World(e));
     }
 
@@ -249,13 +257,23 @@ public static class EntityOps
     /// Distance along the ray to the entity, or null on a miss: a loaded reference model by its triangles (so clicks go
     /// through a doorway), anything else by its oriented box (slab test in entity space).
     /// </summary>
-    public static float? RayHit(Entity e, Ray ray)
+    public static float? RayHit(Entity e, Ray ray) => RayInterval(e, ray)?.Enter;
+
+    /// <summary>
+    /// Where the ray enters and leaves the entity (see <see cref="RayHit"/>). A model's surface is thin, so it enters and
+    /// leaves at once. <c>Inside</c>: the ray starts inside the box (the camera is in a trigger volume), so Enter is 0.
+    /// </summary>
+    public static (float Enter, float Exit, bool Inside)? RayInterval(Entity e, Ray ray) => RayInterval(e, ray, ReferenceModels.Get(e).Model);
+
+    /// <summary><see cref="RayInterval(Entity, Ray)"/> with the entity's model already looked up.</summary>
+    public static (float Enter, float Exit, bool Inside)? RayInterval(Entity e, Ray ray, ReferenceModel? model)
     {
-        var (min, max) = Box(e);
+        var (min, max) = Box(e, model);
         var inv = Quaternion.Conjugate(Orientation(e));
         var o = Vector3.Transform(ray.Origin - e.Position, inv);
         var d = Vector3.Transform(ray.Dir, inv);
-        if (ReferenceModels.Get(e).Model is { } model) return ModelHit(model, new Ray(o, d));
+        if (model != null) return ModelHit(model, new Ray(o, d)) is { } t ? (t, t, false) : null;
+        bool inside = o.X >= min.X && o.Y >= min.Y && o.Z >= min.Z && o.X <= max.X && o.Y <= max.Y && o.Z <= max.Z;
         float tmin = 0, tmax = float.MaxValue;
         for (int a = 0; a < 3; a++)
         {
@@ -272,7 +290,7 @@ public static class EntityOps
             tmax = MathF.Min(tmax, t2);
             if (tmin > tmax) return null;
         }
-        return tmin;
+        return (tmin, tmax, inside);
     }
 
     /// <summary>

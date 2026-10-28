@@ -105,6 +105,12 @@ public sealed partial class EditorApp
                 ctx.SetMode(SelectMode.Object);
                 ctx.Sel.Add(ElementRef.Object(entity.Id));
                 break;
+            case "outliner-menu" when doc.Entities.Count > 0: // the Scene tab with the first entity's right-click menu open
+                ctx.SetMode(SelectMode.Object);
+                ctx.Sel.Add(ElementRef.Object(doc.Entities[0].Id));
+                ctx.ShowDock(Features.Scene.Outliner.PanelId);
+                Features.Scene.Outliner.For(ctx).OpenMenu(doc.Entities[0].Id);
+                break;
             case "faces" when doc.Meshes.Count > 0:
                 ctx.SetMode(SelectMode.Face);
                 var floor = doc.Meshes[0];
@@ -274,7 +280,10 @@ public sealed partial class EditorApp
         for (int i = 0; i < 6; i++) // ImGui settles layout over a couple of frames
         {
             var io = ImGui.GetIO();
-            if (i == 3 && drag is { } d) RunShotDrag(d);
+            // CHIP_SHOT_REPEAT=2 runs the drag twice: two clicks on one spot (a zero-length drag) cycle what's under the cursor.
+            if (i == 3 && drag is { } d)
+                for (int r = int.TryParse(Environment.GetEnvironmentVariable("CHIP_SHOT_REPEAT"), out int n) ? Math.Max(1, n) : 1; r > 0; r--)
+                    RunShotDrag(d);
             foreach (var k in keys)
             {
                 if (i is not (1 or 2)) continue;

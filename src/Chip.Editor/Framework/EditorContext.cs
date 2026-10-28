@@ -306,8 +306,14 @@ public sealed class EditorContext
     /// <summary>Face under the mouse, honouring backface mode. <paramref name="selectable"/> skips locked meshes.</summary>
     public FaceHit? RaycastFace(bool selectable = false) => Picks.RaycastFace(MouseRay(), Backfaces, selectable);
 
-    /// <summary>Element of the current mode under the mouse.</summary>
-    public ElementRef? PickAtMouse(float pixelScale) => Picks.Pick(View, Mouse, Sel.Mode, pixelScale, Backfaces);
+    /// <summary>Element of the current mode under the mouse (in object mode, one <see cref="PickFilter"/> allows).</summary>
+    public ElementRef? PickAtMouse(float pixelScale) => Picks.Pick(View, Mouse, Sel.Mode, pixelScale, Backfaces, PickFilter);
+
+    /// <summary>
+    /// What object mode picks, box selects and selects all: everything, plain geometry, or entities (and mesh entities'
+    /// meshes). Component modes ignore it.
+    /// </summary>
+    public PickFilter PickFilter { get; set; }
 
     /// <summary>Runs one undoable edit over the faces the selection addresses (faces, or all faces of objects).</summary>
     public void ForFaces(string label, Action<PolyMesh, List<int>> edit)

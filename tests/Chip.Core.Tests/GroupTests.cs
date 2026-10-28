@@ -144,4 +144,89 @@ public class GroupTests
         session.Redo();
         Assert.Equal(g.Id, session.Doc.Groups.Single().Id);
     }
+
+    // ---- Folders ----
+
+    [Fact]
+    public void Members_of_a_folder_select_on_their_own_but_a_group_inside_one_still_selects_whole()
+    {
+        var (doc, ids) = Scene(4);
+        var folder = GroupOps.CreateFolder(doc, ids);
+        Assert.True(folder.Folder);
+        Assert.Equal("Folder 1", folder.Name);
+        Assert.Equal([ids[0]], GroupOps.ExpandToGroups(doc, [ids[0]]));
+        var pair = GroupOps.Create(doc, [ids[0], ids[1]])!;
+        Assert.Equal(folder.Id, pair.Parent); // grouping inside a folder keeps the group in it
+        Assert.Equal([ids[0], ids[1]], GroupOps.ExpandToGroups(doc, [ids[0]]).Order());
+        Assert.Same(pair, GroupOps.UnitOf(doc, ids[1]));
+        Assert.Null(GroupOps.UnitOf(doc, ids[2]));
+    }
+
+    [Fact]
+    public void A_folder_stays_when_emptied_and_can_start_empty()
+    {
+        var (doc, ids) = Scene(2);
+        var folder = GroupOps.CreateFolder(doc, [ids[0]]);
+        var empty = GroupOps.CreateFolder(doc, [], "props", parent: folder);
+        Assert.Equal(folder.Id, empty.Parent);
+        SceneOps.Delete(doc, [ids[0]]);
+        Assert.Equal(2, doc.Groups.Count);
+        Assert.Empty(folder.Members);
+    }
+
+    [Fact]
+    public void Ungrouping_and_duplicating_inside_a_folder_leave_the_folder_alone()
+    {
+        var (doc, ids) = Scene(3);
+        var folder = GroupOps.CreateFolder(doc, ids);
+        Assert.Equal(0, GroupOps.Ungroup(doc, [ids[0]]));
+        Assert.Contains(ids[0], folder.Members); // nothing to ungroup: a folder isn't a group
+        var copies = SceneOps.Duplicate(doc, ids);
+        Assert.Single(doc.Groups);
+        Assert.All(copies, c => Assert.Contains(c, folder.Members));
+    }
+
+    [Fact]
+    public void A_new_folder_takes_whole_groups_and_folders_intact()
+    {
+        var (doc, ids) = Scene(3);
+        var inner = GroupOps.CreateFolder(doc, [ids[0], ids[1]], "inner");
+        var outer = GroupOps.CreateFolder(doc, ids, "outer");
+        Assert.Equal(outer.Id, inner.Parent);
+        Assert.Equal([ids[0], ids[1]], inner.Members);
+        Assert.Equal([ids[2]], outer.Members);
+    }
+
+    [Fact]
+    public void Folders_survive_save_load_and_undo()
+    {
+        var (doc, ids) = Scene(2);
+        GroupOps.CreateFolder(doc, [ids[0]], "lights");
+        var loaded = IO.DocumentSerializer.Deserialize(IO.DocumentSerializer.Serialize(doc));
+        Assert.True(loaded.Groups.Single().Folder);
+        Assert.Equal("lights", loaded.Groups.Single().Name);
+
+        var session = new Session();
+        session.Reset(loaded, null);
+        session.Do("Folder", () => GroupOps.CreateFolder(session.Doc, [], "empty"));
+        session.Do("Group", () => session.Doc.Groups[0].Folder = false);
+        session.Undo();
+        Assert.True(session.Doc.Groups[0].Folder);
+        session.Undo();
+        Assert.Single(session.Doc.Groups);
+    }
+
+    [Fact]
+    public void Moving_meshes_between_mesh_entities_is_undoable()
+    {
+        var (doc, ids) = Scene(3);
+        var session = new Session();
+        session.Reset(doc, null);
+        session.Do("Tie", () => MeshEntityOps.Tie(session.Doc, ids, "info_target"));
+        var door = session.Doc.Entities.Single();
+        session.Do("Tie", () => MeshEntityOps.Tie(session.Doc, [ids[0]], "info_target"));
+        Assert.Equal([ids[1], ids[2]], session.Doc.FindEntity(door.Id)!.Meshes);
+        session.Undo();
+        Assert.Equal(ids, session.Doc.FindEntity(door.Id)!.Meshes);
+    }
 }

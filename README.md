@@ -91,9 +91,14 @@ and the inspector have the rest:
 | Meshes | merge `M`, mirror `Shift+Z`, flip `Shift+N`, snap vertices to the grid `Ctrl+Shift+Alt+V`, clean up, check |
 | Smoothing | soft `J`, hard `Ctrl+J`, dominant `K`, auto-smooth by angle |
 
-**Organising.** Group with `Ctrl+G`, lock with `Ctrl+L`, hide with `H`. The Scene tab lists every mesh, entity and group;
-`F2` renames and dragging moves things between groups. `Ctrl+T` tags faces (or whole meshes in object mode); dressing
-rules find their targets by tag.
+**Organising.** Group with `Ctrl+G`, lock with `Ctrl+L`, hide with `H`. The Scene tab lists every folder, group, mesh
+and entity; a group selects as one, a folder only sorts things (its button, or Edit > New folder, makes one). `F2`
+renames, dragging moves things into folders and groups, and right-click has the rest. `Ctrl+T` tags faces (or whole
+meshes in object mode); dressing rules find their targets by tag.
+
+**Picking among overlapping things.** Click the same spot again to select the next object under the cursor (the entity
+behind a wall, the wall inside a trigger volume), or `Ctrl`+right-click (`Alt+S`) for a list of all of them. `5` makes
+object mode pick entities only, so walls and floors stay out of the way; the dropdown beside the modes switches back.
 
 **Looking.** Fly with the right mouse button and WASD/QE, orbit with Alt+left drag, focus with `F`. `Alt+1`–`Alt+4`
 switch between perspective, top, front and side, and the View menu splits the viewport into two or four views.

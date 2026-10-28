@@ -94,28 +94,119 @@ public sealed class PickCache(Session session)
     }
 
     /// <inheritdoc cref="Picker.RaycastFace"/>
-    public FaceHit? RaycastFace(Ray ray, bool backfaces = false, bool selectable = false)
+    public FaceHit? RaycastFace(Ray ray, bool backfaces = false, bool selectable = false) =>
+        Raycast(ray, backfaces, selectable, PickFilter.All, out _);
+
+    /// <summary>The nearest face of a mesh passing <paramref name="filter"/> (read through <see cref="_owners"/> unless All).</summary>
+    FaceHit? Raycast(Ray ray, bool backfaces, bool selectable, PickFilter filter, out int meshIndex)
     {
         Sync();
         FaceHit? best = null;
         int bestMesh = int.MaxValue;
-        if (_scene.Nodes.Length > 0) VisitScene(0, ray, backfaces, selectable, ref best, ref bestMesh);
+        if (_scene.Nodes.Length > 0) VisitScene(0, ray, backfaces, selectable, filter, ref best, ref bestMesh);
+        meshIndex = bestMesh;
         return best;
     }
 
-    void VisitScene(int node, Ray ray, bool backfaces, bool selectable, ref FaceHit? best, ref int bestMesh)
+    void VisitScene(int node, Ray ray, bool backfaces, bool selectable, PickFilter filter, ref FaceHit? best, ref int bestMesh)
     {
         ref readonly var n = ref _scene.Nodes[node];
         if (!n.Bounds.Intersects(ray, best?.Distance ?? float.MaxValue)) return;
         if (n.Item < 0)
         {
-            VisitScene(n.Left, ray, backfaces, selectable, ref best, ref bestMesh);
-            VisitScene(n.Right, ray, backfaces, selectable, ref best, ref bestMesh);
+            VisitScene(n.Left, ray, backfaces, selectable, filter, ref best, ref bestMesh);
+            VisitScene(n.Right, ray, backfaces, selectable, filter, ref best, ref bestMesh);
             return;
         }
         var data = _meshes[n.Item];
         if (data.Mesh.Hidden || (selectable && data.Mesh.Locked) || data.Faces.Nodes.Length == 0) return;
+        if (filter != PickFilter.All && !ObjectRanking.Accepts(filter, _owners.ContainsKey(data.Mesh.Id))) return;
         VisitFaces(data, n.Item, 0, ray, backfaces, ref best, ref bestMesh);
+    }
+
+    // Object picking scratch, reused so hover allocates nothing once warm.
+    readonly Dictionary<int, int> _owners = new();
+    readonly List<ObjectRanking.Candidate> _objects = new();
+    readonly HashSet<int> _units = new();
+
+    // Entity models (reference models, class previews) by entity id. Looking one up resolves a path, so hover reuses them
+    // until the document or the loaded models change; the class is checked per entry, as entity state is read live.
+    readonly Dictionary<int, (string Class, ReferenceModel? Model)> _models = new();
+    Document? _modelsDoc;
+    int _modelsVersion = -1, _modelsRevision = -1;
+    Func<Entity, ReferenceModel?>? _modelOf;
+
+    Func<Entity, ReferenceModel?> Models()
+    {
+        if (!ReferenceEquals(_modelsDoc, session.Doc) || _modelsVersion != session.Version || _modelsRevision != ReferenceModels.DrawRevision)
+        {
+            _models.Clear();
+            _modelsDoc = session.Doc;
+            _modelsVersion = session.Version;
+            _modelsRevision = ReferenceModels.DrawRevision;
+        }
+        return _modelOf ??= e =>
+        {
+            if (e.IsMeshEntity) return null;
+            if (_models.TryGetValue(e.Id, out var hit) && hit.Class == e.ClassName) return hit.Model;
+            var model = ObjectRanking.Uncached(e);
+            _models[e.Id] = (e.ClassName, model);
+            return model;
+        };
+    }
+
+    /// <summary>Fills <see cref="_objects"/> with the entities and the nearest mesh (with <paramref name="allMeshes"/>, every mesh) under the mouse.</summary>
+    void CollectObjects(ViewInfo view, Vector2 mouse, float pixelScale, bool backfaces, PickFilter filter, bool allMeshes)
+    {
+        Sync();
+        var doc = session.Doc;
+        var ray = view.ScreenRay(mouse);
+        ObjectRanking.Owners(doc, _owners);
+        _objects.Clear();
+        // Any drawn surface, locked or not, hides the entities behind it.
+        var surface = Raycast(ray, backfaces, false, PickFilter.All, out int surfaceMesh);
+        if (filter != PickFilter.Geometry) ObjectRanking.AddEntities(doc, view, ray, mouse, pixelScale, surface?.Distance, _objects, Models());
+        if (allMeshes)
+        {
+            if (_scene.Nodes.Length > 0) VisitAllMeshes(0, ray, backfaces, filter);
+            return;
+        }
+        var hit = surface;
+        int meshIndex = surfaceMesh;
+        if (hit is { } s && (s.Mesh.Locked || !ObjectRanking.Accepts(filter, _owners.ContainsKey(s.Mesh.Id))))
+            hit = Raycast(ray, backfaces, true, filter, out meshIndex);
+        if (hit is { } h) ObjectRanking.AddMesh(h.Mesh.Id, _owners.TryGetValue(h.Mesh.Id, out var o) ? o : -1, meshIndex, h.Distance, _objects);
+    }
+
+    /// <summary>Every selectable mesh the ray hits, at its nearest face.</summary>
+    void VisitAllMeshes(int node, Ray ray, bool backfaces, PickFilter filter)
+    {
+        ref readonly var n = ref _scene.Nodes[node];
+        if (!n.Bounds.Intersects(ray, float.MaxValue)) return;
+        if (n.Item < 0)
+        {
+            VisitAllMeshes(n.Left, ray, backfaces, filter);
+            VisitAllMeshes(n.Right, ray, backfaces, filter);
+            return;
+        }
+        var data = _meshes[n.Item];
+        if (data.Mesh.Hidden || data.Mesh.Locked || data.Faces.Nodes.Length == 0) return;
+        int owner = _owners.TryGetValue(data.Mesh.Id, out var o) ? o : -1;
+        if (!ObjectRanking.Accepts(filter, owner >= 0)) return;
+        FaceHit? best = null;
+        int bestMesh = int.MaxValue;
+        VisitFaces(data, n.Item, 0, ray, backfaces, ref best, ref bestMesh);
+        if (best is { } b) ObjectRanking.AddMesh(data.Mesh.Id, owner, n.Item, b.Distance, _objects);
+    }
+
+    /// <inheritdoc cref="Picker.PickObjects"/>
+    public void PickObjects(ViewInfo view, Vector2 mouse, List<ElementRef> result, float pixelScale = 1, bool backfaces = false,
+        PickFilter filter = PickFilter.All)
+    {
+        CollectObjects(view, mouse, pixelScale, backfaces, filter, allMeshes: true);
+        ObjectRanking.Finish(_objects, _units);
+        result.Clear();
+        foreach (var c in _objects) result.Add(ElementRef.Object(c.Id));
     }
 
     static void VisitFaces(MeshData data, int meshIndex, int node, Ray ray, bool backfaces, ref FaceHit? best, ref int bestMesh)
@@ -143,15 +234,16 @@ public sealed class PickCache(Session session)
     }
 
     /// <inheritdoc cref="Picker.Pick"/>
-    public ElementRef? Pick(ViewInfo view, Vector2 mouse, SelectMode mode, float pixelScale = 1, bool backfaces = false)
+    public ElementRef? Pick(ViewInfo view, Vector2 mouse, SelectMode mode, float pixelScale = 1, bool backfaces = false,
+        PickFilter filter = PickFilter.All)
     {
-        if (mode is SelectMode.Object or SelectMode.Face)
+        if (mode == SelectMode.Object)
         {
-            var hit = RaycastFace(view.ScreenRay(mouse), backfaces, selectable: true);
-            if (mode == SelectMode.Face) return hit is { } hf ? ElementRef.Face(hf.Mesh.Id, hf.Face) : null;
-            if (PickEntity(view, mouse, pixelScale, hit?.Distance) is { } entity) return ElementRef.Object(entity.Id);
-            return hit is { } h ? ElementRef.Object(h.Mesh.Id) : null;
+            CollectObjects(view, mouse, pixelScale, backfaces, filter, allMeshes: false);
+            return ObjectRanking.Best(_objects) is var best && best >= 0 ? ElementRef.Object(_objects[best].Id) : null;
         }
+        if (mode == SelectMode.Face)
+            return RaycastFace(view.ScreenRay(mouse), backfaces, selectable: true) is { } hf ? ElementRef.Face(hf.Mesh.Id, hf.Face) : null;
 
         // Same rule as Picker.Pick: every element within the radius, nearest first; the first visible one wins.
         Sync();
@@ -200,17 +292,19 @@ public sealed class PickCache(Session session)
     }
 
     /// <inheritdoc cref="Picker.Marquee"/>
-    public List<ElementRef> Marquee(ViewInfo view, Vector2 a, Vector2 b, SelectMode mode, bool backfaces = false)
+    public List<ElementRef> Marquee(ViewInfo view, Vector2 a, Vector2 b, SelectMode mode, bool backfaces = false, PickFilter filter = PickFilter.All)
     {
         var result = new List<ElementRef>();
-        Marquee(view, a, b, mode, result, backfaces);
+        Marquee(view, a, b, mode, result, backfaces, filter);
         return result;
     }
 
     /// <summary>Writes into a reusable list (cleared first) to avoid allocations while dragging a marquee.</summary>
-    public void Marquee(ViewInfo view, Vector2 a, Vector2 b, SelectMode mode, List<ElementRef> result, bool backfaces = false)
+    public void Marquee(ViewInfo view, Vector2 a, Vector2 b, SelectMode mode, List<ElementRef> result, bool backfaces = false,
+        PickFilter filter = PickFilter.All)
     {
         Sync();
+        if (mode == SelectMode.Object) ObjectRanking.Owners(session.Doc, _owners);
         result.Clear();
         var min = Vector2.Min(a, b);
         var max = Vector2.Max(a, b);
@@ -235,14 +329,18 @@ public sealed class PickCache(Session session)
                             result.Add(ElementRef.Face(mesh.Id, f));
                     break;
                 case SelectMode.Object:
+                    if (!ObjectRanking.Accepts(filter, _owners.ContainsKey(mesh.Id))) break;
                     foreach (var center in data.Centers)
                         if (Inside(view, min, max, center)) { result.Add(ElementRef.Object(mesh.Id)); break; }
                     break;
             }
         }
-        if (mode == SelectMode.Object)
+        if (mode == SelectMode.Object && filter != PickFilter.Geometry)
+        {
+            var models = Models();
             foreach (var e in session.Doc.Entities)
-                if (!e.Hidden && !e.Locked && Inside(view, min, max, e.Position)) result.Add(ElementRef.Object(e.Id));
+                if (!e.Hidden && !e.Locked && Inside(view, min, max, EntityOps.Center(e, models(e)))) result.Add(ElementRef.Object(e.Id));
+        }
     }
 
     static bool Inside(ViewInfo view, Vector2 min, Vector2 max, Vector3 p) => view.Project(p, out var s) &&
@@ -251,43 +349,10 @@ public sealed class PickCache(Session session)
     /// <inheritdoc cref="Picker.PickEntity"/>
     public Entity? PickEntity(ViewInfo view, Vector2 mouse, float pixelScale = 1, float? surfaceDistance = null)
     {
-        // Entities are few and mutable independently of mesh revisions. Read their current transforms and flags.
-        // Avoid EntityClasses.Get's unknown-class allocation in this per-frame path.
-        var ray = view.ScreenRay(mouse);
-        float limit = surfaceDistance is { } s ? s * 1.02f + 0.02f : float.MaxValue;
-        Entity? best = null;
-        float bestT = float.MaxValue;
-        foreach (var e in session.Doc.Entities)
-        {
-            if (e.Hidden || e.Locked) continue;
-            Vector3 min = new(-0.2f), max = new(0.2f);
-            if (EntityClasses.Current.Find(e.ClassName) is { } c) { min = c.BoxMin; max = c.BoxMax; }
-            var inv = Quaternion.Conjugate(EntityOps.Orientation(e));
-            var localRay = new Ray(Vector3.Transform(ray.Origin - e.Position, inv), Vector3.Transform(ray.Dir, inv));
-            float? t = EntityBoxHit(localRay, min, max);
-            var center = Vector3.Transform((min + max) * 0.5f, EntityOps.World(e));
-            if (t == null && view.Project(center, out var sc) && Vector2.Distance(sc, mouse) < Picker.EntityGlyphRadius * pixelScale)
-                t = MathF.Max(0, Vector3.Dot(center - ray.Origin, ray.Dir));
-            if (t is not { } d || d > limit || d >= bestT) continue;
-            bestT = d;
-            best = e;
-        }
-        return best;
-    }
-
-    static float? EntityBoxHit(Ray ray, Vector3 min, Vector3 max)
-    {
-        float near = 0, far = float.MaxValue;
-        for (int axis = 0; axis < 3; axis++)
-        {
-            float o = ray.Origin[axis], d = ray.Dir[axis];
-            if (MathF.Abs(d) < 1e-9f) { if (o < min[axis] || o > max[axis]) return null; continue; }
-            float a = (min[axis] - o) / d, b = (max[axis] - o) / d;
-            if (a > b) (a, b) = (b, a);
-            near = MathF.Max(near, a);
-            far = MathF.Min(far, b);
-            if (near > far) return null;
-        }
-        return near;
+        // Entities are few and mutable independently of mesh revisions: read their current transforms and flags.
+        _objects.Clear();
+        ObjectRanking.AddEntities(session.Doc, view, view.ScreenRay(mouse), mouse, pixelScale, surfaceDistance, _objects, Models());
+        _objects.RemoveAll(static c => !c.Visible);
+        return ObjectRanking.Best(_objects) is var i && i >= 0 ? session.Doc.FindEntity(_objects[i].Id) : null;
     }
 }

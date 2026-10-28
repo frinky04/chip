@@ -18,12 +18,24 @@ namespace Chip.Editor.Tools;
 /// (mode from <see cref="EditorContext.Gizmo"/>). Shift-dragging any gizmo extrudes faces or open edges first.
 /// Double-click floods (connected faces, edge loop, connected vertices; with CapsLock/Mouse4/Mouse5 held, faces on the plane),
 /// and Ctrl+Shift+click adds the shortest path from the active element.
+/// <para>Object mode picks what <see cref="EditorContext.PickFilter"/> allows. Clicking again in the same spot selects the
+/// next object under the cursor (<see cref="Picker.PickObjects"/>: an entity behind a wall, the wall inside a trigger
+/// volume), even when the click lands on the gizmo, as long as the mouse doesn't move.</para>
 /// <para>Active element: a click, double-click or path click makes the clicked element active. A box select keeps the
 /// previous active element if it is still selected, otherwise there is none.</para>
 /// </summary>
 public sealed class SelectTool : IViewportTool
 {
     TransformGesture? _gesture;
+    /// <summary>
+    /// The gizmo was pressed on the last click's spot: the drag starts once the mouse moves, and a release without moving
+    /// cycles instead (no gesture is started and cancelled, so undo and the selection stay untouched).
+    /// </summary>
+    Handle? _gizmoPress;
+    /// <summary>Objects under the last object-mode click, best first, one per selection unit; the index is the selected one.</summary>
+    readonly List<ElementRef> _stack = new();
+    int _stackIndex;
+    Vector2 _stackPos;
     /// <summary>An exact value being typed during a gizmo drag, or null while the mouse steers.</summary>
     string? _typed;
     bool _marqueeArmed, _marquee, _painting, _swallowRelease;
@@ -40,7 +52,7 @@ public sealed class SelectTool : IViewportTool
     public Icon Icon => Icon.Select;
     public string? Hotkey => null;
     public int Order => 0;
-    public bool Busy => _gesture != null || _marqueeArmed;
+    public bool Busy => _gesture != null || _marqueeArmed || _gizmoPress != null;
 
     /// <summary>Box select ignores elements hidden behind other surfaces (off: vertices and edges select through).</summary>
     public bool VisibleOnly { get; set; }
@@ -49,14 +61,20 @@ public sealed class SelectTool : IViewportTool
         ? [("Enter", "apply"), ("Backspace", "edit"), ("Esc", "cancel")]
         : _gesture != null
         ? [("Type", "an exact value"), ("Esc", "cancel")]
-        : [("LMB", "select"), ("Drag", "paint select"), ("Ctrl+Alt+drag", "box"), ("Dbl-click", _mode switch
-        {
-            SelectMode.Edge => "loop", SelectMode.Object => "select", _ => "connected",
-        }), ("Ctrl+Shift+LMB", "path"), ("Alt+LMB", "orbit"), ("F1", "shortcuts")];
+        : _mode == SelectMode.Object
+        ? [("LMB", "select"), ("LMB again", "next under cursor"), ("Ctrl+RMB", "pick from a list"), ("Drag", "paint select"),
+            ("Ctrl+Alt+drag", "box"), ("Alt+LMB", "orbit"), ("F1", "shortcuts")]
+        : [("LMB", "select"), ("Drag", "paint select"), ("Ctrl+Alt+drag", "box"), ("Dbl-click", _mode == SelectMode.Edge ? "loop" : "connected"),
+            ("Ctrl+Shift+LMB", "path"), ("Alt+LMB", "orbit"), ("F1", "shortcuts")];
 
     public bool Cancel(EditorContext ctx)
     {
         _typed = null;
+        if (_gizmoPress != null)
+        {
+            _gizmoPress = null;
+            return true;
+        }
         if (_gesture != null)
         {
             _gesture.Cancel();
@@ -102,6 +120,24 @@ public sealed class SelectTool : IViewportTool
             return;
         }
 
+        // A gizmo press on the last click's spot: a drag once the mouse moves (from where it was pressed), else a click
+        // that selects the next object under the cursor.
+        if (_gizmoPress is { } handle)
+        {
+            if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            {
+                _gizmoPress = null;
+                SelectNextInStack(ctx);
+            }
+            else if (Vector2.Distance(mouse, _pressPos) > Theme.Px(4))
+            {
+                _gizmoPress = null;
+                _gesture = TransformGesture.Start(ctx.Session, GestureLabel(gizmo.Mode), GestureKind.Transform);
+                if (_gesture != null) gizmo.BeginDrag(handle, ctx.View, _gesture.Pivot, _pressPos);
+            }
+            return;
+        }
+
         // The release that ends a double-click must not re-apply a single click.
         if (_swallowRelease)
         {
@@ -110,8 +146,9 @@ public sealed class SelectTool : IViewportTool
         }
 
         // Double-click on the element the first click selected floods from it. Checked before the gizmo, which now sits
-        // on that selection and would otherwise eat the second click.
-        if (ctx.ViewportHovered && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left) && _lastClick is { } first &&
+        // on that selection and would otherwise eat the second click. Objects don't flood: there, a quick second click
+        // cycles to the next object under the cursor.
+        if (ctx.ViewportHovered && _mode != SelectMode.Object && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left) && _lastClick is { } first &&
             ctx.Now - _lastClickTime <= io.MouseDoubleClickTime * 2 && ctx.PickAtMouse(Theme.Scale) == first)
         {
             Flood(ctx, first, io);
@@ -130,15 +167,21 @@ public sealed class SelectTool : IViewportTool
             var kind = !io.KeyShift ? GestureKind.Transform
                 : io.KeyCtrl && gizmo.Mode == GizmoMode.Translate ? GestureKind.PushPull
                 : GestureKind.Extrude;
+            _lastClick = null;
+            if (kind == GestureKind.Transform && !io.KeyCtrl && OnStack(ctx, mouse))
+            {
+                _gizmoPress = gizmo.Hover;
+                _pressPos = mouse;
+                return;
+            }
             string label = kind switch
             {
                 GestureKind.Extrude => "Extrude",
                 GestureKind.PushPull => "Push/Pull",
-                _ => gizmo.Mode switch { GizmoMode.Rotate => "Rotate", GizmoMode.Scale => "Scale", _ => "Move" },
+                _ => GestureLabel(gizmo.Mode),
             };
             _gesture = TransformGesture.Start(ctx.Session, label, kind);
             if (_gesture != null) gizmo.BeginDrag(gizmo.Hover, ctx.View, _gesture.Pivot, mouse);
-            _lastClick = null;
             return;
         }
 
@@ -171,6 +214,11 @@ public sealed class SelectTool : IViewportTool
                 ctx.Status(hadStart
                     ? "No path: the two elements aren't connected in one mesh, so only the clicked one was added"
                     : "Path select starts at the active element: click a start, then Ctrl+Shift+click the end");
+        }
+        else if (_mode == SelectMode.Object && !io.KeyShift && !io.KeyCtrl)
+        {
+            if (OnStack(ctx, mouse)) SelectNextInStack(ctx);
+            else SelectFirstUnder(ctx, mouse);
         }
         else
         {
@@ -251,7 +299,7 @@ public sealed class SelectTool : IViewportTool
         for (int i = 1; i <= samples; i++)
         {
             var p = Vector2.Lerp(_lastPaintPos, mouse, i / (float)samples);
-            if (ctx.Picks.Pick(ctx.View, p, ctx.Sel.Mode, Theme.Scale, ctx.Backfaces) is { } e) PaintElement(ctx.Sel, e);
+            if (ctx.Picks.Pick(ctx.View, p, ctx.Sel.Mode, Theme.Scale, ctx.Backfaces, ctx.PickFilter) is { } e) PaintElement(ctx.Sel, e);
         }
         _lastPaintPos = mouse;
     }
@@ -272,13 +320,59 @@ public sealed class SelectTool : IViewportTool
     void Marquee(EditorContext ctx, ImGuiIOPtr io)
     {
         var sel = ctx.Sel;
-        var picked = ctx.Picks.Marquee(ctx.View, _pressPos, ctx.Mouse, sel.Mode, ctx.Backfaces);
+        var picked = ctx.Picks.Marquee(ctx.View, _pressPos, ctx.Mouse, sel.Mode, ctx.Backfaces, ctx.PickFilter);
         if (VisibleOnly) picked = Visibility.FilterVisible(ctx.Doc, ctx.View, picked, sel.Mode, ctx.Backfaces, ctx.Picks);
         var active = sel.Active;
         // Ctrl+Alt+drag replaces the selection; with Shift it adds.
         if (!io.KeyShift) sel.Clear();
         foreach (var e in picked) sel.Items.Add(e);
         sel.Active = active is { } a && sel.Items.Contains(a) ? a : null;
+    }
+
+    static string GestureLabel(GizmoMode mode) => mode switch { GizmoMode.Rotate => "Rotate", GizmoMode.Scale => "Scale", _ => "Move" };
+
+    int _stackVersion;
+
+    /// <summary>The mouse is where the last object click was, and that click's pick is still selected.</summary>
+    bool OnStack(EditorContext ctx, Vector2 mouse) =>
+        _mode == SelectMode.Object && _stack.Count > 1 && _stackVersion == ctx.Session.Version
+        && Vector2.Distance(mouse, _stackPos) <= Theme.Px(4) && ctx.Sel.Items.Contains(_stack[_stackIndex]);
+
+    /// <summary>A plain object click: the best object under the cursor, remembering the rest for clicking again.</summary>
+    void SelectFirstUnder(EditorContext ctx, Vector2 mouse)
+    {
+        UnderCursor.Collect(ctx, mouse, _stack);
+        _stackIndex = 0;
+        _stackPos = mouse;
+        _stackVersion = ctx.Session.Version;
+        ctx.Sel.Clear();
+        if (_stack.Count > 0) ctx.Sel.Add(_stack[0]);
+    }
+
+    void SelectNextInStack(EditorContext ctx)
+    {
+        _stackIndex = (_stackIndex + 1) % _stack.Count;
+        ctx.Sel.Clear();
+        ctx.Sel.Add(_stack[_stackIndex]);
+    }
+
+    /// <summary>
+    /// Object mode: the hovered entity's name beside the cursor (glyphs say only the class), and while clicking through a
+    /// stack, which of how many is selected.
+    /// </summary>
+    void DrawHoverTag(EditorContext ctx, Vector2 origin)
+    {
+        if (_mode != SelectMode.Object || _gesture != null || _marqueeArmed || !ctx.ViewportHovered) return;
+        bool cycling = OnStack(ctx, ctx.Mouse);
+        int? id = cycling ? _stack[_stackIndex].Mesh : ctx.Hover is { } h && ctx.Doc.FindEntity(h.Mesh) != null ? h.Mesh : null;
+        if (id is not { } target) return;
+        var (icon, color, name, detail) = UnderCursor.Describe(ctx.Doc, target, Features.Scene.GroupSelection.Of(ctx).Enabled);
+        string? hint = cycling ? $"{_stackIndex + 1} of {_stack.Count} here. Click again for the next" : null;
+        // Above the entity overlay's glyphs and labels, which are a window over the viewport.
+        var top = ImGui.GetForegroundDrawList();
+        top.PushClipRect(ctx.ViewportOrigin, ctx.ViewportOrigin + ctx.ViewportSize, true);
+        UnderCursor.Tag(top, origin + ctx.Mouse + Theme.Px(16, 18), icon, color, name, detail, hint);
+        top.PopClipRect();
     }
 
     /// <summary>No modifier replaces the selection with the flood, Shift adds it, Ctrl removes it.</summary>
@@ -306,6 +400,7 @@ public sealed class SelectTool : IViewportTool
             DrawDimensions(ctx, dl, origin, view.DimensionMode, WithReferenceModels(ctx, bounds));
         if (ctx.SelectionPivot() is { } pivot) ctx.Gizmo.Draw(dl, origin, ctx.View, pivot);
         if (_gesture != null && ctx.Gizmo.Dragging) DrawReadout(ctx, dl, origin);
+        DrawHoverTag(ctx, origin);
         if (!_marquee) return;
         var a = origin + _pressPos;
         var b = origin + ctx.Mouse;

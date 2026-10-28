@@ -1,4 +1,5 @@
 using System.Numerics;
+using Chip.Core.Picking;
 using Chip.Core.Scene;
 using Chip.Editor.Framework;
 using Chip.Editor.UI;
@@ -40,7 +41,7 @@ public sealed partial class EditorApp
         for (int level = 0; level < 4; level++)
         {
             bool labels = level == 0, fitted = level >= 2, folded = level >= 3;
-            float left = SegmentedWidth(labels ? ModeItems : ModeItems.Select(m => (m.Item1, "", m.Item3)).ToArray()) + separator
+            float left = SegmentedWidth(labels ? ModeItems : ModeItems.Select(m => (m.Item1, "", m.Item3)).ToArray()) + PickFilterWidth(labels) + separator
                 + (folded ? 0 : DropdownWidth(null, pane.Name, fitted ? pane.Name : "Perspective") + between
                     + DropdownWidth(null, ViewportPane.ModeLabel(pane.Mode), fitted ? ViewportPane.ModeLabel(pane.Mode) : "UV checker") + between)
                 + (fitted ? (folded ? 0 : DropdownWidth(Icon.Move, "", "") + between) + DropdownWidth(Icon.Dots, "", "")
@@ -81,6 +82,20 @@ public sealed partial class EditorApp
         var modeItems = labels ? ModeItems : ModeItems.Select(m => (m.Item1, "", m.Item3)).ToArray();
         int picked = SegmentedControl("mode", modeItems, Array.IndexOf(HeaderModes, Ctx.Sel.Mode));
         if (picked >= 0) Ctx.SetMode(HeaderModes[picked]);
+        if (Ctx.Sel.Mode == SelectMode.Object)
+        {
+            ImGui.SameLine(0, Theme.Px(4));
+            var filter = Ctx.PickFilter;
+            if (Dropdown("pickfilter", PickFilterIcon(filter), labels ? filter.Label() : "", labels ? "Geometry" : "",
+                    $"Object mode picks {PickFilterTip(filter)}  (5: entities only)", on: filter != PickFilter.All))
+            {
+                foreach (var f in Enum.GetValues<PickFilter>())
+                    if (ImGui.MenuItem(f switch { PickFilter.Geometry => "Geometry only", PickFilter.Entities => "Entities only", _ => "Everything" },
+                            f == PickFilter.Entities ? "5" : null, filter == f))
+                        Features.SelectionTools.ObjectPickingFeature.SetFilter(Ctx, f);
+                ImGui.EndPopup();
+            }
+        }
         VSeparator();
 
         // The active pane's projection and shading; in multi-pane layouts each pane also has its own corner menu.
@@ -209,6 +224,19 @@ public sealed partial class EditorApp
         ImGui.GetWindowDrawList().AddLine(p, p + new Vector2(width, 0), ImGui.ColorConvertFloat4ToU32(Theme.Border));
     }
 
+    /// <summary>The pick filter's dropdown and the gap before it; only object mode shows it.</summary>
+    float PickFilterWidth(bool labels) => Ctx.Sel.Mode != SelectMode.Object ? 0
+        : Theme.Px(4) + DropdownWidth(PickFilterIcon(Ctx.PickFilter), labels ? Ctx.PickFilter.Label() : "", labels ? "Geometry" : "");
+
+    static Icon PickFilterIcon(PickFilter f) => f switch { PickFilter.Geometry => Icon.Block, PickFilter.Entities => Icon.MapPin, _ => Icon.Object };
+
+    static string PickFilterTip(PickFilter f) => f switch
+    {
+        PickFilter.Geometry => "geometry only: entities can't be clicked or box selected",
+        PickFilter.Entities => "entities only: walls and floors can't be clicked or box selected",
+        _ => "everything: meshes and entities",
+    };
+
     static string OrientationLabel(GizmoOrientation o) => o switch
     {
         GizmoOrientation.Local => "Local", GizmoOrientation.View => "View", _ => "World",
@@ -258,7 +286,8 @@ public sealed partial class EditorApp
         return pad + iconW + MathF.Max(ImGui.CalcTextSize(widest).X, ImGui.CalcTextSize(text).X) + pad + chevron;
     }
 
-    static bool Dropdown(string id, Icon? icon, string text, string widest, string tip)
+    /// <param name="on">A setting that's on (a narrowed pick filter): the icon is orange.</param>
+    static bool Dropdown(string id, Icon? icon, string text, string widest, string tip, bool on = false)
     {
         float h = ImGui.GetFrameHeight();
         float pad = Theme.Px(8), iconW = icon != null ? Fonts.IconSize + Theme.Px(6) : 0;
@@ -271,7 +300,7 @@ public sealed partial class EditorApp
         var dl = ImGui.GetWindowDrawList();
         dl.AddRectFilled(p, p + size, ImGui.ColorConvertFloat4ToU32(hovered || open ? Theme.FrameHover : Theme.Frame), Theme.Px(3));
         uint fg = ImGui.ColorConvertFloat4ToU32(hovered || open ? Theme.Text : Theme.TextDim);
-        if (icon is { } ic) Icons.Draw(dl, ic, new Vector2(p.X + pad + Fonts.IconSize * 0.5f, p.Y + h * 0.5f), fg);
+        if (icon is { } ic) Icons.Draw(dl, ic, new Vector2(p.X + pad + Fonts.IconSize * 0.5f, p.Y + h * 0.5f), on ? Theme.AccentU32 : fg);
         dl.AddText(new Vector2(p.X + pad + iconW, MathF.Round(p.Y + (h - ImGui.GetTextLineHeight()) * 0.5f)), ImGui.ColorConvertFloat4ToU32(Theme.Text), text);
         Chevron(dl, new Vector2(p.X + size.X - pad - Theme.Px(3), p.Y + h * 0.5f), fg);
         if (!open) Tip(tip);
