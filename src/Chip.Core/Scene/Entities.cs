@@ -81,6 +81,7 @@ public sealed class EntityClassTracker
         if (key == _key && stamp == _stamp) return false;
         _key = key;
         _stamp = stamp;
+        Project?.Dispose();
         Project = project;
         if (project == null) Set(EntityCatalog.BuiltIn, null);
         else if (problem != null) Set(EntityCatalog.BuiltIn, problem + "; until it's fixed Chip offers its built-in classes");
@@ -104,6 +105,7 @@ public sealed class EntityClassTracker
     /// <summary>Uses <paramref name="catalog"/> until the next <see cref="Track"/> that finds a change.</summary>
     public void Use(EntityCatalog catalog)
     {
+        Project?.Dispose();
         Project = catalog.Source != null ? GameProject.Find(catalog.Source) : null;
         _key = Project != null ? $"{Project.Root}|{catalog.Source}" : null;
         _stamp = catalog.Source != null ? Stamp(catalog.Source) ^ (Project?.File is { } f ? Stamp(f) * 31 : 0) : 0;

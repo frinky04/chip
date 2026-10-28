@@ -110,6 +110,7 @@ sealed class UndoDelta
 
     static bool EntityEquals(Entity a, Entity b) => a.Id == b.Id && a.ClassName == b.ClassName && a.Name == b.Name &&
         BitsValue(a.Position, b.Position) && BitsValue(a.Rotation, b.Rotation) &&
+        a.Tags == b.Tags && a.Outputs.Count == b.Outputs.Count && a.Outputs.Zip(b.Outputs).All(p => System.Text.Json.Nodes.JsonNode.DeepEquals(p.First.ToJson(), p.Second.ToJson())) &&
         a.Hidden == b.Hidden && a.Locked == b.Locked && a.Meshes.SequenceEqual(b.Meshes) && EntityValues.SameProperties(a.Properties, b.Properties);
 
     static bool GroupEquals(Group a, Group b) => a.Id == b.Id && a.Name == b.Name && a.Parent == b.Parent &&

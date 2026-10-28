@@ -7,8 +7,10 @@ namespace Chip.Core.Scene;
 /// export path to the first folder holding <c>chip.project.json</c> or <c>project.godot</c> (the project file wins when a
 /// folder has both; its missing fields then take Godot's values). See <c>docs/engines.md</c>.
 /// </summary>
-public sealed record GameProject
+public sealed record GameProject : IDisposable
 {
+    public void Dispose() { foreach (var kind in Kinds.Values) kind.Dispose(); }
+
     public const string FileName = "chip.project.json";
     public const int Version = 1;
 
@@ -24,6 +26,8 @@ public sealed record GameProject
     public bool CollisionSuffixes { get; init; }
     /// <summary>What engine asset paths start with (<c>res://</c>), shown as a hint and checked; empty for no rule.</summary>
     public string AssetPrefix { get; init; } = "";
+    public IReadOnlyDictionary<string, AssetKind> Kinds { get; init; } = new Dictionary<string, AssetKind>();
+    public IReadOnlyDictionary<string, FlagSpec> Flags { get; init; } = new Dictionary<string, FlagSpec>();
     public bool IsGodot { get; init; }
     /// <summary>The game's surfaces (<c>"surfaces"</c>), new ones and changed built-ins (see <see cref="Scene.Surfaces"/>).</summary>
     public IReadOnlyList<Surface> Surfaces { get; init; } = [];
@@ -106,8 +110,10 @@ public sealed record GameProject
                             JsonValueKind.True => true, JsonValueKind.False => false, _ => throw Bad(prop, "true or false"),
                         } };
                         break;
+                    case "kinds": p = p with { Kinds = AssetKind.Parse(prop.Value, root) }; break;
+                    case "flags": p = p with { Flags = FlagSpec.Parse(prop.Value) }; break;
                     case "surfaces": p = p with { Surfaces = Scene.Surfaces.Parse(prop.Value, root) }; break;
-                    default: throw new InvalidDataException($"has an unknown field \"{prop.Name}\" (known: version, engine, entities, collisionSuffixes, assetPrefix, surfaces)");
+                    default: throw new InvalidDataException($"has an unknown field \"{prop.Name}\" (known: version, engine, entities, collisionSuffixes, assetPrefix, surfaces, kinds, flags)");
                 }
             return p;
         }
