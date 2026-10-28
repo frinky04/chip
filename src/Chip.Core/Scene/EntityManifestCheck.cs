@@ -14,10 +14,10 @@ public static class EntityManifestCheck
 {
     static readonly HashSet<string> Types =
         ["bool", "int", "float", "string", "enum", "color", "vector2", "vector3", "node", "entity", "resource", "asset", "array", "unsupported"];
-    static readonly HashSet<string> ClassKeys = ["scene", "uid", "label", "base", "doc", "props", "bounds", "preview", "mesh"];
+    static readonly HashSet<string> ClassKeys = ["scene", "uid", "label", "base", "doc", "props", "bounds", "preview", "mesh", "traits", "was", "logic", "inputs", "outputs"];
     static readonly HashSet<string> PropKeys =
         ["name", "type", "of", "default", "doc", "group", "options", "range", "or_greater", "or_less", "suffix", "class", "integer",
-         "engine", "godot", "file", "multiline"];
+         "engine", "godot", "file", "multiline", "kind", "trait", "was"];
 
     public static int Run(string path, TextWriter output, bool json = false)
     {
@@ -51,6 +51,7 @@ public static class EntityManifestCheck
             return Finish(output, json, project, manifest, null, problems, 2);
         }
         Lint(text, manifest, problems);
+        LogicLint(catalog, project, problems);
         return Finish(output, json, project, manifest, catalog, problems, 0);
     }
 
@@ -73,6 +74,16 @@ public static class EntityManifestCheck
             if (c.Value.TryGetProperty("preview", out var pv) && pv.ValueKind == JsonValueKind.String
                 && !File.Exists(Path.Combine(dir, pv.GetString()!)))
                 Warn($"{cls}: preview {pv.GetString()} doesn't exist (relative to the manifest); the box is drawn");
+            foreach (var portKey in new[] { "inputs", "outputs" })
+                if (c.Value.TryGetProperty(portKey, out var ports) && ports.ValueKind == JsonValueKind.Array)
+                    foreach (var port in ports.EnumerateArray())
+                    {
+                        var allowed = portKey == "inputs" ? new[] { "name", "doc", "was", "params" } : new[] { "name", "doc", "was", "payload", "required", "timeline" };
+                        foreach (var key in port.EnumerateObject()) if (!allowed.Contains(key.Name)) Warn($"{cls}.{portKey}: unknown key {key.Name}");
+                        if (port.TryGetProperty("params", out var parameters) && parameters.ValueKind == JsonValueKind.Array)
+                            foreach (var parameter in parameters.EnumerateArray()) PortProp(parameter, cls + ".inputs");
+                        if (port.TryGetProperty("payload", out var payload)) PortProp(payload, cls + ".payload");
+                    }
             if (!c.Value.TryGetProperty("props", out var ps)) continue;
             if (ps.ValueKind != JsonValueKind.Array) { Warn($"{cls}: props should be a list; the class has none"); continue; }
             var seen = new HashSet<string>();
@@ -96,6 +107,16 @@ public static class EntityManifestCheck
                 if (itemType == "enum" && !(p.TryGetProperty("options", out var os) && os.ValueKind == JsonValueKind.Array && os.GetArrayLength() > 0))
                     Warn($"{at}: an enum needs \"options\": [{{ \"label\": ..., \"value\": ... }}]");
             }
+        }
+        void PortProp(JsonElement p, string at)
+        {
+            if (p.ValueKind != JsonValueKind.Object) { Warn($"{at}: expected a property shape"); return; }
+            foreach (var key in p.EnumerateObject()) if (!PropKeys.Contains(key.Name)) Warn($"{at}: unknown key {key.Name}");
+            if (!p.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String || !Types.Contains(type.GetString()!)) Warn($"{at}: unknown parameter or payload type");
+            var spec = EntityCatalog.ParseProp(at, p, "payload");
+            if (spec.Type == PropType.Unsupported) Warn($"{at}: parameter or payload has an unsupported type");
+            if (spec.Type == PropType.Enum && spec.Options.Count == 0) Warn($"{at}: an enum needs options");
+            if (p.TryGetProperty("default", out var d) && !EntityValues.IsNull(d) && EntityValues.Coerce(spec, d, out _) == null) Warn($"{at}: default cannot be read as its type");
         }
     }
 
@@ -134,6 +155,7 @@ public static class EntityManifestCheck
                 }).ToArray()),
                 ["classes"] = new JsonArray(classes.Select(c => (JsonNode)new JsonObject
                 {
+                    ["inputs"] = new JsonArray(c.Inputs.Select(i => (JsonNode)new JsonObject { ["name"] = i.Name, ["doc"] = i.Doc, ["was"] = JsonSerializer.SerializeToNode(i.Was), ["params"] = new JsonArray(i.Params.Select(p => (JsonNode)PropJson(p)).ToArray()) }).ToArray()), ["outputs"] = new JsonArray(c.Outputs.Select(i => (JsonNode)new JsonObject { ["name"] = i.Name, ["doc"] = i.Doc, ["was"] = JsonSerializer.SerializeToNode(i.Was), ["payload"] = i.Payload == null ? null : PropJson(i.Payload), ["required"] = i.Required, ["timeline"] = i.Timeline }).ToArray()), ["traits"] = JsonSerializer.SerializeToNode(c.Traits),
                     ["name"] = c.Name, ["mesh"] = c.IsMesh, ["props"] = new JsonArray(c.Props.Select(p => (JsonNode)new JsonObject
                     {
                         ["name"] = p.Name, ["type"] = TypeName(p),
@@ -151,11 +173,39 @@ public static class EntityManifestCheck
         if (manifest != null) o.WriteLine($"manifest: {manifest}");
         foreach (var (error, message) in problems) o.WriteLine($"{(error ? "error" : "warning")}: {message}");
         foreach (var c in classes)
+        {
             o.WriteLine($"  {c.Name + (c.IsMesh ? " (mesh)" : ""),-24} {(c.Props.Count == 0 ? "no properties" : string.Join(", ", c.Props.Select(p => $"{p.Name}:{TypeName(p)}")))}");
+        o.WriteLine($"    inputs: {string.Join(", ", c.Inputs.Select(i => i.Name))}; outputs: {string.Join(", ", c.Outputs.Select(i => i.Name))}; traits: {string.Join(", ", c.Traits)}");
+        }
         int e = problems.Count(p => p.Error), w = problems.Count - e;
         o.WriteLine($"{classes.Count} class{(classes.Count == 1 ? "" : "es")}, {e} error{(e == 1 ? "" : "s")}, {w} warning{(w == 1 ? "" : "s")}.");
         return code;
     }
+
+    static void LogicLint(EntityCatalog catalog, GameProject? project, List<(bool Error, string Message)> problems)
+    {
+        void Aliases(IEnumerable<(string Name, IReadOnlyList<string> Was)> items, string where)
+        {
+            var all = items.ToList(); var current = all.Select(i => i.Name).ToHashSet(); var seen = new HashSet<string>();
+            foreach (var i in all) foreach (var alias in i.Was)
+                if (current.Contains(alias) || !seen.Add(alias)) problems.Add((false, $"{where}: alias {alias} collides with another name"));
+        }
+        Aliases(catalog.Classes.Select(c => (c.Name, c.Was)), "classes");
+        foreach (var c in catalog.Classes)
+        {
+            Aliases(c.Props.Select(p => (p.Name, p.Was)), c.Name);
+            Aliases(c.Inputs.Select(p => (p.Name, p.Was)), c.Name + " inputs");
+            Aliases(c.Outputs.Select(p => (p.Name, p.Was)), c.Name + " outputs");
+            foreach (var i in c.Inputs) Aliases(i.Params.Select(p => (p.Name, p.Was)), c.Name + "." + i.Name);
+            foreach (var p in c.Props.Concat(c.Inputs.SelectMany(i => i.Params)).Concat(c.Outputs.Where(o => o.Payload != null).Select(o => o.Payload!)))
+            {
+                if (!c.Props.Contains(p) && p.Type == PropType.Unsupported) problems.Add((false, $"{c.Name}.{p.Name}: unknown type {p.EngineType}"));
+                if (p.Kind != null && project?.Kinds.ContainsKey(p.Kind) != true) problems.Add((false, $"{c.Name}.{p.Name}: unknown kind {p.Kind}"));
+            }
+        }
+    }
+
+    static JsonObject PropJson(PropSpec p) => new() { ["name"] = p.Name, ["type"] = TypeName(p), ["kind"] = p.Kind, ["class"] = JsonSerializer.SerializeToNode(p.Classes), ["trait"] = p.Trait };
 
     static string TypeName(PropSpec p) => p.Type == PropType.Array ? $"array<{TypeName(p.ItemType)}>" : TypeName(p.Type);
 
