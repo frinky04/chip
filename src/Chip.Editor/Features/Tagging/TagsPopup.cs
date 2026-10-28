@@ -206,11 +206,11 @@ public sealed class TagsPopup
         return clicked;
     }
 
-    static string Usage(TagUse u) => (u.Faces, u.Meshes) switch
+    static string Usage(TagUse u) => (u.Faces, u.Objects) switch
     {
-        (> 0, > 0) => $"{SelectMode.Face.Count(u.Faces)}, {SelectMode.Object.Count(u.Meshes)}",
+        (> 0, > 0) => $"{SelectMode.Face.Count(u.Faces)}, {SelectMode.Object.Count(u.Objects)}",
         (> 0, _) => SelectMode.Face.Count(u.Faces),
-        _ => SelectMode.Object.Count(u.Meshes),
+        _ => SelectMode.Object.Count(u.Objects),
     };
 
     /// <summary>A small box: filled when the whole selection has the tag, a bar when some of it does, empty when none.</summary>

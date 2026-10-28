@@ -36,8 +36,8 @@ public sealed class LogicLinkTests : IDisposable
     public void Links_list_what_an_entity_points_at_and_what_points_at_it_skipping_missing_targets()
     {
         var (ctx, a, b, button) = Level();
-        Assert.Equal([new EntityLink(button.Id, a.Id, "Doors", false), new EntityLink(button.Id, b.Id, "Doors", false)], EntityLinks.From(ctx, button.Id));
-        Assert.Equal([new EntityLink(a.Id, b.Id, "Partner", false), new EntityLink(button.Id, b.Id, "Doors", false)], EntityLinks.To(ctx, b.Id));
+        Assert.Equal([new Link(button.Id, a.Id, "Doors", false), new Link(button.Id, b.Id, "Doors", false)], EntityLinks.From(ctx, button.Id));
+        Assert.Equal([new Link(a.Id, b.Id, "Partner", false), new Link(button.Id, b.Id, "Doors", false)], EntityLinks.To(ctx, b.Id));
         Assert.Empty(EntityLinks.To(ctx, button.Id));
     }
 

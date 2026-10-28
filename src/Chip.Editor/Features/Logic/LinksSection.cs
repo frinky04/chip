@@ -29,7 +29,7 @@ public sealed class LinksSection : IInspectorSection
         if (to.Count > 0) Rows(ctx, "Referenced by", to, outgoing: false);
     }
 
-    static void Rows(EditorContext ctx, string title, IReadOnlyList<EntityLink> links, bool outgoing)
+    static void Rows(EditorContext ctx, string title, IReadOnlyList<Link> links, bool outgoing)
     {
         ImGui.TextColored(Theme.TextDim, title);
         uint col = outgoing ? LinkDraw.OutColor : LinkDraw.InColor;

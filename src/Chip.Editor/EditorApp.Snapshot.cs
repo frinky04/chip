@@ -101,7 +101,9 @@ public sealed partial class EditorApp
                 ctx.SetMode(SelectMode.Object);
                 ctx.Sel.Add(ElementRef.Object(reference.Id));
                 break;
-            case "entity" when doc.Entities.Find(e => !Core.Scene.EntityClasses.Get(e.ClassName).EditorOnly) is { } entity: // its class's properties
+            // Its class's properties. CHIP_SHOT_ENTITY=<name> picks which entity (default: the first).
+            case "entity" when doc.Entities.Find(e => !Core.Scene.EntityClasses.Get(e.ClassName).EditorOnly
+                && (Environment.GetEnvironmentVariable("CHIP_SHOT_ENTITY") is not { Length: > 0 } pick || e.Name == pick)) is { } entity:
                 ctx.SetMode(SelectMode.Object);
                 ctx.Sel.Add(ElementRef.Object(entity.Id));
                 break;

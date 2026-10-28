@@ -175,7 +175,10 @@ public static class EntityManifestCheck
         foreach (var c in classes)
         {
             o.WriteLine($"  {c.Name + (c.IsMesh ? " (mesh)" : ""),-24} {(c.Props.Count == 0 ? "no properties" : string.Join(", ", c.Props.Select(p => $"{p.Name}:{TypeName(p)}")))}");
-        o.WriteLine($"    inputs: {string.Join(", ", c.Inputs.Select(i => i.Name))}; outputs: {string.Join(", ", c.Outputs.Select(i => i.Name))}; traits: {string.Join(", ", c.Traits)}");
+        // Only the parts a class has: most classes have no ports, and an empty "inputs: ;" line reads like an error.
+        var parts = new[] { ("inputs", c.Inputs.Select(i => i.Name)), ("outputs", c.Outputs.Select(i => i.Name)), ("traits", c.Traits) }
+            .Where(p => p.Item2.Any()).Select(p => $"{p.Item1}: {string.Join(", ", p.Item2)}").ToList();
+        if (parts.Count > 0) o.WriteLine($"    {string.Join("; ", parts)}");
         }
         int e = problems.Count(p => p.Error), w = problems.Count - e;
         o.WriteLine($"{classes.Count} class{(classes.Count == 1 ? "" : "es")}, {e} error{(e == 1 ? "" : "s")}, {w} warning{(w == 1 ? "" : "s")}.");

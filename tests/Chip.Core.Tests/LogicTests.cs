@@ -204,4 +204,30 @@ public sealed class LogicTests : IDisposable
         Assert.Null(saved["args"]); Assert.Null(saved["delay"]); Assert.Null(saved["once"]); Assert.Null(saved["when"]);
     }
 
+    [Fact]
+    public void Duplicating_entities_points_their_connections_at_the_copies_and_adding_drops_outside_targets()
+    {
+        var doc = new Document();
+        var a = doc.Add(new Entity { ClassName = "door" });
+        var b = doc.Add(new Entity { ClassName = "door" });
+        var outside = doc.Add(new Entity { ClassName = "light" });
+        a.Outputs.Add(new Connection { On = "opened", Target = new(TargetKind.Entity, b.Id), Do = "open", Args = { ["who"] = EntityValues.Ref(b.Id) } });
+        a.Outputs.Add(new Connection { On = "opened", Target = new(TargetKind.Entity, outside.Id), Do = "open" });
+        a.Outputs.Add(new Connection { On = "opened", Target = new(TargetKind.Special, Name: "self"), Do = "open" });
+
+        var copies = SceneOps.Duplicate(doc, [a.Id, b.Id]);
+        var a2 = doc.FindEntity(copies[0])!;
+        Assert.Equal(copies[1], a2.Outputs[0].Target.Entity); // the copied pair stays a pair
+        Assert.Equal(copies[1], EntityValues.RefId(a2.Outputs[0].Args["who"]));
+        Assert.Equal(outside.Id, a2.Outputs[1].Target.Entity); // what wasn't copied is still the target
+        Assert.Equal(b.Id, a.Outputs[0].Target.Entity); // the original is untouched
+
+        // Pasted from elsewhere: ids outside the batch would name something else here, so those connections go.
+        var pasted = new Entity { Id = 1, ClassName = "door" };
+        pasted.Outputs.Add(new Connection { On = "opened", Target = new(TargetKind.Entity, 2), Do = "open" });
+        pasted.Outputs.Add(new Connection { On = "opened", Target = new(TargetKind.Entity, 99), Do = "open" });
+        var partner = new Entity { Id = 2, ClassName = "door" };
+        SceneOps.AddEntities(doc, [pasted, partner]);
+        Assert.Equal(partner.Id, Assert.Single(pasted.Outputs).Target.Entity);
+    }
 }

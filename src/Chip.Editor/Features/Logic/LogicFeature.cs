@@ -10,6 +10,7 @@ public sealed class LogicFeature : IEditorFeature
 
     public void Register(EditorContext ctx)
     {
+        ctx.AddSection(new OutputsSection());
         ctx.AddSection(new LinksSection());
     }
 }

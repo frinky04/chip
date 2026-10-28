@@ -32,7 +32,7 @@ public static class LinkDraw
     {
         if (selected.Count is > 0 and <= SelectionLimit)
         {
-            var links = new List<(EntityLink Link, bool Out)>();
+            var links = new List<(Link Link, bool Out)>();
             foreach (var e in selected)
             {
                 foreach (var l in EntityLinks.From(ctx, e.Id)) links.Add((l, true));

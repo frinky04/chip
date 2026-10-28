@@ -62,13 +62,3 @@ public sealed class Connection
         return c;
     }
 }
-public static class EntityTagOps
-{
-    public static int Set(Document doc, Selection sel, string tag, bool on) => Set(doc.Entities.Where(e => sel.Items.Any(i => i.Mesh == e.Id)), tag, on);
-    public static int Set(IEnumerable<Entity> entities, string tag, bool on)
-    {
-        int count = 0;
-        foreach (var e in entities) { var next = on ? e.Tags.Add(tag) : e.Tags.Remove(tag); if (next != e.Tags) { e.Tags = next; count++; } }
-        return count;
-    }
-}
