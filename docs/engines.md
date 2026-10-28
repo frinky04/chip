@@ -22,6 +22,14 @@ your entity definitions ──generate──▶ entity manifest ──▶ Chip �
 Check the manifest with `Chip.exe --entities-check <game root>`, export headlessly with `Chip.exe --export level.chip`,
 and load the result in the game.
 
+Two more things a game can declare:
+
+- **Surfaces.** These are tool materials of its own, under `"surfaces"` in the project file: a monster clip that blocks
+  only monsters, water as a volume, a screen face the game swaps for a video. Each says whether it renders, collides
+  or forms a volume, and how Chip draws it. The export marks every face with its surface (`chip_surface`).
+- **Mesh classes.** These are entities made of level geometry (`"mesh": true` in the manifest): doors, platforms,
+  screens with their own settings. Designers tie meshes to them, and the export puts those meshes under the entity.
+
 ## Reference
 
 The formats are documented once, in the `chip` agent skill, which reads as plain documentation too:
@@ -29,6 +37,7 @@ The formats are documented once, in the `chip` agent skill, which reads as plain
 - [`skills/chip/reference/manifest.md`](../skills/chip/reference/manifest.md): the project file, the manifest,
   property types and values.
 - [`skills/chip/reference/export.md`](../skills/chip/reference/export.md): what the `.glb` holds and how to load it.
+- [`skills/chip/reference/surfaces.md`](../skills/chip/reference/surfaces.md): surfaces and mesh entities.
 - [`skills/chip/reference/levels.md`](../skills/chip/reference/levels.md): the `.chip` format and the command line.
 
 ## The sample game
@@ -36,9 +45,11 @@ The formats are documented once, in the `chip` agent skill, which reads as plain
 [`samples/toy-game`](../samples/toy-game) is a complete example on a made-up engine, in about 400 lines of C#, that
 never references Chip:
 
-- `game/Entities.cs` declares four entity classes as C# classes with attributes.
+- `game/Entities.cs` declares five entity classes as C# classes with attributes, including `screen`, a mesh class.
 - `game/Manifest.cs` generates `chip/entities.json` from them: `dotnet run --project game -- manifest`.
-- `game/Level.cs` loads an exported level: entities with their values and references, colliders, triggers.
+- `chip.project.json` adds two surfaces: `video` (the screen's face, drawn with a placeholder frame) and `monster_clip`.
+- `game/Level.cs` loads an exported level: entities with their values and references, a mesh entity's geometry,
+  colliders and volumes with their surfaces.
 - `levels/demo.chip` is a level that uses every class: `Chip.exe --export levels/demo.chip`, then
   `dotnet run --project game -- play levels/demo.glb`.
 

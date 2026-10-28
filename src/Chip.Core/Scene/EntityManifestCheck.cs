@@ -14,7 +14,7 @@ public static class EntityManifestCheck
 {
     static readonly HashSet<string> Types =
         ["bool", "int", "float", "string", "enum", "color", "vector2", "vector3", "node", "entity", "resource", "asset", "array", "unsupported"];
-    static readonly HashSet<string> ClassKeys = ["scene", "uid", "label", "base", "doc", "props", "bounds", "preview"];
+    static readonly HashSet<string> ClassKeys = ["scene", "uid", "label", "base", "doc", "props", "bounds", "preview", "mesh"];
     static readonly HashSet<string> PropKeys =
         ["name", "type", "of", "default", "doc", "group", "options", "range", "or_greater", "or_less", "suffix", "class", "integer",
          "engine", "godot", "file", "multiline"];
@@ -134,7 +134,7 @@ public static class EntityManifestCheck
                 }).ToArray()),
                 ["classes"] = new JsonArray(classes.Select(c => (JsonNode)new JsonObject
                 {
-                    ["name"] = c.Name, ["props"] = new JsonArray(c.Props.Select(p => (JsonNode)new JsonObject
+                    ["name"] = c.Name, ["mesh"] = c.IsMesh, ["props"] = new JsonArray(c.Props.Select(p => (JsonNode)new JsonObject
                     {
                         ["name"] = p.Name, ["type"] = TypeName(p),
                     }).ToArray()),
@@ -146,10 +146,12 @@ public static class EntityManifestCheck
         if (project != null)
             o.WriteLine($"project: {project.Root} ({project.Engine}{(project.File == null ? ", from project.godot" : "")}; " +
                 $"collision suffixes {(project.CollisionSuffixes ? "on" : "off")}{(project.AssetPrefix.Length > 0 ? $"; assets {project.AssetPrefix}" : "")})");
+        if (project is { Surfaces.Count: > 0 })
+            o.WriteLine($"surfaces: {string.Join(", ", project.Surfaces.Select(s => $"{s.Name} ({(s.Skip ? "skipped" : s.Render ? "rendered" : "tool")}{(s.Volume ? ", volume" : "")})"))}");
         if (manifest != null) o.WriteLine($"manifest: {manifest}");
         foreach (var (error, message) in problems) o.WriteLine($"{(error ? "error" : "warning")}: {message}");
         foreach (var c in classes)
-            o.WriteLine($"  {c.Name,-24} {(c.Props.Count == 0 ? "no properties" : string.Join(", ", c.Props.Select(p => $"{p.Name}:{TypeName(p)}")))}");
+            o.WriteLine($"  {c.Name + (c.IsMesh ? " (mesh)" : ""),-24} {(c.Props.Count == 0 ? "no properties" : string.Join(", ", c.Props.Select(p => $"{p.Name}:{TypeName(p)}")))}");
         int e = problems.Count(p => p.Error), w = problems.Count - e;
         o.WriteLine($"{classes.Count} class{(classes.Count == 1 ? "" : "es")}, {e} error{(e == 1 ? "" : "s")}, {w} warning{(w == 1 ? "" : "s")}.");
         return code;

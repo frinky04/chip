@@ -6,23 +6,31 @@ using System.Text.Json.Nodes;
 
 namespace ToyGame;
 
-/// <summary>A collision shape in world space: triangles, three corners each.</summary>
-public sealed record Collider(string Node, Vector3[] Triangles, bool Convex, bool Rendered);
+/// <summary>
+/// A collision shape in world space: triangles, three corners each. <see cref="Surface"/> names the game surface it was
+/// painted with (<c>monster_clip</c>), if any; <see cref="Owner"/> is the mesh entity it belongs to, if any.
+/// </summary>
+public sealed record Collider(string Node, Vector3[] Triangles, bool Convex, bool Rendered, string? Surface, GameEntity? Owner);
 
-/// <summary>A trigger volume (faces painted with Chip's trigger material), as its world-space box.</summary>
-public sealed record Trigger(string Node, Vector3 Min, Vector3 Max);
+/// <summary>A volume (faces painted with a volume surface such as Chip's trigger), as its world-space box.</summary>
+public sealed record Trigger(string Node, string Surface, Vector3 Min, Vector3 Max);
+
+/// <summary>A rendered mesh painted with one of the game's surfaces (the video surface), for the renderer to swap.</summary>
+public sealed record SurfaceUse(string Node, string Surface, GameEntity? Owner);
 
 /// <summary>
 /// A level exported by Chip, read the way a custom engine would: plain glTF plus the <c>chip_*</c> extras
 /// (<c>docs/engines.md</c>). Entity nodes (<c>extras.chip_class</c>) become <see cref="GameEntity"/> instances with
-/// their values applied and references resolved; nodes with <c>extras.chip_collider</c> become colliders, and
-/// <c>extras.chip_tool == "trigger"</c> nodes become triggers. Render meshes are left to the renderer.
+/// their values applied and references resolved, and a mesh entity's child nodes are its geometry; nodes with
+/// <c>extras.chip_collider</c> become colliders, <c>extras.chip_volume</c> nodes become triggers, and materials with
+/// <c>extras.chip_surface</c> are listed for the renderer. Render meshes are otherwise left to the renderer.
 /// </summary>
 public sealed class Level
 {
     public List<GameEntity> Entities { get; } = [];
     public List<Collider> Colliders { get; } = [];
     public List<Trigger> Triggers { get; } = [];
+    public List<SurfaceUse> Surfaces { get; } = [];
     /// <summary>Things the level asked for that the game can't do (an unknown class, a value of the wrong type).</summary>
     public List<string> Warnings { get; } = [];
 
@@ -41,27 +49,35 @@ public sealed class Level
         var pending = new List<(GameEntity Entity, FieldInfo Field, JsonNode Value)>();
         var nodes = json["nodes"]?.AsArray() ?? [];
         foreach (var root in json["scenes"]?[0]?["nodes"]?.AsArray() ?? [])
-            Visit(root!.GetValue<int>(), Matrix4x4.Identity);
+            Visit(root!.GetValue<int>(), Matrix4x4.Identity, null);
 
-        void Visit(int index, Matrix4x4 parent)
+        void Visit(int index, Matrix4x4 parent, GameEntity? owner)
         {
             var node = nodes[index]!.AsObject();
             var world = Local(node) * parent;
             var extras = node["extras"] as JsonObject;
             string name = node["name"]?.GetValue<string>() ?? $"node{index}";
-            if (extras?["chip_class"]?.GetValue<string>() is { } cls) level.AddEntity(cls, name, world, extras, byId, pending);
+            string? surface = extras?["chip_surface"]?.GetValue<string>();
+            if (extras?["chip_class"]?.GetValue<string>() is { } cls) owner = level.AddEntity(cls, name, world, extras, byId, pending);
             else if (node["mesh"]?.GetValue<int>() is int mesh)
             {
-                if (extras?["chip_tool"]?.GetValue<string>() == "trigger")
+                if (extras?["chip_volume"]?.GetValue<bool>() == true)
                 {
                     var tris = Triangles(json, glb, binStart, mesh, world);
-                    level.Triggers.Add(new Trigger(name, tris.Aggregate(new Vector3(float.MaxValue), Vector3.Min), tris.Aggregate(new Vector3(float.MinValue), Vector3.Max)));
+                    level.Triggers.Add(new Trigger(name, surface ?? "trigger", tris.Aggregate(new Vector3(float.MaxValue), Vector3.Min), tris.Aggregate(new Vector3(float.MinValue), Vector3.Max)));
                 }
                 else if (extras?["chip_collider"]?.GetValue<string>() is { } shape)
-                    level.Colliders.Add(new Collider(name, Triangles(json, glb, binStart, mesh, world), shape == "convex",
-                        extras["chip_render"]?.GetValue<bool>() ?? true));
+                {
+                    var collider = new Collider(name, Triangles(json, glb, binStart, mesh, world), shape == "convex",
+                        extras["chip_render"]?.GetValue<bool>() ?? true, surface, owner);
+                    level.Colliders.Add(collider);
+                    owner?.Colliders.Add(collider);
+                }
+                foreach (var prim in json["meshes"]![mesh]!["primitives"]!.AsArray())
+                    if (prim?["material"]?.GetValue<int>() is int m && json["materials"]![m]!["extras"]?["chip_surface"]?.GetValue<string>() is { } used)
+                        level.Surfaces.Add(new SurfaceUse(name, used, owner));
             }
-            foreach (var child in node["children"]?.AsArray() ?? []) Visit(child!.GetValue<int>(), world);
+            foreach (var child in node["children"]?.AsArray() ?? []) Visit(child!.GetValue<int>(), world, owner);
         }
 
         // References point at entity ids, so they resolve once every entity exists.
@@ -83,11 +99,12 @@ public sealed class Level
     static bool IsListOf(FieldInfo field, GameEntity e) =>
         field.FieldType.IsGenericType && field.FieldType.GetGenericArguments()[0].IsInstanceOfType(e);
 
-    void AddEntity(string cls, string name, Matrix4x4 world, JsonObject extras, Dictionary<int, GameEntity> byId,
+    /// <summary>The entity built from an entity node, or null for a class the game doesn't have.</summary>
+    GameEntity? AddEntity(string cls, string name, Matrix4x4 world, JsonObject extras, Dictionary<int, GameEntity> byId,
         List<(GameEntity, FieldInfo, JsonNode)> pending)
     {
         var type = Manifest.EntityTypes().FirstOrDefault(t => t.GetCustomAttribute<EntityAttribute>()!.Name == cls);
-        if (type == null) { Warnings.Add($"{name}: no entity class {cls}; skipped"); return; }
+        if (type == null) { Warnings.Add($"{name}: no entity class {cls}; skipped"); return null; }
         var e = (GameEntity)Activator.CreateInstance(type)!;
         Matrix4x4.Decompose(world, out _, out e.Rotation, out e.Position);
         e.Id = extras["chip_id"]?.GetValue<int>() ?? 0;
@@ -107,6 +124,7 @@ public sealed class Level
         }
         Entities.Add(e);
         if (e.Id != 0) byId[e.Id] = e;
+        return e;
     }
 
     static bool IsEntityList(Type t) =>

@@ -1,7 +1,8 @@
 extends SceneTree
 ## Tests for the Chip import addon. Run through scripts/godot-test.ps1, or:
-##   godot --headless --path godot --script res://tests/test_chip_import.gd [-- --glb <level.glb>]
-## With --glb, also imports that file (a Chip export of tests/fixtures/entities.chip) end to end.
+##   godot --headless --path godot --script res://tests/test_chip_import.gd [-- --glb <level.glb>] [--mesh-glb <level.glb>]
+## With --glb, also imports that file (a Chip export of tests/fixtures/entities.chip) end to end; with --mesh-glb, a
+## Chip export of tests/fixtures/mesh_entities.chip (a mesh entity and a trigger).
 
 const Manifest = preload("res://addons/chip_import/chip_manifest.gd")
 const Processor = preload("res://addons/chip_import/chip_processor.gd")
@@ -21,6 +22,9 @@ func _initialize() -> void:
 	var at := args.find("--glb")
 	if at >= 0 and at + 1 < args.size():
 		test_glb(args[at + 1])
+	at = args.find("--mesh-glb")
+	if at >= 0 and at + 1 < args.size():
+		test_mesh_glb(args[at + 1])
 	print("%d checks, %d failed" % [_checks, _failures])
 	quit(1 if _failures > 0 else 0)
 
@@ -47,7 +51,9 @@ func test_manifest() -> void:
 	var warnings := PackedStringArray()
 	var classes := Manifest.build(warnings)
 	eq(warnings.size(), 0, "manifest warnings " + str(warnings))
-	eq(classes.keys(), ["door", "enemies/grunt", "info_player_start", "info_target", "light_point", "light_spot"], "class names (helpers under _parts skipped)")
+	eq(classes.keys(), ["door", "enemies/grunt", "info_player_start", "info_target", "light_point", "light_spot", "platform"], "class names (helpers under _parts skipped)")
+	eq(classes["platform"].get("mesh", false), true, "a body root is a mesh class")
+	check(not classes["door"].has("mesh"), "a Node3D root is a point class")
 
 	var door: Dictionary = classes["door"]
 	eq(door["uid"], "uid://dlm1osw5eeb10", "door uid")
@@ -146,8 +152,35 @@ func test_processing() -> void:
 	entity(root, "light_point_5", {"chip_class": "light_point", "chip_id": 5, "chip_uid": "uid://bispswiantj25",
 		"properties": {"light_color": [1.0, 0.5, 0.0, 1.0], "omni_range": 8.0}})
 	entity(root, "info_player_start_6", {"chip_class": "info_player_start", "chip_id": 6, "chip_uid": "uid://ds5u7j0w1mcxu", "properties": {}})
+	# A mesh entity: its meshes are the entity node's children (one drawn and solid, one an unseen convex collider).
+	entity(root, "lift", {"chip_class": "platform", "chip_id": 7, "chip_scene": "res://entities/platform.tscn",
+		"properties": {"travel": [0.0, 4.0, 0.0]}}, Vector3(5, 0, 0))
+	var lift_node := root.get_node("lift")
+	for spec in [["deck", {"chip_mesh": "deck", "chip_id": 8, "chip_collider": "trimesh"}], ["deck_hull", {"chip_id": 9, "chip_collider": "convex", "chip_render": false}]]:
+		var mi := MeshInstance3D.new()
+		mi.name = spec[0]
+		mi.mesh = BoxMesh.new()
+		mi.set_meta("extras", spec[1])
+		lift_node.add_child(mi)
+		mi.owner = root
+	# A game's volume surface, as Godot imports a -colonly node.
+	var water := StaticBody3D.new()
+	water.name = "pool_water"
+	water.set_meta("extras", {"chip_surface": "water", "chip_volume": true, "chip_id": 10})
+	root.add_child(water)
+	water.owner = root
 	Processor.process(root)
 	Processor.process(root)  # idempotent
+
+	var lift := root.get_node("lift")
+	check(lift is AnimatableBody3D, "mesh entity is an instance of its body scene")
+	eq(lift.position, Vector3(5, 0, 0), "mesh entity keeps its origin")
+	eq(lift.travel, Vector3(0, 4, 0), "mesh entity values applied")
+	eq(lift.get_children().filter(func(c): return c is CollisionShape3D).size(), 2, "both colliders became shapes on the body")
+	eq(lift.get_children().filter(func(c): return c is MeshInstance3D).map(func(c): return String(c.name)), ["deck"], "the drawn mesh moved under the instance, the unseen one didn't")
+	var area := root.get_node("pool_water")
+	check(area is Area3D, "a volume surface becomes an Area3D")
+	eq(area.get_meta("chip_surface", ""), "water", "the area says which surface it is")
 
 	var door := root.get_node("front_door")
 	eq(door.scene_file_path, "res://entities/door.tscn", "door is an instance of its scene")
@@ -234,6 +267,27 @@ func test_glb(path: String) -> void:
 		eq(light.omni_range, 8.0, "glb: light range")
 	var spawn := _find(root, func(n): return n.is_in_group(&"chip_spawn"))
 	check(spawn != null and spawn.position.is_equal_approx(Vector3(0, 0, 4)), "glb: player start in place")
+	root.free()
+
+
+## A Chip export of tests/fixtures/mesh_entities.chip: a platform tied to a mesh, and a trigger box.
+func test_mesh_glb(path: String) -> void:
+	var doc := GLTFDocument.new()
+	var state := GLTFState.new()
+	var err := doc.append_from_file(path, state)
+	eq(err, OK, "load " + path)
+	if err != OK:
+		return
+	var root := doc.generate_scene(state)
+	Processor.process(root)
+	var lift := _find(root, func(n): return n.has_meta("chip_class") and n.get_meta("chip_class") == "platform")
+	check(lift is AnimatableBody3D, "mesh glb: the platform is its body scene")
+	if lift != null:
+		eq(lift.travel, Vector3(0, 4, 0), "mesh glb: values")
+		check(lift.get_children().any(func(c): return c is CollisionShape3D and c.shape is ConcavePolygonShape3D), "mesh glb: its mesh collides as part of it")
+		check(lift.get_children().any(func(c): return c is MeshInstance3D or c is ImporterMeshInstance3D), "mesh glb: its mesh draws under it")
+	var area := _find(root, func(n): return n is Area3D)
+	check(area != null and area.get_meta("chip_surface", "") == "trigger", "mesh glb: the trigger is an Area3D")
 	root.free()
 
 

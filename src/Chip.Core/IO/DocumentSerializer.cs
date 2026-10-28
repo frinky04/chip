@@ -68,7 +68,8 @@ public static partial class DocumentSerializer
 
     sealed record EntityDto(int Id, string? ClassName, string? Name, float[]? Position, float[]? Rotation, bool Hidden,
         Dictionary<string, JsonElement>? Properties,
-        bool Locked = false); // stream H
+        bool Locked = false, // stream H
+        int[]? Meshes = null); // a mesh entity's meshes (optional, no version bump)
 
     // stream H: a group's direct members are object ids; Parent 0 = top level.
     sealed record GroupDto(int Id, string Name, int Parent, int[] Members, bool Hidden = false, bool Locked = false);
@@ -86,7 +87,7 @@ public static partial class DocumentSerializer
         doc.Entities.Count > 0
             ? doc.Entities.Select(e => new EntityDto(e.Id, e.ClassName, e.Name, Arr(e.Position), Arr(e.Rotation), e.Hidden,
                 e.Properties.Count > 0 ? e.Properties : null,
-                e.Locked)).ToList()
+                e.Locked, e.Meshes.Count > 0 ? e.Meshes.ToArray() : null)).ToList()
             : null,
         ExportToDto(doc.Export),
         doc.Groups.Count > 0 ? doc.Groups.Select(g => new GroupDto(g.Id, g.Name, g.Parent, g.Members.ToArray(), g.Hidden, g.Locked)).ToList() : null,
@@ -147,6 +148,8 @@ public static partial class DocumentSerializer
                     Position = e.Position is { } p ? Vec(p) : Vector3.Zero, Rotation = e.Rotation is { } r ? Vec(r) : Vector3.Zero,
                     Hidden = e.Hidden, Properties = e.Properties?.ToDictionary(kv => kv.Key, kv => kv.Value.Clone()) ?? new(),
                     Locked = e.Locked,
+                    // A mesh belongs to one entity; ids that name no mesh (a hand edit) are dropped.
+                    Meshes = (e.Meshes ?? []).Where(id => doc.Find(id) != null && !doc.Entities.Any(o => o.Meshes.Contains(id))).Distinct().ToList(),
                 };
                 if (dto.Version < 3) MigrateV2Entity(entity);
                 doc.Entities.Add(entity);

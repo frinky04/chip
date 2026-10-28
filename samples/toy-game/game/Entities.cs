@@ -13,6 +13,8 @@ public sealed class EntityAttribute(string name) : Attribute
     public string Doc { get; init; } = "";
     /// <summary>The box Chip draws: min x, y, z then max x, y, z, in metres.</summary>
     public float[]? Bounds { get; init; }
+    /// <summary>Made of level geometry (tie meshes to it in Chip) instead of placed as a point.</summary>
+    public bool Mesh { get; init; }
 }
 
 /// <summary>A field the level sets. Fields without it stay runtime state.</summary>
@@ -34,6 +36,15 @@ public abstract class GameEntity
     public string Name = "";
     public Vector3 Position;
     public Quaternion Rotation = Quaternion.Identity;
+    /// <summary>A mesh entity's colliders (its geometry moves with it).</summary>
+    public List<Collider> Colliders = [];
+}
+
+[Entity("screen", Mesh = true, Doc = "A screen that plays a video on its faces painted with the video surface.")]
+public sealed class Screen : GameEntity
+{
+    [Prop(Doc = "What it plays.", Asset = true)] public string Video = "assets/videos/intro.webm";
+    [Prop] public bool Loop = true;
 }
 
 [Entity("player_start", Doc = "Where the player appears.", Bounds = [-0.3f, 0, -0.3f, 0.3f, 1.8f, 0.3f])]

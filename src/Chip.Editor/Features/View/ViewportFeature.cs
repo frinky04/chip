@@ -70,6 +70,13 @@ public sealed class ViewportFeature : IEditorFeature
         });
         c.Add(new Command
         {
+            Id = "view.translucentTools", Label = "Translucent tool surfaces", Menu = "View", Group = "4-shading", Order = 11,
+            Description = "Draw surfaces that don't render in the game (clip, nodraw, triggers, the game's own) see-through, so you can work behind them",
+            Execute = () => ViewSettings.Of(ctx).TranslucentTools = !ViewSettings.Of(ctx).TranslucentTools,
+            IsChecked = () => ViewSettings.Of(ctx).TranslucentTools,
+        });
+        c.Add(new Command
+        {
             Id = "view.dimensions", Label = "Show dimensions", Menu = "View", Group = "4-shading", Order = 12,
             Description = "Lengths beside the selection's edges: a face's width and height, a box's three sizes, each selected edge",
             Execute = () => ViewSettings.Of(ctx).ShowDimensions = !ViewSettings.Of(ctx).ShowDimensions,

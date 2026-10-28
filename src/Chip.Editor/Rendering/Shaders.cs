@@ -17,6 +17,8 @@ static class Shaders
     // uMode: 0 lit (per-direction shading keeps flat blockout surfaces readable without real lights),
     // 1 unlit (texture only), 3 UV checker. The checker has 64-texel cells (12.5 cm at the default 512 px/m), lines on
     // texture tile borders, and a tint for texel density off target: red = denser than uDensity, blue = stretched.
+    // uSurface 1: a surface's look instead of a texture, in world space on the face's dominant plane, so it needs no UVs
+    // and stays crisp at any size (uPattern 0 solid, 1 stripes, 2 checker). uAlpha < 1: drawn see-through.
     public const string MeshFs = """
         #version 330 core
         in vec3 vNrm;
@@ -26,7 +28,28 @@ static class Shaders
         uniform int uMode;
         uniform vec2 uTexSize;
         uniform float uDensity;
+        uniform int uSurface;
+        uniform int uPattern;
+        uniform vec3 uSurfColor;
+        uniform float uAlpha;
         out vec4 frag;
+        vec3 surface(vec3 n) {
+            vec3 a = abs(n);
+            vec2 p = a.x >= a.y && a.x >= a.z ? vWorld.zy : a.y >= a.z ? vWorld.xz : vWorld.xy;
+            float k = 0.0;
+            if (uPattern == 1) {
+                float s = (p.x + p.y) * 2.0; // 25 cm stripes across the diagonal
+                float w = fwidth(s);
+                float f = abs(fract(s) - 0.5);
+                k = smoothstep(0.25 - w, 0.25 + w, f);
+                k = mix(k, 0.5, smoothstep(0.3, 0.6, w)); // fade to the average where stripes get thinner than a pixel
+            } else if (uPattern == 2) {
+                vec2 c = floor(p * 2.0);
+                k = mod(c.x + c.y, 2.0);
+                k = mix(k, 0.5, smoothstep(0.3, 0.6, max(fwidth(p.x), fwidth(p.y)) * 2.0));
+            }
+            return mix(uSurfColor, uSurfColor * 0.55, k);
+        }
         vec3 checker() {
             vec2 t = vUv * uTexSize / 64.0;
             float c = mod(floor(t.x) + floor(t.y), 2.0);
@@ -49,10 +72,11 @@ static class Shaders
             vec3 n = normalize(vNrm);
             float d = dot(n, normalize(vec3(0.35, 1.0, 0.6))) * 0.5 + 0.5;
             vec3 c;
-            if (uMode == 3) c = checker() * (0.62 + 0.38 * d);
+            if (uSurface == 1) c = uMode == 1 ? surface(n) : surface(n) * (0.48 + 0.52 * d);
+            else if (uMode == 3) c = checker() * (0.62 + 0.38 * d);
             else if (uMode == 1) c = texture(uTex, vUv).rgb;
             else c = texture(uTex, vUv).rgb * (0.48 + 0.52 * d);
-            frag = vec4(c, 1.0);
+            frag = vec4(c, uAlpha);
         }
         """;
 

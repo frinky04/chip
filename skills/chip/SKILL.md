@@ -1,6 +1,6 @@
 ---
 name: chip
-description: Chip level editor pipeline. Use when connecting a game or engine to Chip, defining entity classes for it (chip.project.json, the entity manifest), or editing and exporting .chip levels and the .glb files Chip exports.
+description: Chip level editor pipeline. Use when connecting a game or engine to Chip, defining its entity classes or surfaces (chip.project.json, the entity manifest), or editing and exporting .chip levels and the .glb files Chip exports.
 ---
 
 # Chip
@@ -46,6 +46,19 @@ read its path from `CHIP_EXE`.
    inside `properties`) in every `.chip` file that uses them. Done when a search of the levels finds no old name.
 3. A property type the loader hasn't read before needs a loader change. Repeat the round trip for that class.
 
+## Add a surface or mesh class
+
+A **surface** changes what faces do (monster clip, water, a screen the game swaps); a **mesh class** is an entity made
+of level geometry with settings of its own (a door, a platform, a screen with its video). Read
+[`reference/surfaces.md`](reference/surfaces.md) to choose between them.
+
+1. Declare it: a surface under `"surfaces"` in `chip.project.json`, a mesh class with `"mesh": true` from the generator.
+   `--entities-check` exits 0 and lists it.
+2. Teach the loader what it means: a surface by `chip_surface` (on colliders, volumes and materials), a mesh class by
+   its entity node's children ([`reference/export.md`](reference/export.md)).
+3. Prove it in the round-trip level: faces painted with the surface, or meshes tied to the class with a value changed.
+   Done when the game tells the surface apart, and the mesh entity arrives owning its geometry.
+
 ## Edit or export levels
 
 Read [`reference/levels.md`](reference/levels.md) for the `.chip` format, the commands and dressing. Done when
@@ -57,6 +70,9 @@ Read [`reference/levels.md`](reference/levels.md) for the `.chip` format, the co
   values, generating the manifest, `--entities-check`.
 - [`reference/export.md`](reference/export.md): what the `.glb` holds and how a loader reads it: space and units, node
   kinds, entities, references, materials.
+- [`reference/surfaces.md`](reference/surfaces.md): surfaces (built-in tool materials and the game's own) and mesh
+  entities.
 - [`reference/levels.md`](reference/levels.md): the `.chip` format, every headless command, dressing rules.
-- `samples/toy-game` in the Chip repository is a worked example: entity classes in C# (`game/Entities.cs`), the
-  manifest generator (`game/Manifest.cs`), a loader (`game/Level.cs`) and a test level (`levels/demo.chip`).
+- `samples/toy-game` in the Chip repository is a worked example: entity classes in C# (`game/Entities.cs`, including
+  a `screen` mesh class), the manifest generator (`game/Manifest.cs`), a loader (`game/Level.cs`), surfaces in
+  `chip.project.json`, and a test level (`levels/demo.chip`).

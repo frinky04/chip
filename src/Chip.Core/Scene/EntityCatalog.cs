@@ -65,6 +65,11 @@ public sealed class EntityClass
     public bool Known { get; init; } = true;
     /// <summary>Chip's own classes that never reach the engine as such (reference models).</summary>
     public bool EditorOnly { get; init; }
+    /// <summary>
+    /// A mesh class (manifest <c>"mesh": true</c>): made by tying meshes to it (a door, a moving platform), never placed
+    /// as a point. Godot: a scene whose root is a <c>CollisionObject3D</c>.
+    /// </summary>
+    public bool IsMesh { get; init; }
 
     /// <summary>The doc's first line, cut to about a sentence's length, for lists and the inspector (the full doc is a tooltip).</summary>
     public string Summary => _summary ??= Summarize(Doc, 160);
@@ -178,7 +183,7 @@ public sealed class EntityCatalog
         {
             Name = name, Label = Str(c, "label") ?? EntityClass.Humanize(name), Doc = Str(c, "doc") ?? "",
             Scene = Str(c, "scene"), Uid = Str(c, "uid"), Base = Str(c, "base") ?? "",
-            BoxMin = min, BoxMax = max, Preview = preview, Props = props,
+            BoxMin = min, BoxMax = max, Preview = preview, Props = props, IsMesh = Flag(c, "mesh"),
         };
     }
 

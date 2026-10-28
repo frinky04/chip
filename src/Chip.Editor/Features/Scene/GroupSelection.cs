@@ -6,7 +6,7 @@ namespace Chip.Editor.Features.Scene;
 
 /// <summary>
 /// Hammer-style group selection: when an object joins the selection (click, box select, any command), the rest of its
-/// outermost group joins too. Runs once per frame and only looks at what was added since the last frame, so Ctrl-click can
+/// outermost group joins too, and so does the rest of its mesh entity. Runs once per frame and only looks at what was added since the last frame, so Ctrl-click can
 /// still take single members back out. Selections made by edits (a duplicate, a new block) are left alone: expansion only
 /// happens on frames where the document didn't change. The outliner calls <see cref="Accept"/> after selecting a member on purpose.
 /// </summary>
@@ -26,13 +26,18 @@ public sealed class GroupSelection
     public void Update(EditorContext ctx)
     {
         var sel = ctx.Sel;
-        if (Enabled && sel.Mode == SelectMode.Object && ctx.Doc.Groups.Count > 0 && !ctx.Interacting
-            && ReferenceEquals(sel, _seenSel) && ctx.Session.Version == _seenVersion)
+        if (Enabled && sel.Mode == SelectMode.Object && (ctx.Doc.Groups.Count > 0 || ctx.Doc.Entities.Any(e => e.IsMeshEntity))
+            && !ctx.Interacting && ReferenceEquals(sel, _seenSel) && ctx.Session.Version == _seenVersion)
         {
             var added = sel.Items.Where(i => !_seen.Contains(i)).Select(i => i.Mesh).ToList();
             if (added.Count > 0)
-                foreach (var id in GroupOps.ExpandToGroups(ctx.Doc, added))
-                    sel.Items.Add(ElementRef.Object(id));
+            {
+                // A mesh entity is one object: its meshes and origin select together, and so does any group around them.
+                var ids = GroupOps.ExpandToGroups(ctx.Doc, added);
+                MeshEntityOps.Expand(ctx.Doc, ids);
+                ids = GroupOps.ExpandToGroups(ctx.Doc, ids);
+                foreach (var id in ids) sel.Items.Add(ElementRef.Object(id));
+            }
         }
         Accept(ctx);
     }

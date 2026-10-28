@@ -32,12 +32,17 @@ public static class SceneOps
         return true;
     }
 
-    /// <summary>Removes the meshes and entities, then any group left empty.</summary>
+    /// <summary>
+    /// Removes the meshes and entities, then any group left empty. A mesh entity takes its meshes with it, and one whose
+    /// meshes all go goes too.
+    /// </summary>
     public static void Delete(Document doc, IEnumerable<int> ids)
     {
         var set = ids.ToHashSet();
+        foreach (var e in doc.Entities.Where(e => set.Contains(e.Id))) set.UnionWith(e.Meshes);
         doc.Meshes.RemoveAll(m => set.Contains(m.Id));
         doc.Entities.RemoveAll(e => set.Contains(e.Id));
+        MeshEntityOps.Prune(doc);
         GroupOps.Prune(doc);
     }
 
@@ -48,7 +53,10 @@ public static class SceneOps
     /// </summary>
     public static List<int> Duplicate(Document doc, IEnumerable<int> ids)
     {
-        var (groups, loose) = GroupOps.Cover(doc, ids);
+        // A mesh entity is copied whole: the copy owns copies of its meshes.
+        var set = ids.ToHashSet();
+        foreach (var e in doc.Entities.Where(e => set.Contains(e.Id))) set.UnionWith(e.Meshes);
+        var (groups, loose) = GroupOps.Cover(doc, set);
         var copies = new List<int>();
         var map = new Dictionary<int, int>();
         foreach (var g in groups) CopyGroup(doc, g, GroupOps.ParentOf(doc, g)?.Id ?? 0, copies, map);
@@ -58,7 +66,10 @@ public static class SceneOps
                 copies.Add(copy);
                 if (GroupOps.GroupOf(doc, id) is { } g) g.Members.Add(copy);
             }
-        RemapReferences(map.Values.Select(doc.FindEntity).OfType<Entity>(), map, dropOthers: false);
+        var copiedEntities = map.Values.Select(doc.FindEntity).OfType<Entity>().ToList();
+        foreach (var e in copiedEntities)
+            e.Meshes = e.Meshes.Select(m => map.TryGetValue(m, out var to) ? to : -1).Where(m => m >= 0).ToList();
+        RemapReferences(copiedEntities, map, dropOthers: false);
         return copies;
     }
 
@@ -72,7 +83,7 @@ public static class SceneOps
 
     static int? CopyObject(Document doc, int id, Dictionary<int, int> map)
     {
-        if (doc.Find(id) is { } m) return doc.Add(m.Clone()).Id;
+        if (doc.Find(id) is { } m) return map[id] = doc.Add(m.Clone()).Id;
         if (doc.FindEntity(id) is { } e) return map[id] = doc.Add(e.Clone()).Id;
         return null;
     }

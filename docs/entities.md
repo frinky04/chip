@@ -1,7 +1,7 @@
 # Entity classes
 
-Status: phases 1 (Godot scenes as classes, typed properties, instancing on import) and 2 (previews, references between
-entities) built. Mesh entities (doors and triggers made from a mesh) are phase 3.
+Status: phases 1 (Godot scenes as classes, typed properties, instancing on import), 2 (previews, references between
+entities) and 3 (mesh entities: doors and platforms made from level geometry) built.
 
 **Your Godot scenes are the entity definitions.** You never write a definition file. The Chip import addon reads the
 scenes in your entity folders and writes a manifest; Chip reads the manifest and reloads it when it changes; on import,
@@ -20,7 +20,7 @@ entities by name (`target` / `targetname`). Each of those is a place for the two
 | Values | Strings, converted at build time | Typed JSON, checked as you edit |
 | Defaults | Usually written into every entity | Only changed values are stored; a new default in Godot reaches every level |
 | References | Names that break on rename | Chip ids, resolved to the node on import |
-| Point vs solid | Two class kinds | One kind (mesh entities in phase 3) |
+| Point vs solid | Two class kinds, declared twice | The scene's root decides: a body or area root is a mesh class |
 | Units | Map units and a scale factor | Metres on both sides |
 
 ## Workflow
@@ -193,9 +193,11 @@ Nothing here stops a level from loading or exporting.
 
 1. Done. Scenes as classes, manifest, typed inspector, sparse typed storage, instancing on import, built-ins as scenes.
 2. Done. Previews, node references, lists (typed and packed arrays).
-3. Mesh entities: a scene whose root is a `CollisionObject3D` (`Area3D`, `AnimatableBody3D`) can be given to a mesh,
-   whose geometry becomes its visual and collision shape. Needs a per-object origin (a door's hinge); triggers become an
-   ordinary `trigger.tscn`.
+3. Done. Mesh entities: a scene whose root is a `CollisionObject3D` (`Area3D`, `AnimatableBody3D`) is a mesh class
+   (`"mesh": true`). Tie to entity (`Ctrl+Alt+T`) gives it meshes; its origin (a door's hinge) is set in the inspector.
+   On import its meshes go under the instance, and their colliders become `CollisionShape3D` on its root. Volumes
+   (triggers, a game's water) become `Area3D`. The format is in
+   [`skills/chip/reference/surfaces.md`](../skills/chip/reference/surfaces.md).
 4. Later: signal connections (Hammer's I/O, as Godot signals), the same manifest approach for materials.
 
 ## Known limits

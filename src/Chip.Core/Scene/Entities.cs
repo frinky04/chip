@@ -214,9 +214,13 @@ public static class EntityOps
 
     public static Vector3 Up(Entity e) => Vector3.Transform(Vector3.UnitY, Orientation(e));
 
-    /// <summary>The entity's box in entity space: a loaded reference model's bounds, else the class box.</summary>
+    /// <summary>A mesh entity's marker around its origin: its meshes are its body, so the box only marks the hinge.</summary>
+    public static readonly Vector3 OriginMarker = new(0.15f);
+
+    /// <summary>The entity's box in entity space: a loaded reference model's bounds, a mesh entity's origin marker, else the class box.</summary>
     public static (Vector3 Min, Vector3 Max) Box(Entity e)
     {
+        if (e.IsMeshEntity) return (-OriginMarker, OriginMarker);
         if (ReferenceModels.Get(e).Model is { } model) return (model.Min, model.Max);
         var c = EntityClasses.Get(e.ClassName);
         return (c.BoxMin, c.BoxMax);

@@ -25,6 +25,8 @@ public sealed record GameProject
     /// <summary>What engine asset paths start with (<c>res://</c>), shown as a hint and checked; empty for no rule.</summary>
     public string AssetPrefix { get; init; } = "";
     public bool IsGodot { get; init; }
+    /// <summary>The game's surfaces (<c>"surfaces"</c>), new ones and changed built-ins (see <see cref="Scene.Surfaces"/>).</summary>
+    public IReadOnlyList<Surface> Surfaces { get; init; } = [];
 
     /// <summary>The manifest when the project file doesn't name one (where the Godot addon writes it), relative to the project folder.</summary>
     public static readonly string DefaultManifest = Path.Combine(".chip", "entities.json");
@@ -104,7 +106,8 @@ public sealed record GameProject
                             JsonValueKind.True => true, JsonValueKind.False => false, _ => throw Bad(prop, "true or false"),
                         } };
                         break;
-                    default: throw new InvalidDataException($"has an unknown field \"{prop.Name}\" (known: version, engine, entities, collisionSuffixes, assetPrefix)");
+                    case "surfaces": p = p with { Surfaces = Scene.Surfaces.Parse(prop.Value, root) }; break;
+                    default: throw new InvalidDataException($"has an unknown field \"{prop.Name}\" (known: version, engine, entities, collisionSuffixes, assetPrefix, surfaces)");
                 }
             return p;
         }

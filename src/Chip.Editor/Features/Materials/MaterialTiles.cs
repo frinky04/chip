@@ -88,18 +88,22 @@ public static class MaterialTiles
         string tiling = $"Tiles every {Labels.Length(m.TileWidth)}" + (m.TileHeight != m.TileWidth ? $" × {Labels.Length(m.TileHeight)}" : "");
         ImGui.TextColored(Theme.TextDim, m.TexelDensity != null ? $"{tiling} (custom density)" : tiling);
         if (m.Folder.Length > 0) ImGui.TextColored(Theme.TextDim, $"Folder: {m.Folder}");
-        if (ToolDescription(m.Tool) is { } tool) ImGui.TextColored(Theme.TextDim, tool);
+        if (m.Surface is { } surface) ImGui.TextColored(Theme.TextDim, SurfaceDescription(surface));
         ImGui.EndTooltip();
     }
 
-    public static string? ToolDescription(ToolMaterial tool) => tool switch
+    /// <summary>"Surface: never rendered, always solid. Blocks NPCs only" — what a surface does on export, then its doc.</summary>
+    public static string SurfaceDescription(Surface s)
     {
-        ToolMaterial.NoDraw => "Tool material: not rendered on export, still solid",
-        ToolMaterial.Clip => "Tool material: collision only on export",
-        ToolMaterial.Trigger => "Tool material: exported as a trigger volume",
-        ToolMaterial.Skip => "Tool material: left out of the export",
-        _ => null,
-    };
+        string what = s.Skip ? "left out of the export"
+            : string.Join(", ", new[]
+            {
+                s.Render ? "rendered" : "never rendered",
+                s.Collide switch { SurfaceCollide.Always => "always solid", SurfaceCollide.Mesh => "solid when its mesh collides", _ => "never solid" },
+                s.Volume ? "a volume" : null,
+            }.OfType<string>());
+        return $"Surface: {what}" + (s.Doc.Length > 0 ? $". {s.Doc}" : "");
+    }
 
     /// <summary>Truncates with an ellipsis to fit <paramref name="width"/> at the given font scale.</summary>
     public static string Fit(string text, float width, float scale = 1)

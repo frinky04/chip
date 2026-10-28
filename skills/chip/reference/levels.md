@@ -24,6 +24,8 @@ editing the file, or the next save overwrites your edit.
 - `rotation` is degrees: pitch X, yaw Y, roll Z. Yaw 0 faces −Z.
 - `properties` is sparse: write only the values that differ from the class default, typed as in the manifest's type
   table. A reference is `{ "entity": <id> }`.
+- A mesh entity lists its meshes: `"meshes": [13]`. Its `position` is its origin (a hinge), not the meshes' position.
+  A mesh belongs to one entity at most ([`surfaces.md`](surfaces.md)).
 - `export` (optional) holds the export settings: `bakeCollision`, `collisionHulls`, `tessellate`, `smoothing`,
   `embedTextures`, `materialRemap` and the rest.
 
@@ -49,9 +51,10 @@ index `positions`, counter-clockwise seen from outside. `u`/`v` are the texture'
 texel (1/256 matches the default 256 px per metre). `collision` is `default`, `none`, `only` or `convexOnly`.
 
 `material` is the file name, without extension, of an image in Chip's texture folders (Chip ships
-`dev_measurewall01a`, `dev_measurewall01d` and `dev_measurecrate02`), or a tool material: `trigger` for a trigger
-volume, `clip` for player clip, `nodraw` for invisible collision, `skip` to leave the face out. Any other name exports
-under that name and draws magenta in Chip. That suits a game that looks materials up by name.
+`dev_measurewall01a`, `dev_measurewall01d` and `dev_measurecrate02`), or a surface: `trigger` for a trigger volume,
+`clip` for player clip, `nodraw` for invisible collision, `skip` to leave the face out, or one of the game's own
+([`surfaces.md`](surfaces.md)). Any other name exports under that name and draws magenta in Chip. That suits a game that
+looks materials up by name.
 
 ## Commands
 

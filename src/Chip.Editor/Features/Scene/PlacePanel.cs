@@ -42,7 +42,7 @@ public sealed class PlacePanel : IDockPanel
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Bg);
         if (ImGui.BeginChild("##classes", new Vector2(0, MathF.Max(Theme.Px(120), ImGui.GetContentRegionAvail().Y - refsH))))
         {
-            if (ClassPicker.Draw(armed && !placingReference ? tool.ClassName : null, _filter, references: false) is { } picked)
+            if (ClassPicker.Draw(armed && !placingReference ? tool.ClassName : null, _filter, references: false, show: ClassPicker.Point) is { } picked)
             {
                 tool.ClassName = picked;
                 ctx.SetTool(tool);

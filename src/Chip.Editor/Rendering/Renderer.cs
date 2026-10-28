@@ -16,7 +16,8 @@ namespace Chip.Editor.Rendering;
 public readonly record struct GridPlane(Vector3 Origin, Vector3 Normal, Vector3 Focus);
 
 /// <summary>Per-pane drawing settings.</summary>
-public readonly record struct RenderSettings(ViewMode Mode, float Grid, bool BoundaryEdges = true, GridPlane? Construction = null);
+public readonly record struct RenderSettings(ViewMode Mode, float Grid, bool BoundaryEdges = true, GridPlane? Construction = null,
+    bool TranslucentTools = true);
 
 /// <summary>
 /// Draws the document into a pane's offscreen MSAA target. Read-only over the document.
@@ -59,7 +60,7 @@ public sealed unsafe class Renderer : IDisposable
     readonly Dictionary<int, MeshGpu> _meshes = new();
     readonly Dictionary<uint, Dictionary<string, int>> _uniforms = new();
 
-    int _builtVersion = -1;
+    int _builtVersion = -1, _builtLibVersion = -1;
     Document? _builtDoc;
     Session? _builtSession;
     /// <summary>The dressed level drawn as solid geometry this frame (null: the blockout). Wires and overlays stay on the blockout.</summary>
@@ -109,14 +110,75 @@ public sealed unsafe class Renderer : IDisposable
     public uint EnsureTexture(string material)
     {
         var path = _lib.Get(material).Path;
-        if (_textures.TryGetValue(material, out var t) && t.Path == path) return t.Tex;
+        // A surface without an image file gets a tile drawn from its look (the browser shows it; the viewport draws the
+        // pattern in world space instead).
+        var look = path == null ? Surfaces.Of(material)?.Look : null;
+        string? key = path ?? (look != null ? $"look:{look}" : null);
+        if (_textures.TryGetValue(material, out var t) && t.Path == key) return t.Tex;
         if (t.Tex != 0 && t.Tex != _missingTex) _gl.DeleteTexture(t.Tex);
         uint tex = _missingTex;
         if (path != null)
             try { tex = LoadTexture(path); }
             catch (Exception) { } // corrupt or unsupported image: keep the checker so the scene still draws
-        _textures[material] = (path, tex);
+        else if (look != null) tex = SurfaceTile(look);
+        _textures[material] = (key, tex);
         return tex;
+    }
+
+    /// <summary>
+    /// One pass over the scene's mesh batches. Ordinary materials sample their texture; surfaces draw their look (a
+    /// world-space pattern, or their image through the UVs). Tool surfaces (they don't render in the game) go in the
+    /// translucent pass when <paramref name="translucentTools"/> is on, everything else in the opaque one.
+    /// </summary>
+    void DrawMeshes(Document doc, bool translucentPass, bool translucentTools)
+    {
+        string? bound = null;
+        foreach (var mesh in _scene?.Meshes ?? doc.Meshes)
+        {
+            if (mesh.Hidden || !_meshes.TryGetValue(mesh.Id, out var gpu) || gpu.Batches.Count == 0) continue;
+            _gl.BindVertexArray(gpu.Vao);
+            foreach (var (mat, first, count) in gpu.Batches)
+            {
+                var surface = Surfaces.Of(mat);
+                bool see = translucentTools && surface is { IsTool: true };
+                if (see != translucentPass) continue;
+                if (!string.Equals(bound, mat, StringComparison.OrdinalIgnoreCase))
+                {
+                    var info = _lib.Get(mat);
+                    _gl.Uniform2(Loc(_meshProg, "uTexSize"), new Vector2(info.Width, info.Height));
+                    _gl.Uniform1(Loc(_meshProg, "uDensity"), info.TexelsPerMeter); // UV checker: the target this texture should hit
+                    _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
+                    var look = surface?.Look;
+                    _gl.Uniform1(Loc(_meshProg, "uSurface"), look is { Image: null } ? 1 : 0);
+                    _gl.Uniform1(Loc(_meshProg, "uPattern"), (int)(look?.Pattern ?? SurfacePattern.Solid));
+                    _gl.Uniform3(Loc(_meshProg, "uSurfColor"), look?.Color ?? Vector3.One);
+                    _gl.Uniform1(Loc(_meshProg, "uAlpha"), see ? look!.Opacity : 1f);
+                    bound = mat;
+                }
+                _gl.DrawArrays(PrimitiveType.Triangles, first, (uint)count);
+            }
+        }
+    }
+
+    /// <summary>A 64 px tile of a surface's pattern, for the material browser.</summary>
+    uint SurfaceTile(SurfaceLook look)
+    {
+        const int n = 64;
+        var px = new byte[n * n * 4];
+        for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+            {
+                bool dark = look.Pattern switch
+                {
+                    SurfacePattern.Stripes => (x + y) % 32 >= 16,
+                    SurfacePattern.Checker => (x / 16 + y / 16) % 2 == 1,
+                    _ => false,
+                };
+                var c = dark ? look.Color * 0.55f : look.Color;
+                int i = (y * n + x) * 4;
+                px[i] = (byte)(c.X * 255); px[i + 1] = (byte)(c.Y * 255); px[i + 2] = (byte)(c.Z * 255); px[i + 3] = 255;
+            }
+        return CreateTexture(n, n, px);
     }
 
     /// <summary>Uploads top-down RGBA8 pixels as a mipmapped texture owned by the renderer (thumbnails).</summary>
@@ -149,7 +211,8 @@ public sealed unsafe class Renderer : IDisposable
     {
         LastRebuildCount = 0;
         _scene = scene;
-        if (!ReferenceEquals(session, _builtSession) || session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc) || !ReferenceEquals(scene, _builtScene))
+        if (!ReferenceEquals(session, _builtSession) || session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc)
+            || !ReferenceEquals(scene, _builtScene) || _lib.Version != _builtLibVersion)
             SyncScene(session, scene);
         _edgeMode = session.Sel.Mode == SelectMode.Edge;
         if (!_refCache.IsCurrent(session) || _refRevision != ReferenceModels.DrawRevision) SyncReferences(session);
@@ -211,23 +274,17 @@ public sealed unsafe class Renderer : IDisposable
             _gl.Uniform1(Loc(_meshProg, "uTex"), 0);
             _gl.Uniform1(Loc(_meshProg, "uMode"), (int)s.Mode);
             _gl.ActiveTexture(TextureUnit.Texture0);
-            string? boundMaterial = null;
-            foreach (var mesh in _scene?.Meshes ?? doc.Meshes)
+            // Opaque faces first; then, with View > Translucent tool surfaces, the tool surfaces see-through on top
+            // (depth-tested, not depth-written, so they never hide what's behind them).
+            DrawMeshes(doc, translucentPass: false, s.TranslucentTools);
+            if (s.TranslucentTools)
             {
-                if (mesh.Hidden || !_meshes.TryGetValue(mesh.Id, out var gpu) || gpu.Batches.Count == 0) continue;
-                _gl.BindVertexArray(gpu.Vao);
-                foreach (var (mat, first, count) in gpu.Batches)
-                {
-                    if (!string.Equals(boundMaterial, mat, StringComparison.OrdinalIgnoreCase))
-                    {
-                        var info = _lib.Get(mat);
-                        _gl.Uniform2(Loc(_meshProg, "uTexSize"), new Vector2(info.Width, info.Height));
-                        _gl.Uniform1(Loc(_meshProg, "uDensity"), info.TexelsPerMeter); // UV checker: the target this texture should hit
-                        _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
-                        boundMaterial = mat;
-                    }
-                    _gl.DrawArrays(PrimitiveType.Triangles, first, (uint)count);
-                }
+                _gl.Enable(EnableCap.Blend);
+                _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+                _gl.DepthMask(false);
+                DrawMeshes(doc, translucentPass: true, translucentTools: true);
+                _gl.DepthMask(true);
+                _gl.Disable(EnableCap.Blend);
             }
             if (_refTriVerts > 0)
             {
@@ -449,7 +506,9 @@ public sealed unsafe class Renderer : IDisposable
     {
         var doc = session.Doc;
         int version = session.Version;
-        bool sameSession = ReferenceEquals(_builtSession, session);
+        // UVs depend on material sizes: a library change (a rescan, the game's surfaces arriving) rebuilds every mesh.
+        bool sameSession = ReferenceEquals(_builtSession, session) && _builtLibVersion == _lib.Version;
+        _builtLibVersion = _lib.Version;
         _builtSession = session;
         _builtDoc = doc;
         _builtVersion = version;

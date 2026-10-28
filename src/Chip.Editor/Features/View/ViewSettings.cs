@@ -13,6 +13,9 @@ public sealed class ViewSettings
     /// <summary>Scythe: open (boundary) edges drawn dashed in a distinct colour.</summary>
     public bool BoundaryEdges { get; set; } = true;
 
+    /// <summary>Tool surfaces (they don't render in the game) drawn see-through, Source 2 style (View > Translucent tool surfaces).</summary>
+    public bool TranslucentTools { get; set; } = true;
+
     /// <summary>Lengths beside the selection's edges, Scythe style (View > Show dimensions).</summary>
     public bool ShowDimensions { get; set; } = true;
 

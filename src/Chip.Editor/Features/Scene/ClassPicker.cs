@@ -9,37 +9,44 @@ namespace Chip.Editor.Features.Scene;
 /// <summary>The entity classes as rows (icon, label, class name), filtered by name or label; shared by the entity tool and inspector.</summary>
 public static class ClassPicker
 {
-    /// <summary>Draws the popup when it's open. Returns the class clicked, if any.</summary>
-    public static string? Popup(string id, string current, ref string filter)
+    /// <summary>Point classes: what the entity tool places (mesh classes are made by tying meshes).</summary>
+    public static bool Point(EntityClass c) => !c.IsMesh;
+
+    /// <summary>Mesh classes, for Tie to entity (and a mesh entity's class field).</summary>
+    public static bool Mesh(EntityClass c) => c.IsMesh;
+
+    /// <summary>Draws the popup when it's open, listing the classes <paramref name="show"/> accepts (all by default). Returns the class clicked, if any.</summary>
+    public static string? Popup(string id, string? current, ref string filter, Func<EntityClass, bool>? show = null)
     {
         if (!ImGui.BeginPopup(id)) return null;
         if (ImGui.IsWindowAppearing()) ImGui.SetKeyboardFocusHere();
         ImGui.SetNextItemWidth(Theme.Px(240));
         ImGui.InputTextWithHint("##filter", "Filter classes", ref filter, 64);
-        ImGui.BeginChild("##classes", new Vector2(Theme.Px(240), MathF.Min(Theme.Px(320), Rows(filter) * ImGui.GetFrameHeight() + Theme.Px(4))));
-        var picked = Draw(current, filter);
+        ImGui.BeginChild("##classes", new Vector2(Theme.Px(240), MathF.Min(Theme.Px(320), Rows(filter, show) * ImGui.GetFrameHeight() + Theme.Px(4))));
+        var picked = Draw(current, filter, show: show);
         ImGui.EndChild();
         if (picked != null) ImGui.CloseCurrentPopup();
         ImGui.EndPopup();
         return picked;
     }
 
-    static int Rows(string filter) => Math.Max(1, EntityClasses.All.Count(c => Matches(c, filter)));
+    static int Rows(string filter, Func<EntityClass, bool>? show) => Math.Max(1, EntityClasses.All.Count(c => Matches(c, filter) && (show?.Invoke(c) ?? true)));
 
     static bool Matches(EntityClass c, string filter) => filter.Trim() is not { Length: > 0 } f
         || c.Name.Contains(f, StringComparison.OrdinalIgnoreCase) || c.Label.Contains(f, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// One row per class matching <paramref name="filter"/>, the current one selected (none when <paramref name="current"/>
-    /// is null). <paramref name="references"/> false leaves out the reference model class. Returns the class clicked.
+    /// One row per class matching <paramref name="filter"/> and <paramref name="show"/>, the current one selected (none when
+    /// <paramref name="current"/> is null). <paramref name="references"/> false leaves out the reference model class.
+    /// Returns the class clicked.
     /// </summary>
-    public static string? Draw(string? current, string filter, bool references = true)
+    public static string? Draw(string? current, string filter, bool references = true, Func<EntityClass, bool>? show = null)
     {
         string? picked = null;
         bool any = false;
         foreach (var c in EntityClasses.All)
         {
-            if (!Matches(c, filter) || !references && c.Name == ReferenceModels.ClassName) continue;
+            if (!Matches(c, filter) || !references && c.Name == ReferenceModels.ClassName || show?.Invoke(c) == false) continue;
             any = true;
             var (icon, col) = EntityDraw.Style(c.Name);
             var p = ImGui.GetCursorScreenPos();
@@ -55,7 +62,10 @@ public static class ClassPicker
             if (!string.Equals(EntityClass.Humanize(c.Name), c.Label, StringComparison.OrdinalIgnoreCase) || c.Name.Contains('/'))
                 dl.AddText(new Vector2(x + ImGui.CalcTextSize(c.Label).X + Theme.Px(8), textY), ImGui.ColorConvertFloat4ToU32(Theme.TextDim), c.Name);
         }
-        if (!any) ImGui.TextColored(Theme.TextDim, "No class matches");
+        if (!any)
+            ImGui.TextColored(Theme.TextDim, show == Mesh && !EntityClasses.All.Any(Mesh)
+                ? "No mesh classes. Mark one \"mesh\": true in the manifest (Godot: a scene with a body or area root)"
+                : "No class matches");
         return picked;
     }
 }

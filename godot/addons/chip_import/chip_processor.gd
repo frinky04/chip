@@ -6,7 +6,10 @@ extends RefCounted
 ##     extras.chip_scene), with the level's property values applied. The instance stays linked to its scene, so editing
 ##     the scene updates every level. A class whose scene can't be found becomes a Marker3D carrying the data.
 ##   - Materials with extras.chip_path (or listed in a mesh node's extras.chip_remap) are swapped for that resource.
-##   - Trigger volumes (extras.chip_tool == "trigger") become Area3D.
+##   - Mesh entities (an entity node with mesh children) keep their meshes under the instance; colliders become
+##     CollisionShape3D on its root, which should be a body or an area (AnimatableBody3D, Area3D).
+##   - Volumes (extras.chip_volume, Chip's trigger and the game's own volume surfaces) become Area3D carrying
+##     chip_surface metadata.
 ## Collision (-col, -colonly, -convcolonly) is left to Godot's built-in name suffix handling.
 ## Safe to run twice: converted nodes no longer carry the extras that trigger a conversion.
 ##
@@ -33,8 +36,10 @@ static func process(scene: Node) -> void:
 			var entity := _replace_entity(scene, node as Node3D, extras, links)
 			if extras.has("chip_id"):
 				by_id[int(extras["chip_id"])] = entity
-		elif node is StaticBody3D and str(extras.get("chip_tool", "")) == "trigger":
-			_make_trigger(scene, node as StaticBody3D)
+		elif node is StaticBody3D and (extras.get("chip_volume", false) or str(extras.get("chip_tool", "")) == "trigger"):
+			_make_trigger(scene, node as StaticBody3D, str(extras.get("chip_surface", "trigger")))
+		elif _is_mesh(node) and extras.get("chip_volume", false) and node.get_parent() != null:
+			_mesh_to_area(scene, node as Node3D, str(extras.get("chip_surface", "trigger")))
 	for link in links:
 		_resolve(link[0], link[1], link[2], by_id)
 
@@ -83,9 +88,48 @@ static func _replace_entity(scene: Node, node: Node3D, extras: Dictionary, links
 	parent.add_child(entity, true)
 	parent.move_child(entity, index)
 	entity.owner = scene  # only the root: the instance's own nodes stay owned by it, so it saves as a linked instance
+	_adopt_geometry(scene, node, entity, cls)
 	parent.remove_child(node)
 	node.free()
 	return entity
+
+
+## A mesh entity's geometry (its node's mesh children, in its space): meshes that draw move under the instance, and
+## colliders and volumes become CollisionShape3D on it when its root is a body or an area.
+static func _adopt_geometry(scene: Node, node: Node3D, entity: Node3D, cls: String) -> void:
+	for child in node.get_children():
+		if not _is_mesh(child):
+			continue
+		var extras := _extras(child)
+		var volume: bool = extras.get("chip_volume", false)
+		var kind := str(extras.get("chip_collider", "convex" if volume else ""))
+		if kind != "":
+			if entity is CollisionObject3D:
+				var shape := _shape(child, kind == "convex")
+				if shape != null:
+					var cs := CollisionShape3D.new()
+					cs.name = String(child.name) + "_shape"
+					cs.shape = shape
+					cs.transform = (child as Node3D).transform
+					entity.add_child(cs, true)
+					cs.owner = scene
+			else:
+				push_warning("Chip import: '%s' (class '%s') has collision, but its scene's root is a %s, not a body or area; the collision is dropped." % [node.name, cls, entity.get_class()])
+		if extras.get("chip_render", true) and not volume:
+			node.remove_child(child)
+			entity.add_child(child, true)
+			child.owner = scene
+
+
+static func _shape(mesh_node: Node, convex: bool) -> Shape3D:
+	var mesh: Mesh = null
+	if mesh_node is MeshInstance3D:
+		mesh = (mesh_node as MeshInstance3D).mesh
+	elif mesh_node is ImporterMeshInstance3D and (mesh_node as ImporterMeshInstance3D).mesh != null:
+		mesh = (mesh_node as ImporterMeshInstance3D).mesh.get_mesh()
+	if mesh == null:
+		return null
+	return mesh.create_convex_shape() if convex else mesh.create_trimesh_shape()
 
 
 ## The class's scene, instantiated as an editable instance, or null (with a warning) when there's no usable scene.
@@ -207,10 +251,32 @@ static func _resolve(entity: Node, key: String, target: Variant, by_id: Dictiona
 
 # ---- Triggers ----
 
-static func _make_trigger(scene: Node, body: StaticBody3D) -> void:
+## A volume that arrived as a mesh (no -colonly suffix: loaded at runtime, or a project without suffixes).
+static func _mesh_to_area(scene: Node, node: Node3D, surface: String) -> void:
+	var area := Area3D.new()
+	area.transform = node.transform
+	area.set_meta("chip_tool", "trigger")
+	area.set_meta("chip_surface", surface)
+	var shape := _shape(node, true)
+	var new_name := String(node.name)
+	node.name = "__chip_replaced"
+	area.name = new_name
+	node.replace_by(area, true)
+	area.owner = scene
+	if shape != null:
+		var cs := CollisionShape3D.new()
+		cs.name = "shape"
+		cs.shape = shape
+		area.add_child(cs, true)
+		cs.owner = scene
+	node.free()
+
+
+static func _make_trigger(scene: Node, body: StaticBody3D, surface: String) -> void:
 	var area := Area3D.new()
 	area.transform = body.transform
 	area.set_meta("chip_tool", "trigger")
+	area.set_meta("chip_surface", surface)
 	var new_name := String(body.name)
 	body.name = "__chip_replaced"
 	area.name = new_name

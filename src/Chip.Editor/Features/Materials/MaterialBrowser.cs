@@ -234,7 +234,7 @@ public sealed class MaterialBrowser : IDockPanel
         ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - star);
         bool fav = IsFavourite(active.Name);
         if (MaterialTiles.StarButton("##fav", fav, star, fav ? "Unstar" : "Star: pin it under Starred")) ToggleFavourite(active.Name);
-        string tool = active.Tool != ToolMaterial.None ? "tool material · " : "";
+        string tool = active.Surface != null ? "surface · " : "";
         ImGui.TextColored(Theme.TextDim, $"{tool}{active.Width} × {active.Height} px, tiles every {Labels.Length(active.TileWidth)}");
         ImGui.EndGroup();
 

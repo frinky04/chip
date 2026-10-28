@@ -21,6 +21,10 @@ switch (args.FirstOrDefault())
         foreach (var w in level.Warnings) Console.Error.WriteLine($"warning: {w}");
         foreach (var door in level.All<Door>().Where(d => d.Partner != null))
             Console.WriteLine($"door {Label(door)} opens with {Label(door.Partner!)}");
+        foreach (var screen in level.All<Screen>())
+            Console.WriteLine($"screen {Label(screen)} plays {screen.Video} on {level.Surfaces.Count(s => s.Owner == screen && s.Surface == "video")} mesh(es)");
+        foreach (var clip in level.Colliders.Where(c => c.Surface == "monster_clip"))
+            Console.WriteLine($"monster clip {clip.Node} blocks monsters only");
         if (level.All<PlayerStart>().FirstOrDefault() is not { } start)
         {
             Console.Error.WriteLine("no player_start: place one in Chip");

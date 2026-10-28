@@ -62,7 +62,9 @@ public static class GltfImporter
             return materials.Contains(name) ? materials.Get(name).Name : name;
         }
 
-        void Visit(int nodeIndex, Matrix4x4 parent, int depth)
+        var ownedKeys = new Dictionary<Entity, List<string>>();
+
+        void Visit(int nodeIndex, Matrix4x4 parent, int depth, Entity? owner)
         {
             if (depth > 64 || nodes[nodeIndex] is not JsonObject node) return;
             var world = LocalMatrix(node) * parent;
@@ -72,8 +74,14 @@ public static class GltfImporter
             string nodeName = node["name"]?.GetValue<string>() ?? "";
             if (node["mesh"]?.GetValue<int>() is int meshIndex && meshes?[meshIndex] is JsonObject mesh)
             {
-                string? tool = extras?["chip_tool"]?.GetValue<string>();
+                // A surface node's faces go back to the surface's material (render-only surface nodes keep their own).
+                string? tool = extras?["chip_surface"]?.GetValue<string>() ?? extras?["chip_tool"]?.GetValue<string>();
                 string key = extras?["chip_id"] is { } id ? $"chip:{id.ToJsonString()}" : $"node:{nodeIndex}";
+                if (owner != null)
+                {
+                    if (!ownedKeys.TryGetValue(owner, out var keys)) ownedKeys[owner] = keys = new List<string>();
+                    if (!keys.Contains(key)) keys.Add(key);
+                }
                 var (baseName, collision) = StripCollisionSuffix(nodeName);
                 if (!groups.TryGetValue(key, out var group))
                 {
@@ -106,9 +114,10 @@ public static class GltfImporter
                     foreach (var (k, v) in props)
                         e.Properties[k] = v == null ? EntityValues.Null : JsonSerializer.SerializeToElement(v);
                 entities.Add(e);
+                owner = e; // mesh children are this entity's meshes
             }
             if (node["children"] is JsonArray children)
-                foreach (var c in children) if (c?.GetValue<int>() is int ci && ci >= 0 && ci < nodes.Count) Visit(ci, world, depth + 1);
+                foreach (var c in children) if (c?.GetValue<int>() is int ci && ci >= 0 && ci < nodes.Count) Visit(ci, world, depth + 1, owner);
         }
 
         void AddMesh(ImportBuilder builder, JsonObject mesh, Matrix4x4 world, string? tool)
@@ -159,9 +168,10 @@ public static class GltfImporter
             var children = nodes.SelectMany(n => n?["children"]?.AsArray().Select(c => c!.GetValue<int>()) ?? []).ToHashSet();
             roots = Enumerable.Range(0, nodes.Count).Where(i => !children.Contains(i));
         }
-        foreach (var r in roots) if (r >= 0 && r < nodes.Count) Visit(r, Matrix4x4.Identity, 0);
+        foreach (var r in roots) if (r >= 0 && r < nodes.Count) Visit(r, Matrix4x4.Identity, 0, null);
 
         var result = new ImportResult(new(), entities, warnings);
+        var built = new Dictionary<string, PolyMesh>();
         foreach (var key in order)
         {
             var g = groups[key];
@@ -169,7 +179,10 @@ public static class GltfImporter
             var m = g.Builder.Build(g.Name, materials);
             m.Collision = g.Collision;
             result.Meshes.Add(m);
+            built[key] = m;
         }
+        foreach (var (e, keys) in ownedKeys)
+            if (keys.Where(built.ContainsKey).Select(k => built[k]).ToList() is { Count: > 0 } owned) result.EntityMeshes[e] = owned;
         for (int i = 0; i < (gltfMaterials?.Count ?? 0); i++)
         {
             string name = MaterialName(i, null);

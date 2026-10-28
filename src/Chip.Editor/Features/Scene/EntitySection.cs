@@ -48,7 +48,8 @@ public sealed class EntitySection : IInspectorSection
         ImGui.SameLine(0, 0);
         if (ImGui.ArrowButton($"##classes{id}", ImGuiDir.Down)) { _classFilter = ""; ImGui.OpenPopup("##classlist"); }
         Tip("Pick a class");
-        if (ClassPicker.Popup("##classlist", e.ClassName, ref _classFilter) is { } picked) SetClass(ctx, id, picked);
+        if (ClassPicker.Popup("##classlist", e.ClassName, ref _classFilter, e.IsMeshEntity ? ClassPicker.Mesh : ClassPicker.Point) is { } picked)
+            SetClass(ctx, id, picked);
         if (cls.Doc.Length > 0)
         {
             Dim(cls.Summary);
@@ -65,15 +66,32 @@ public sealed class EntitySection : IInspectorSection
         if (_text.Field($"##name{id}", e.Name, out var name, hint: e.ClassName))
             Edit(ctx, id, "Rename Entity", x => { x.Name = name.Trim(); return null; });
 
-        RowLabel("Origin", "Position of the origin in metres. Type a value, then Enter.");
+        bool mesh = e.IsMeshEntity;
+        RowLabel("Origin", mesh
+            ? "The entity's pivot in metres (a door's hinge). Its meshes stay put: this moves only the origin they turn around in the game."
+            : "Position of the origin in metres. Type a value, then Enter.");
         var p = e.Position;
         if (TaggedFields($"##pos{id}", ["X", "Y", "Z"], Theme.AxisU32, [p.X, p.Y, p.Z], [false, false, false], "%.3f", out int pi, out float pv))
-            Edit(ctx, id, "Move Entity", x => { x.Position = With(x.Position, pi, pv); return null; });
+            Edit(ctx, id, mesh ? "Move Entity Origin" : "Move Entity", x => { x.Position = With(x.Position, pi, pv); return null; });
 
-        RowLabel("Angles", "Rotation in degrees: pitch (X), yaw (Y), roll (Z). Yaw 0 faces -Z.");
+        RowLabel("Angles", mesh
+            ? "The origin's axes in degrees: pitch (X), yaw (Y), roll (Z). Its meshes stay put; the game sees them in this frame."
+            : "Rotation in degrees: pitch (X), yaw (Y), roll (Z). Yaw 0 faces -Z.");
         var r = e.Rotation;
         if (TaggedFields($"##rot{id}", ["X", "Y", "Z"], Theme.AxisU32, [r.X, r.Y, r.Z], [false, false, false], "%.1f", out int ri, out float rv))
             Edit(ctx, id, "Rotate Entity", x => { x.Rotation = With(x.Rotation, ri, rv); return null; });
+
+        if (mesh)
+        {
+            RowLabel("Meshes", "The geometry this entity is made of. Selecting any of it selects the whole entity.");
+            ImGui.AlignTextToFramePadding();
+            ImGui.Text(e.Meshes.Count == 1 ? "1 mesh" : $"{e.Meshes.Count} meshes");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Untie")) ctx.Commands.Execute("scene.untie");
+            Tip("Turn it back into plain meshes (Ctrl+Shift+W). The meshes stay where they are");
+            if (cls.Known && !cls.IsMesh) Warn($"{cls.Label} is a point class, so the game may not expect geometry. Pick a mesh class");
+        }
+        else if (cls.IsMesh) Warn($"{cls.Label} is made of meshes: select some and use Tie to entity (Ctrl+Alt+T)");
 
         if (cls.EditorOnly) return; // its own section edits it (reference models)
         if (cls.Known)

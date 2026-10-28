@@ -69,7 +69,8 @@ public sealed partial class EditorApp
         _bench?.Mark("sync");
         foreach (var pane in layout.Visible)
         {
-            var settings = new RenderSettings(pane.Mode, Ctx.Grid, ViewSettings.Of(Ctx).BoundaryEdges, _construction);
+            var settings = new RenderSettings(pane.Mode, Ctx.Grid, ViewSettings.Of(Ctx).BoundaryEdges, _construction,
+                ViewSettings.Of(Ctx).TranslucentTools);
             uint tex = _renderer.Render(_renderer.Target(pane.Index), pane == active ? Ctx.View : pane.View, pane.Camera, Ctx.Doc, settings);
             ImGui.SetCursorScreenPos(pane.Origin);
             ImGui.Image((nint)tex, pane.Size, new Vector2(0, 1), new Vector2(1, 0));

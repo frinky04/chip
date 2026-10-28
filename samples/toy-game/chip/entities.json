@@ -170,6 +170,24 @@
           0.3
         ]
       ]
+    },
+    "screen": {
+      "label": "Screen",
+      "doc": "A screen that plays a video on its faces painted with the video surface.",
+      "props": [
+        {
+          "name": "video",
+          "type": "asset",
+          "doc": "What it plays.",
+          "default": "assets/videos/intro.webm"
+        },
+        {
+          "name": "loop",
+          "type": "bool",
+          "default": true
+        }
+      ],
+      "mesh": true
     }
   }
 }

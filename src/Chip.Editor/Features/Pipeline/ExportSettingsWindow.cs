@@ -177,7 +177,7 @@ public sealed class ExportSettingsWindow
         if (remap.Values.Any(Misplaced))
             ImGui.TextColored(Theme.Error, $"Some paths don't start with {Prefix}. {EntityClasses.Engine} can only load project resources.");
 
-        var used = MaterialLibrary.Usage(ctx.Doc).Select(u => u.Material).Where(m => !remap.ContainsKey(m) && MaterialLibrary.ToolKind(m) == ToolMaterial.None).ToList();
+        var used = MaterialLibrary.Usage(ctx.Doc).Select(u => u.Material).Where(m => !remap.ContainsKey(m) && Surfaces.Renders(m)).ToList();
         ImGui.SetNextItemWidth(Theme.Px(200));
         if (ImGui.BeginCombo("##add", _newMaterial.Length > 0 ? _newMaterial : "Add a material…"))
         {

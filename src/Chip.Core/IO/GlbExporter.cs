@@ -28,13 +28,16 @@ public sealed record ExportResult(byte[] Data, IReadOnlyList<SideFile> SideFiles
 /// import suffixes: <c>-col</c> (render + trimesh collider, from <see cref="Document.ExportCollision"/> or
 /// <see cref="CollisionMode.Default"/>), <c>-colonly</c> and <c>-convcolonly</c> (<see cref="CollisionMode.ConvexOnly"/>).
 /// Collision-only nodes carry no material.
-/// Tool materials (<see cref="ToolMaterial"/>): nodraw and skip faces never render; clip faces, and nodraw faces of a
-/// colliding mesh, go to a <c>name_clip-colonly</c> node (<c>extras.chip_tool = "clip"</c>); trigger faces go to
-/// <c>name_trigger-colonly</c> with <c>extras.chip_tool = "trigger"</c>.
+/// <see cref="Surfaces"/> (tool materials and the game's own) split a mesh's faces: unseen solid faces go to a
+/// <c>name_surface-colonly</c> collider, volume faces to a non-solid <c>name_surface-colonly</c> node with
+/// <c>extras.chip_volume</c>, faces that render but never collide to their own <c>name_surface</c> node; each carries
+/// <c>extras.chip_surface</c> (the built-in clip and trigger also <c>chip_tool</c>). Rendered surfaces' materials carry
+/// <c>extras.chip_surface</c> too.
 /// Mesh nodes carry <c>extras.chip_mesh</c>/<c>chip_id</c> (and <c>chip_remap</c>, material name to path, for the remaps
 /// they use); remapped materials carry <c>extras.chip_path</c>. Entities
 /// follow as empty nodes (translation, rotation) with <c>extras = { chip_class, chip_id, chip_uid?, chip_scene?,
-/// chip_name?, properties }</c>: the class's engine scene, and the values the entity sets, typed by its class.
+/// chip_name?, properties }</c>: the class's engine scene, and the values the entity sets, typed by its class. A mesh
+/// entity's meshes are its node's children, in its space, never baked into world collision and never suffixed.
 /// </summary>
 public static class GlbExporter
 {
@@ -107,7 +110,10 @@ public static class GlbExporter
             }
             else pbr["baseColorFactor"] = new JsonArray(1f, 0f, 1f, 1f);
             var mat = new JsonObject { ["name"] = name, ["pbrMetallicRoughness"] = pbr };
-            if (opt.Remap(name) is { } path) mat["extras"] = new JsonObject { ["chip_path"] = path };
+            var matExtras = new JsonObject();
+            if (opt.Remap(name) is { } path) matExtras["chip_path"] = path;
+            if (Surfaces.Of(name) is { } surface) matExtras["chip_surface"] = surface.Name; // a rendered surface (a screen) the game swaps
+            if (matExtras.Count > 0) mat["extras"] = matExtras;
             gltfMaterials.Add(mat);
             return materialIndex[name] = gltfMaterials.Count - 1;
         }
@@ -115,32 +121,55 @@ public static class GlbExporter
         var tri = new List<int>();
         var bakeSources = new List<CollisionSource>();
         int tessBefore = 0, tessAfter = 0;
+        bool ExportsEntity(Entity e) => (!e.Hidden || opt.IncludeHidden) && ReferenceModels.Exports(e); // reference models are editor-only unless exported as markers
+        // Mesh entities' meshes become children of the entity's node, in its space (they move with it in the game).
+        var ownerOf = new Dictionary<int, Entity>();
+        foreach (var e in doc.Entities.Where(e => e.IsMeshEntity && ExportsEntity(e)))
+            foreach (var id in e.Meshes) ownerOf.TryAdd(id, e);
+        var children = new Dictionary<int, List<int>>();
+        var place = Matrix4x4.Identity; // world to the space the current node's vertices are written in
+        Entity? owner = null;
         foreach (var mesh in doc.Meshes)
         {
             if (mesh.Hidden && !opt.IncludeHidden) continue;
+            owner = ownerOf.GetValueOrDefault(mesh.Id);
+            place = Matrix4x4.Identity;
+            if (owner != null) Matrix4x4.Invert(EntityOps.World(owner), out place);
             var cornerNormals = opt.Smoothing ? Topology.CornerNormals(mesh) : FlatNormals(mesh);
             bool collisionOnly = mesh.Collision is CollisionMode.Only or CollisionMode.ConvexOnly;
             bool collides = collisionOnly || (mesh.Collision == CollisionMode.Default && doc.ExportCollision);
             // Default meshes' colliders are baked into world collision; the render node then doesn't collide itself.
-            bool baked = opt.BakeCollision && !collisionOnly && collides;
+            // A mesh entity's geometry moves, so it keeps its own collider.
+            bool baked = opt.BakeCollision && !collisionOnly && collides && owner == null;
             var faces = new List<int>();
-            var clipFaces = new List<int>();
-            var triggerFaces = new List<int>();
             var nodrawFaces = new List<int>();
+            // Per surface: faces that render without colliding, solid unseen faces, and volume faces.
+            var passFaces = new Dictionary<Surface, List<int>>();
+            var solidFaces = new Dictionary<Surface, List<int>>();
+            var volumeFaces = new Dictionary<Surface, List<int>>();
+            static void Put(Dictionary<Surface, List<int>> map, Surface s, int f)
+            {
+                if (!map.TryGetValue(s, out var list)) map[s] = list = new List<int>();
+                list.Add(f);
+            }
             for (int f = 0; f < mesh.Faces.Count; f++)
             {
-                var tool = MaterialLibrary.ToolKind(mesh.Faces[f].Material);
-                var target = tool switch
+                if (Surfaces.Of(mesh.Faces[f].Material) is not { } sf) { faces.Add(f); continue; }
+                if (sf.Skip) continue;
+                if (sf.Volume) Put(volumeFaces, sf, f);
+                if (collisionOnly) { if (sf.Collide != SurfaceCollide.None) faces.Add(f); continue; } // the whole mesh is collision already
+                if (sf.Render)
                 {
-                    ToolMaterial.None => faces,
-                    ToolMaterial.Trigger => triggerFaces,
-                    ToolMaterial.Skip => null,
-                    _ when collisionOnly => faces, // the whole mesh is collision already
-                    ToolMaterial.Clip => clipFaces,
-                    _ when baked => nodrawFaces, // nodraw: solid but unseen, so it collides with the rest
-                    _ => collides ? clipFaces : null, // nodraw
-                };
-                target?.Add(f);
+                    if (sf.Collide == SurfaceCollide.None) Put(passFaces, sf, f);
+                    else faces.Add(f);
+                    if (sf.Collide == SurfaceCollide.Always && !collides) Put(solidFaces, sf, f);
+                }
+                else if (sf.Collide == SurfaceCollide.Always) Put(solidFaces, sf, f);
+                else if (sf.Collide == SurfaceCollide.Mesh && collides)
+                {
+                    if (baked) nodrawFaces.Add(f); // solid but unseen, so it collides with the rest
+                    else Put(solidFaces, sf, f);
+                }
             }
             if (baked) bakeSources.Add(new CollisionSource(mesh, [.. faces, .. nodrawFaces], AllowConvex: opt.CollisionHulls));
 
@@ -175,12 +204,27 @@ public static class GlbExporter
                     AddNode(name + "_col", "-colonly", Primitives(mesh, cornerNormals, faces, withMaterial: false), new JsonObject { ["chip_baked"] = true });
             }
             else AddNode(name, suffix, Primitives(mesh, cornerNormals, faces, withMaterial: !collisionOnly), meshExtras);
-            AddNode(name + "_clip", "-colonly", Primitives(mesh, cornerNormals, clipFaces, withMaterial: false),
-                new JsonObject { ["chip_tool"] = "clip", ["chip_id"] = mesh.Id });
-            AddNode(name + "_trigger", "-colonly", Primitives(mesh, cornerNormals, triggerFaces, withMaterial: false),
-                new JsonObject { ["chip_tool"] = "trigger", ["chip_id"] = mesh.Id });
+            // Surface nodes: chip_surface names the surface; the built-in clip and trigger also keep chip_tool.
+            JsonObject SurfaceExtras(Surface sf)
+            {
+                var x = new JsonObject { ["chip_surface"] = sf.Name, ["chip_id"] = mesh.Id };
+                if (sf.Name is "clip" or "trigger") x["chip_tool"] = sf.Name;
+                return x;
+            }
+            foreach (var (sf, list) in passFaces)
+                AddNode($"{name}_{sf.Name}", "", Primitives(mesh, cornerNormals, list, withMaterial: true), SurfaceExtras(sf));
+            foreach (var (sf, list) in solidFaces)
+                AddNode($"{name}_{sf.Name}", "-colonly", Primitives(mesh, cornerNormals, list, withMaterial: false), SurfaceExtras(sf));
+            foreach (var (sf, list) in volumeFaces)
+            {
+                var x = SurfaceExtras(sf);
+                x["chip_volume"] = true;
+                AddNode($"{name}_{sf.Name}", "-colonly", Primitives(mesh, cornerNormals, list, withMaterial: false), x);
+            }
             if (nodes.Count > before) meshCount++;
         }
+        owner = null;
+        place = Matrix4x4.Identity;
 
         // Baked world collision (Source 2 style): one merged, simplified trimesh in chunks, plus convex hulls if asked.
         CollisionBakeStats? collisionStats = null;
@@ -195,7 +239,6 @@ public static class GlbExporter
                 AddNode($"chip_hull_{hull.SourceMeshId}", "-convcolonly", CollisionPrimitive(hull.Points, hull.Triangles), tag());
         }
 
-        bool ExportsEntity(Entity e) => (!e.Hidden || opt.IncludeHidden) && ReferenceModels.Exports(e); // reference models are editor-only unless exported as markers
         var exportedIds = doc.Entities.Where(ExportsEntity).Select(e => e.Id).ToHashSet();
         foreach (var e in doc.Entities)
         {
@@ -212,20 +255,27 @@ public static class GlbExporter
             if (e.Name.Length > 0) extras["chip_name"] = e.Name;
             extras["properties"] = EntityProperties(e, cls, exportedIds, warnings);
             node["extras"] = extras;
+            if (children.TryGetValue(e.Id, out var kids)) node["children"] = new JsonArray(kids.Select(k => (JsonNode)k).ToArray());
             nodes.Add(node);
             entityCount++;
         }
 
-        // Every collider says what it is in extras; Godot projects also get the name suffix its importer reads.
+        // Every collider says what it is in extras; Godot projects also get the name suffix its importer reads (but not
+        // under a mesh entity, whose scene instance takes the shapes itself).
         void AddNode(string name, string suffix, JsonArray primitives, JsonObject extras)
         {
             if (primitives.Count == 0) return;
-            // A trigger is a volume, not a wall: chip_tool says what it is, so it never claims to collide.
-            bool trigger = extras["chip_tool"]?.GetValue<string>() == "trigger";
-            if (suffix.Length > 0 && !trigger) extras["chip_collider"] = suffix.StartsWith("-conv", StringComparison.Ordinal) ? "convex" : "trimesh";
+            // A volume (a trigger) is not a wall: it says what it is, so it never claims to collide.
+            bool volume = extras["chip_volume"]?.GetValue<bool>() == true;
+            if (suffix.Length > 0 && !volume) extras["chip_collider"] = suffix.StartsWith("-conv", StringComparison.Ordinal) ? "convex" : "trimesh";
             if (suffix.EndsWith("only", StringComparison.Ordinal)) extras["chip_render"] = false;
             meshes.Add(new JsonObject { ["name"] = name, ["primitives"] = primitives });
-            nodes.Add(new JsonObject { ["name"] = suffixes ? name + suffix : name, ["mesh"] = meshes.Count - 1, ["extras"] = extras });
+            nodes.Add(new JsonObject { ["name"] = suffixes && owner == null ? name + suffix : name, ["mesh"] = meshes.Count - 1, ["extras"] = extras });
+            if (owner != null)
+            {
+                if (!children.TryGetValue(owner.Id, out var list)) children[owner.Id] = list = new List<int>();
+                list.Add(nodes.Count - 1);
+            }
         }
 
         // Positions and triangles only: the engine builds the shape from them and drops the mesh.
@@ -262,8 +312,8 @@ public static class GlbExporter
                     for (int i = 0; i < face.Verts.Length; i++)
                     {
                         var p = mesh.Positions[face.Verts[i]];
-                        pos.Add(p * s);
-                        nrm.Add(cornerNormals[f][i]);
+                        pos.Add(Vector3.Transform(p, place) * s);
+                        nrm.Add(Vector3.Normalize(Vector3.TransformNormal(cornerNormals[f][i], place)));
                         uv.Add(face.UV(i, p, info.Width, info.Height));
                     }
                     tri.Clear();
@@ -293,7 +343,10 @@ public static class GlbExporter
         {
             ["asset"] = new JsonObject { ["version"] = "2.0", ["generator"] = "Chip" },
             ["scene"] = 0,
-            ["scenes"] = new JsonArray(new JsonObject { ["nodes"] = new JsonArray(Enumerable.Range(0, nodes.Count).Select(i => (JsonNode)i).ToArray()) }),
+            ["scenes"] = new JsonArray(new JsonObject
+            {
+                ["nodes"] = new JsonArray(Enumerable.Range(0, nodes.Count).Except(children.Values.SelectMany(c => c)).Select(i => (JsonNode)i).ToArray()),
+            }),
             ["nodes"] = nodes,
             ["meshes"] = meshes,
             ["materials"] = gltfMaterials,

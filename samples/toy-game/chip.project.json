@@ -2,5 +2,17 @@
   "version": 1,
   "engine": "Toy",
   "entities": "chip/entities.json",
-  "assetPrefix": "assets/"
+  "assetPrefix": "assets/",
+  "surfaces": {
+    "video": {
+      "doc": "Shows the video of the screen it belongs to",
+      "look": { "image": "chip/surfaces/video.png" }
+    },
+    "monster_clip": {
+      "render": false,
+      "collide": "always",
+      "doc": "Blocks monsters, lets players through",
+      "look": { "color": "#d0406a" }
+    }
+  }
 }

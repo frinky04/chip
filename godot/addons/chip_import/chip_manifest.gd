@@ -132,6 +132,9 @@ static func describe(path: String, name: String, warnings: PackedStringArray) ->
 		return {}
 
 	var c := {"scene": path, "label": _label(name), "base": node.get_class()}
+	# A body or area root is made of level geometry: Chip ties meshes to it instead of placing it as a point.
+	if node is CollisionObject3D:
+		c["mesh"] = true
 	var uid := ResourceLoader.get_resource_uid(path)
 	if uid != ResourceUID.INVALID_ID:
 		c["uid"] = ResourceUID.id_to_text(uid)

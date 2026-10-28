@@ -6,7 +6,8 @@ namespace Chip.Editor.Features.Scene;
 
 /// <summary>
 /// Scene organisation (SPEC §10): the entity tool and inspector, entity drawing in every pane, the outliner, groups
-/// (Ctrl+G / Ctrl+Alt+G, whole-group selection) and lock / unlock all (Ctrl+L / Ctrl+Shift+L).
+/// (Ctrl+G / Ctrl+Alt+G, whole-group selection), mesh entities (Ctrl+Alt+T / Ctrl+Shift+W) and lock / unlock all
+/// (Ctrl+L / Ctrl+Shift+L).
 /// </summary>
 public sealed class SceneFeature : IEditorFeature
 {
@@ -33,6 +34,10 @@ public sealed class SceneFeature : IEditorFeature
         c.Add("scene.group", "Group", () => Group(ctx), "Edit", "Ctrl+G", ObjectsSelected, "4-organize", 0);
         c.Add("scene.ungroup", "Ungroup", () => Ungroup(ctx), "Edit", "Ctrl+Alt+G",
             () => ObjectsSelected() && ctx.Sel.MeshIds().Any(id => GroupOps.GroupOf(ctx.Doc, id) != null), "4-organize", 1);
+        var tie = new TieToEntity();
+        ctx.AddPanel(tie.Draw);
+        c.Add("scene.tie", "Tie to entity…", tie.Open, "Edit", "Ctrl+Alt+T", () => TieToEntity.CanTie(ctx), "4-organize", 2);
+        c.Add("scene.untie", "Untie from entity", () => TieToEntity.Untie(ctx), "Edit", "Ctrl+Shift+W", () => TieToEntity.CanUntie(ctx), "4-organize", 3);
         c.Add("scene.lock", "Lock selected", () => Lock(ctx), "Edit", "Ctrl+L", () => !ctx.Sel.IsEmpty, "3-visibility", 2);
         c.Add("scene.unlockAll", "Unlock all", () => UnlockAll(ctx), "Edit", "Ctrl+Shift+L", () => SceneOps.AnyLocked(ctx.Doc), "3-visibility", 3);
         c.Add("scene.selectGroups", "Select whole groups", () =>

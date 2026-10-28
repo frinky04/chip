@@ -45,7 +45,7 @@ public static class ObjExporter
         {
             if (mesh.Hidden && !opt.IncludeHidden) continue;
             if (mesh.Collision is CollisionMode.Only or CollisionMode.ConvexOnly) continue;
-            var faces = Enumerable.Range(0, mesh.Faces.Count).Where(f => MaterialLibrary.ToolKind(mesh.Faces[f].Material) == ToolMaterial.None).ToList();
+            var faces = Enumerable.Range(0, mesh.Faces.Count).Where(f => Surfaces.Renders(mesh.Faces[f].Material)).ToList();
             if (faces.Count == 0) continue;
             meshCount++;
             var normals = opt.Smoothing ? Topology.CornerNormals(mesh) : null;

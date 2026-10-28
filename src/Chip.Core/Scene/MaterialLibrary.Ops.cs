@@ -3,35 +3,15 @@ using Chip.Core.Texturing;
 
 namespace Chip.Core.Scene;
 
-/// <summary>
-/// Tool materials (Source/Hammer conventions) change how faces export instead of how they look:
-/// <list type="bullet">
-/// <item><see cref="NoDraw"/>: never rendered; still solid, so it joins the mesh's collision when the mesh collides.</item>
-/// <item><see cref="Clip"/>: collision only (player clip), whatever the mesh's collision setting.</item>
-/// <item><see cref="Trigger"/>: a trigger volume, exported as its own collision-only node tagged for the engine.</item>
-/// <item><see cref="Skip"/>: dropped from the export entirely.</item>
-/// </list>
-/// </summary>
-public enum ToolMaterial { None, NoDraw, Clip, Trigger, Skip }
-
-/// <summary>Tool materials, and material edits over faces and documents that respect per-material texel density.</summary>
+/// <summary>Material edits over faces and documents that respect per-material texel density. Tool materials are <see cref="Surfaces"/>.</summary>
 public sealed partial class MaterialLibrary
 {
-    /// <summary>Names of the bundled tool materials, in browser order.</summary>
-    public static readonly string[] ToolNames = ["nodraw", "clip", "trigger", "skip"];
-
-    /// <summary>Which tool material a name is. Accepts Chip's names and Hammer's <c>toolsnodraw</c> style.</summary>
-    public static ToolMaterial ToolKind(string name)
+    /// <summary>Removes a material added with <see cref="Add"/>. False when there was none.</summary>
+    public bool Remove(string name)
     {
-        var n = name.StartsWith("tools", StringComparison.OrdinalIgnoreCase) && name.Length > 5 ? name[5..] : name;
-        return n.ToLowerInvariant() switch
-        {
-            "nodraw" => ToolMaterial.NoDraw,
-            "clip" or "playerclip" => ToolMaterial.Clip,
-            "trigger" => ToolMaterial.Trigger,
-            "skip" => ToolMaterial.Skip,
-            _ => ToolMaterial.None,
-        };
+        if (_manual.RemoveAll(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)) == 0) return false;
+        Rescan();
+        return true;
     }
 
     /// <summary>

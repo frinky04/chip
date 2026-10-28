@@ -271,15 +271,16 @@ public sealed class MaterialLibraryTests : IDisposable
     // ---- Tool materials ----
 
     [Theory]
-    [InlineData("nodraw", ToolMaterial.NoDraw)]
-    [InlineData("toolsnodraw", ToolMaterial.NoDraw)]
-    [InlineData("CLIP", ToolMaterial.Clip)]
-    [InlineData("trigger", ToolMaterial.Trigger)]
-    [InlineData("skip", ToolMaterial.Skip)]
-    [InlineData("tools", ToolMaterial.None)]
-    [InlineData("dev_grey", ToolMaterial.None)]
-    public void Tool_materials_are_recognised_by_name(string name, ToolMaterial kind) =>
-        Assert.Equal(kind, MaterialLibrary.ToolKind(name));
+    [InlineData("nodraw", "nodraw")]
+    [InlineData("toolsnodraw", "nodraw")]
+    [InlineData("CLIP", "clip")]
+    [InlineData("playerclip", "clip")]
+    [InlineData("trigger", "trigger")]
+    [InlineData("skip", "skip")]
+    [InlineData("tools", null)]
+    [InlineData("dev_grey", null)]
+    public void Tool_materials_are_recognised_by_name(string name, string? surface) =>
+        Assert.Equal(surface, Surfaces.Of(name, null)?.Name);
 
     static JsonNode ExportJson(Document doc)
     {
@@ -306,13 +307,16 @@ public sealed class MaterialLibraryTests : IDisposable
         var json = ExportJson(doc);
         var nodes = json["nodes"]!.AsArray();
         var names = nodes.Select(x => x!["name"]!.GetValue<string>()).ToList();
-        Assert.Equal([$"block_{a.Id}-col", $"block_{a.Id}_clip-colonly", $"block_{t.Id}_trigger-colonly"], names);
+        Assert.Equal([$"block_{a.Id}-col", $"block_{a.Id}_clip-colonly", $"block_{a.Id}_nodraw-colonly", $"block_{t.Id}_trigger-colonly"], names);
 
         var meshes = json["meshes"]!.AsArray();
         Assert.Equal(3 * 6, IndexCount(json, meshes[0]!));  // 3 rendered quads
-        Assert.Equal(2 * 6, IndexCount(json, meshes[1]!));  // clip + nodraw collide
+        Assert.Equal(6, IndexCount(json, meshes[1]!));      // clip collides
+        Assert.Equal(6, IndexCount(json, meshes[2]!));      // nodraw collides with its mesh
         Assert.All(meshes[1]!["primitives"]!.AsArray(), p => Assert.Null(p!["material"]));
-        Assert.Equal("trigger", nodes[2]!["extras"]!["chip_tool"]!.GetValue<string>());
+        Assert.Equal(("nodraw", "trimesh"), (nodes[2]!["extras"]!["chip_surface"]!.GetValue<string>(), nodes[2]!["extras"]!["chip_collider"]!.GetValue<string>()));
+        Assert.Equal("trigger", nodes[3]!["extras"]!["chip_tool"]!.GetValue<string>());
+        Assert.True(nodes[3]!["extras"]!["chip_volume"]!.GetValue<bool>());
         Assert.DoesNotContain(json["materials"]!.AsArray(), m => m!["name"]!.GetValue<string>() is "nodraw" or "skip" or "clip");
     }
 

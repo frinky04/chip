@@ -50,7 +50,19 @@ public class ToyGameTests : IDisposable
 
         var level = Level.Load(export.Data);
         Assert.Empty(level.Warnings);
-        Assert.Equal((1, 2, 2, 2), (level.All<PlayerStart>().Count(), level.All<Pickup>().Count(), level.All<Door>().Count(), level.All<Light>().Count()));
+        Assert.Equal((1, 2, 2, 2, 1), (level.All<PlayerStart>().Count(), level.All<Pickup>().Count(), level.All<Door>().Count(),
+            level.All<Light>().Count(), level.All<Screen>().Count()));
+
+        // The screen is a mesh entity: its geometry is its own (it collides as part of it), and the face painted with the
+        // game's video surface is listed for the renderer to swap.
+        var screen = level.All<Screen>().Single();
+        Assert.Equal(("assets/videos/lobby.webm", true), (screen.Video, screen.Loop));
+        Assert.Equal(new Vector3(4.5f, 1, 0.05f), screen.Position);
+        Assert.NotEmpty(screen.Colliders);
+        Assert.Contains(level.Surfaces, s => s.Surface == "video" && s.Owner == screen);
+        // A game surface that doesn't render: a collider the game can tell apart.
+        var monsterClip = Assert.Single(level.Colliders, c => c.Surface == "monster_clip");
+        Assert.False(monsterClip.Rendered);
 
         var doors = level.All<Door>().ToDictionary(d => d.Name);
         Assert.Same(doors["right_door"], doors["left_door"].Partner);

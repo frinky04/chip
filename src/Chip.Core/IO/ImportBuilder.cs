@@ -13,6 +13,17 @@ public sealed record ImportResult(List<PolyMesh> Meshes, List<Entity> Entities, 
     /// Only materials with a PNG or JPEG image are listed.
     /// </summary>
     public Dictionary<string, ImportedImage> Images { get; init; } = new(StringComparer.Ordinal);
+
+    /// <summary>Mesh entities' meshes (a Chip export's entity node with mesh children).</summary>
+    public Dictionary<Entity, List<PolyMesh>> EntityMeshes { get; } = new();
+
+    /// <summary>Adds the meshes and entities to the document (fresh ids), tying mesh entities back to their meshes.</summary>
+    public void AddTo(Document doc)
+    {
+        foreach (var m in Meshes) doc.Add(m);
+        SceneOps.AddEntities(doc, Entities);
+        foreach (var (e, meshes) in EntityMeshes) e.Meshes = meshes.Select(m => m.Id).ToList();
+    }
 }
 
 /// <summary>An image read from an imported file: its bytes and extension (<c>.png</c> or <c>.jpg</c>).</summary>

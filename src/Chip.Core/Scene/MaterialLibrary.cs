@@ -26,7 +26,8 @@ public sealed record MaterialInfo(string Name, string? Path, int Width, int Heig
     /// <summary>Metres covered by one repeat of the texture.</summary>
     public float TileWidth => Width * Scale;
     public float TileHeight => Height * Scale;
-    public ToolMaterial Tool => MaterialLibrary.ToolKind(Name);
+    /// <summary>The surface this material is (a tool material such as clip, or one of the game's), or null.</summary>
+    public Surface? Surface => Surfaces.Of(Name);
 }
 
 /// <summary>A library's default texel density (px per metre), shared by reference with its materials.</summary>

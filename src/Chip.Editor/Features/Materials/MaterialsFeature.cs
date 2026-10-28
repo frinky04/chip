@@ -25,6 +25,7 @@ public sealed class MaterialsFeature : IEditorFeature
         var replace = ReplaceMaterialDialog.For(ctx);
         ctx.AddDockPanel(browser);
         ctx.AddPanel(browser.Update);
+        ctx.AddPanel(new SurfaceMaterials().Update);
         ctx.AddPanel(replace.Draw);
 
         var c = ctx.Commands;

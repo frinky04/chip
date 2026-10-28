@@ -28,6 +28,7 @@ public static class Manifest
             if (attr.Doc.Length > 0) c["doc"] = attr.Doc;
             c["props"] = props;
             if (attr.Bounds is { Length: 6 } b) c["bounds"] = new JsonArray(new JsonArray(b[0], b[1], b[2]), new JsonArray(b[3], b[4], b[5]));
+            if (attr.Mesh) c["mesh"] = true;
             classes[attr.Name] = c;
         }
         var root = new JsonObject { ["version"] = 1, ["classes"] = classes };

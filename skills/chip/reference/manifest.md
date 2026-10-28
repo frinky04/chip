@@ -15,6 +15,7 @@ level's export path. Every field is optional:
 | `entities` | `".chip/entities.json"` | The manifest, relative to the project file. |
 | `collisionSuffixes` | `false` (`true` beside `project.godot`) | Also append Godot's `-col`/`-colonly`/`-convcolonly` to collider node names. |
 | `assetPrefix` | `""` (`"res://"` for Godot) | What asset paths start with: the hint in asset fields and material remaps, and what Chip checks remap paths against. |
+| `surfaces` | none | The game's own surfaces, such as a monster clip or a video screen ([`surfaces.md`](surfaces.md)). |
 
 An unknown field makes the whole file unreadable, and Chip then falls back to its built-in classes. Comments and trailing commas are allowed.
 A Godot project needs no project file: `project.godot` alone means Godot's conventions, and the Chip import addon
@@ -53,6 +54,7 @@ export writes as `chip_class`, so renaming it orphans every placed entity of tha
 | `props` | The properties, in display order. |
 | `bounds` | `[[minX, minY, minZ], [maxX, maxY, maxZ]]` in metres around the origin: the box Chip draws and clicks. Default: a 0.4 m cube. |
 | `preview` | A `.glb` path relative to the manifest, drawn in place of the box. |
+| `mesh` | `true`: a mesh class, made of level geometry tied to it (a door, a platform) instead of placed as a point ([`surfaces.md`](surfaces.md)). |
 | `scene`, `uid` | The engine asset that makes the class and its stable id. Exported as `chip_scene` / `chip_uid`. |
 | `base` | The engine type, informational. |
 

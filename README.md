@@ -115,7 +115,10 @@ unwrap them five ways. `Alt`+right-click continues the selected face's texture o
 (`Shift+Q`) floats over the viewport and puts the common texture operations on single keys.
 
 Four tool materials change how faces export instead of how they look: **nodraw** is never rendered but still collides,
-**clip** is collision only, **trigger** exports as a trigger volume, and **skip** is left out of the export.
+**clip** is collision only, **trigger** exports as a trigger volume, and **skip** is left out of the export. A game can
+add its own surfaces, such as a monster clip, water, or a screen it swaps for a video, in its `chip.project.json`
+([docs/engines.md](docs/engines.md)). Tool surfaces draw see-through, striped in world space; View > Translucent tool
+surfaces makes them solid.
 
 **Hotspots.** A hotspot texture is a trim sheet divided into patches. `Shift+H` gives each flat region of the selection
 the patch that fits it best, and `Shift+F` does the same for each face on its own. The hotspot editor (`Ctrl+Shift+H`,
@@ -167,6 +170,11 @@ Place tab (or with `Shift+E`). Its `@export` variables are the properties the in
 becomes an instance of its scene. Other engines list their classes in an entity manifest
 ([docs/engines.md](docs/engines.md)). Without a game project Chip offers its built-in classes. See
 [docs/entities.md](docs/entities.md).
+
+**Mesh entities** are entities made of level geometry: doors, moving platforms, screens. Select some meshes and press
+`Ctrl+Alt+T` (Tie to entity) to pick a mesh class (in Godot, a scene whose root is a body or an area). The entity's origin
+is its pivot, set in the inspector; selecting any part selects all of it. `Ctrl+Shift+W` turns it back into plain
+meshes.
 
 ## Exporting to your engine
 
@@ -235,7 +243,7 @@ F1 lists every shortcut and lets you search it. You can rebind keys under Edit >
 - No boolean (CSG) operations, no prefabs, no layers.
 - No import of Source `.vmf` or Unreal `.t3d` maps.
 - Exported dressing props are copies, not instances.
-- Mesh entities (doors, moving platforms) and entity signal connections aren't built yet.
+- Entity signal connections (Hammer's inputs and outputs) aren't built yet.
 
 [SPEC.md](SPEC.md) has the full feature map against Scythe and Source 2 Hammer. If you want to work on Chip itself,
 start with [CONTRIBUTING.md](CONTRIBUTING.md).

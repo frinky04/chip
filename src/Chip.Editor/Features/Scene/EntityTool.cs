@@ -166,7 +166,7 @@ public sealed class EntityTool : IViewportTool
             ImGui.SetNextItemWidth(-1);
             ImGui.InputTextWithHint("##classFilter", "Filter classes", ref _filter, 64);
         }
-        if (ClassPicker.Draw(ClassName, _filter) is { } picked) ClassName = picked;
+        if (ClassPicker.Draw(ClassName, _filter, show: ClassPicker.Point) is { } picked) ClassName = picked;
         if (EntityClasses.Problem is { } problem)
         {
             ImGui.PushStyleColor(ImGuiCol.Text, Theme.TextDim);

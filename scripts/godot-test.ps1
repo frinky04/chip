@@ -25,7 +25,10 @@ $glb = Join-Path $project "tests/out/entities.glb"
 New-Item -ItemType Directory -Force (Split-Path $glb) | Out-Null
 dotnet run --project src/Chip.Editor -v q -- --export tests/fixtures/entities.chip $glb
 if ($LASTEXITCODE -ne 0) { throw "Chip export failed" }
+$meshGlb = Join-Path $project "tests/out/mesh_entities.glb"
+dotnet run --project src/Chip.Editor -v q -- --export tests/fixtures/mesh_entities.chip $meshGlb
+if ($LASTEXITCODE -ne 0) { throw "Chip export failed" }
 
-& $Godot --headless --path $project --script res://tests/test_chip_import.gd -- --glb $glb 2>&1 | Write-Host
+& $Godot --headless --path $project --script res://tests/test_chip_import.gd -- --glb $glb --mesh-glb $meshGlb 2>&1 | Write-Host
 if ($LASTEXITCODE -ne 0) { throw "addon tests failed" }
 Write-Host "OK: addon tests passed"

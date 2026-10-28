@@ -111,8 +111,8 @@ public static class PipelineActions
         ctx.Session.Do("Import", () =>
         {
             ctx.Sel.Clear();
-            foreach (var m in result.Meshes) ctx.Sel.Add(ElementRef.Object(ctx.Doc.Add(m).Id));
-            SceneOps.AddEntities(ctx.Doc, result.Entities);
+            result.AddTo(ctx.Doc);
+            foreach (var m in result.Meshes) ctx.Sel.Add(ElementRef.Object(m.Id));
         });
         if (result.Meshes.Count > 0) ctx.Focus();
 
