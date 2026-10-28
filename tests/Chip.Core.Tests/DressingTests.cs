@@ -230,6 +230,7 @@ public class DressingTests
     public void Bevel_replaces_the_mesh_with_a_bevelled_copy_and_leaves_the_blockout_alone()
     {
         var doc = TaggedBox();
+        doc.Meshes[0].Tags = TagSet.Of("destructible");
         var level = Dress(doc, Rules(BevelAll));
         var shown = Assert.Single(level.Meshes);
         Assert.Equal(DressRole.Modified, level.Origin(shown).Role);
@@ -244,6 +245,7 @@ public class DressingTests
         Assert.Equal(CollisionMode.Only, export.Meshes[1].Collision); // collision stays the blockout box
         Assert.Equal(6, export.Meshes[1].Faces.Count);
         Assert.All(export.Meshes, m => Assert.True(m.Id > 0));
+        Assert.All(export.Meshes, m => Assert.Equal(doc.Meshes[0].Tags, m.Tags));
     }
 
     [Fact]

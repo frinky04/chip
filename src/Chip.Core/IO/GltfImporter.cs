@@ -13,8 +13,8 @@ namespace Chip.Core.IO;
 /// with its world transform baked in. Triangles, strips and fans are rebuilt into n-gons by <see cref="ImportBuilder"/>;
 /// TEXCOORD_0 becomes explicit UVs; material names resolve against the library (unknown names are kept, so they show as
 /// missing until the texture is added). Files written by Chip round-trip: <c>extras.chip_id</c> regroups a mesh with its
-/// clip/trigger nodes, <c>extras.chip_mesh</c> restores its name, Godot collision suffixes restore its
-/// <see cref="CollisionMode"/>, and empty nodes with <c>extras.chip_class</c> come back as entities.
+/// clip/trigger nodes, <c>extras.chip_mesh</c> restores its name, <c>extras.chip_tags</c> restores mesh tags, Godot collision
+/// suffixes restore its <see cref="CollisionMode"/>, and empty nodes with <c>extras.chip_class</c> come back as entities.
 /// </summary>
 public static class GltfImporter
 {
@@ -50,7 +50,7 @@ public static class GltfImporter
         var gltfMaterials = root["materials"]?.AsArray();
         var meshes = root["meshes"]?.AsArray();
         var nodes = root["nodes"]?.AsArray() ?? [];
-        var groups = new Dictionary<string, (ImportBuilder Builder, string Name, CollisionMode Collision)>();
+        var groups = new Dictionary<string, (ImportBuilder Builder, string Name, CollisionMode Collision, TagSet Tags)>();
         var order = new List<string>();
         var entities = new List<Entity>();
 
@@ -85,7 +85,7 @@ public static class GltfImporter
                 var (baseName, collision) = StripCollisionSuffix(nodeName);
                 if (!groups.TryGetValue(key, out var group))
                 {
-                    group = (new ImportBuilder(), "", CollisionMode.Default);
+                    group = (new ImportBuilder(), "", CollisionMode.Default, default);
                     order.Add(key);
                 }
                 if (tool == null)
@@ -93,9 +93,20 @@ public static class GltfImporter
                     string name = extras?["chip_mesh"]?.GetValue<string>() is { Length: > 0 } cm ? cm
                         : baseName.Length > 0 ? baseName : mesh["name"]?.GetValue<string>() ?? "imported";
                     if (extras?["chip_collision"]?.GetValue<string>() is { } cc && Enum.TryParse<CollisionMode>(cc, out var exact)) collision = exact;
-                    group = (group.Builder, name, collision ?? CollisionMode.Default);
+                    group = (group.Builder, name, collision ?? CollisionMode.Default, group.Tags);
                 }
-                else if (group.Name.Length == 0) group = (group.Builder, baseName.Length > 0 ? baseName : "imported", group.Collision);
+                else if (group.Name.Length == 0) group = (group.Builder, baseName.Length > 0 ? baseName : "imported", group.Collision, group.Tags);
+                if (extras?["chip_tags"] is { } tags)
+                {
+                    if (tags is JsonArray tagArray)
+                    {
+                        foreach (var tag in tagArray)
+                            if (tag is JsonValue value && value.TryGetValue<string>(out var text) && TagSet.IsValid(text, out _))
+                                group.Tags = group.Tags.Add(text);
+                            else warnings.Add($"{nodeName}: ignored an invalid chip_tags entry");
+                    }
+                    else warnings.Add($"{nodeName}: chip_tags must be an array");
+                }
                 groups[key] = group;
                 AddMesh(group.Builder, mesh, world, tool);
             }
@@ -178,6 +189,7 @@ public static class GltfImporter
             if (g.Builder.PolygonCount == 0) continue;
             var m = g.Builder.Build(g.Name, materials);
             m.Collision = g.Collision;
+            m.Tags = g.Tags;
             result.Meshes.Add(m);
             built[key] = m;
         }

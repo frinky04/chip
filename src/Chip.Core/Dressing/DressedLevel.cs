@@ -227,6 +227,7 @@ public sealed class DressedLevel : IMeshSet
             copy.Name = $"{o.Rule}_{source?.Name ?? "mesh"}";
             copy.Collision = CollisionMode.None;
             copy.Locked = false;
+            if (o.Role is DressRole.Modified or DressRole.Proxy && source != null) copy.Tags = source.Tags;
             doc.Meshes.Add(copy);
             if (o.Role is DressRole.Modified or DressRole.Proxy && source != null && Collides(source))
             {

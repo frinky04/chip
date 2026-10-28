@@ -52,6 +52,7 @@ public class DressingPhase2Tests
 
         var export = level.ForExport();
         Assert.Contains(export.Meshes, m => m.Collision == CollisionMode.Only && m.Faces.Count == 6); // collides as the box
+        Assert.All(export.Meshes, m => Assert.Equal(doc.Meshes[0].Tags, m.Tags));
     }
 
     [Fact]

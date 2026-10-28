@@ -33,8 +33,9 @@ public sealed record ExportResult(byte[] Data, IReadOnlyList<SideFile> SideFiles
 /// <c>extras.chip_volume</c>, faces that render but never collide to their own <c>name_surface</c> node; each carries
 /// <c>extras.chip_surface</c> (the built-in clip and trigger also <c>chip_tool</c>). Rendered surfaces' materials carry
 /// <c>extras.chip_surface</c> too.
-/// Mesh nodes carry <c>extras.chip_mesh</c>/<c>chip_id</c> (and <c>chip_remap</c>, material name to path, for the remaps
-/// they use); remapped materials carry <c>extras.chip_path</c>. Entities
+/// Mesh nodes carry <c>extras.chip_mesh</c>/<c>chip_id</c> and nonempty mesh tags as <c>chip_tags</c> (also on their surface
+/// nodes). <c>chip_remap</c> maps material names to engine paths for the remaps they use; remapped materials carry
+/// <c>extras.chip_path</c>. Entities
 /// follow as empty nodes (translation, rotation) with <c>extras = { chip_class, chip_id, chip_uid?, chip_scene?,
 /// chip_name?, properties }</c>: the class's engine scene, and the values the entity sets, typed by its class. A mesh
 /// entity's meshes are its node's children, in its space, never baked into world collision and never suffixed.
@@ -183,6 +184,7 @@ public static class GlbExporter
             };
             int before = nodes.Count;
             var meshExtras = new JsonObject { ["chip_mesh"] = mesh.Name, ["chip_id"] = mesh.Id };
+            if (!mesh.Tags.IsEmpty) meshExtras["chip_tags"] = MeshTags(mesh);
             // The suffix can't tell None from Default when the document doesn't collide; the extra can.
             if (mesh.Collision != CollisionMode.Default) meshExtras["chip_collision"] = mesh.Collision.ToString();
             if (!collisionOnly)
@@ -208,6 +210,7 @@ public static class GlbExporter
             JsonObject SurfaceExtras(Surface sf)
             {
                 var x = new JsonObject { ["chip_surface"] = sf.Name, ["chip_id"] = mesh.Id };
+                if (!mesh.Tags.IsEmpty) x["chip_tags"] = MeshTags(mesh);
                 if (sf.Name is "clip" or "trigger") x["chip_tool"] = sf.Name;
                 return x;
             }
@@ -394,6 +397,8 @@ public static class GlbExporter
             Tessellated = opt.Tessellate ? (tessBefore, tessAfter) : null,
         };
     }
+
+    static JsonArray MeshTags(PolyMesh mesh) => new(mesh.Tags.Select(t => (JsonNode)JsonValue.Create(t)!).ToArray());
 
     /// <summary>
     /// The values the entity sets, typed by its class (a v2 string "10" for a float goes out as 10). Values the class

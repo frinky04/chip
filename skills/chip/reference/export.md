@@ -42,6 +42,18 @@ level's collision, so a floor collides through them. Every kind is optional, and
 has no such nodes. When `collisionSuffixes` is on, collider node names also end in `-col`, `-colonly` or `-convcolonly`;
 read the extras and treat names as labels.
 
+## Mesh tags
+
+Object-mode tags (Ctrl+T) export as a sorted, unique string array in `node.extras.chip_tags`, for example
+`"chip_tags": ["destructible", "interactable"]`. The key is absent for an untagged mesh. Read tags from the node,
+not the glTF mesh resource. Surface and volume nodes split from that mesh repeat its tags; `chip_id` identifies
+their source. Chip restores these mesh tags on GLB reimport. Face tags are not exported.
+
+Dressing replacements (modified meshes and proxies) keep their source mesh's tags on export; added dressing
+geometry does not inherit them. Derived collision nodes marked `chip_baked` have no mesh tags, including merged
+world collision. Entities can carry tags through a manifest property (`type: "array", of: "string"`), read from
+`extras.properties.tags`.
+
 ## Entities
 
 ```json
