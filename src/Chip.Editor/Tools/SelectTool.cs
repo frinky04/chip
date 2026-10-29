@@ -448,6 +448,14 @@ public sealed class SelectTool : IViewportTool
         {
             Overlay.Line(dl, origin, v, amount.Start, now, Overlay.Faint, Theme.Px(1.5f));
             Overlay.Dot(dl, origin, v, amount.Start, hollow: true);
+            var corner = amount.Start;
+            for (int axis = 0; axis < 3; axis++)
+            {
+                float distance = Vector3.Dot(amount.Delta, g.Basis[axis]);
+                var end = corner + g.Basis[axis] * distance;
+                DrawMoveInterval(dl, origin, v, corner, end, distance, ctx.Grid, Theme.AxisU32[axis]);
+                corner = end;
+            }
         }
         if (g.SnapMark is { } mark && v.Project(mark, out var m))
         {
@@ -466,6 +474,34 @@ public sealed class SelectTool : IViewportTool
             runs = [runs[0], ($"{_typed}|", valid ? Theme.AccentU32 : Theme.AxisU32[0]), ("Enter applies", dim)];
         }
         var at = g.Mode == GizmoMode.Translate ? now : amount.Start;
-        DimensionDraw.Runs(dl, origin, v, at, runs, Theme.Px(22, 22));
+        string interval = g.Mode switch
+        {
+            GizmoMode.Translate => Labels.Measure(ctx.Grid),
+            GizmoMode.Rotate => $"{g.RotateSnapDegrees:0.##}°",
+            _ => "12.5%",
+        };
+        string snap = g.AlignTarget != null ? "Align to geometry"
+            : !ctx.Snap || g.CtrlHeld || (g.Mode == GizmoMode.Rotate && g.RotateSnapDegrees <= 0) ? "Free"
+            : g.Mode == GizmoMode.Translate ? $"{g.SnapSpace} snap" : "Snap";
+        string detail = $"{g.Orientation} axes · {snap} · Interval {interval}";
+        DimensionDraw.Runs(dl, origin, v, at, runs, Theme.Px(22, 30), detail);
+    }
+
+    static void DrawMoveInterval(ImDrawListPtr dl, Vector2 origin, ViewInfo v, Vector3 start, Vector3 end,
+        float distance, float grid, uint color)
+    {
+        if (!v.Project(start, out var a) || !v.Project(end, out var b)) return;
+        float pixels = Vector2.Distance(a, b);
+        if (pixels < Theme.Px(12)) return;
+        var normal = new Vector2(-(b - a).Y, (b - a).X) / pixels;
+        var offset = normal * Theme.Px(10);
+        uint guide = (color & 0x00FFFFFF) | 0xB0000000;
+        dl.AddLine(origin + a + offset, origin + b + offset, guide, Theme.Scale);
+        void Tick(Vector2 p, float radius) => dl.AddLine(origin + p + offset - normal * radius,
+            origin + p + offset + normal * radius, guide, Theme.Scale);
+        Tick(a, Theme.Px(4));
+        Tick(b, Theme.Px(4));
+        foreach (float d in DragReadout.IntervalMarks(distance, grid, pixels / Theme.Scale))
+            if (v.Project(Vector3.Lerp(start, end, d / distance), out var tick)) Tick(tick, Theme.Px(2));
     }
 }

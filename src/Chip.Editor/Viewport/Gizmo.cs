@@ -126,7 +126,7 @@ public sealed class Gizmo
         _ => (_basis[0], _basis[1]),
     };
 
-    static float WorldLength(ViewInfo v, Vector3 pivot)
+    internal static float WorldLength(ViewInfo v, Vector3 pivot)
     {
         var dir = Vector3.Normalize(pivot - v.Eye);
         var side = Vector3.Cross(dir, Vector3.UnitY);
@@ -148,16 +148,17 @@ public sealed class Gizmo
         if (Mode == GizmoMode.Rotate)
         {
             Handle best = Handle.None;
-            float bestD = PickPx;
-            var viewDir = Vector3.Normalize(pivot - v.Eye);
-            for (int a = 0; a < 3; a++)
+            float bestD = PickPx, bestDepth = float.PositiveInfinity;
+            foreach (var segment in RingSegments(v, pivot, len))
             {
-                if (MathF.Abs(Vector3.Dot(_basis[a], viewDir)) < 0.02f) continue; // ring seen edge-on (2D views): a line through the pivot
-                var pts = Ring(v, pivot, a, len);
-                for (int i = 0; i + 1 < pts.Count; i++)
+                float d = Picker.DistanceToSegment(mouse, segment.A, segment.B, out _);
+                // At a crossing, choose the front stroke rather than the last axis in enum order.
+                if (d < PickPx && (d < bestD - 1 * Theme.Scale
+                    || (MathF.Abs(d - bestD) <= Theme.Scale && segment.Depth < bestDepth)))
                 {
-                    float d = Picker.DistanceToSegment(mouse, pts[i], pts[i + 1], out _);
-                    if (d < bestD) { bestD = d; best = Handle.X + a; }
+                    bestD = d;
+                    bestDepth = segment.Depth;
+                    best = Handle.X + segment.Axis;
                 }
             }
             return best;
@@ -170,13 +171,25 @@ public sealed class Gizmo
                 if (PlaneQuad(v, pivot, u, w, len) is { } quad && PointInQuad(mouse, quad)) return Handle.PlaneYZ + a;
             }
 
+        Handle nearest = Handle.None;
+        float nearestDistance = PickPx, nearestDepth = float.PositiveInfinity;
+        var forward = v.ScreenRay(c).Dir;
         for (int a = 0; a < 3; a++)
         {
             if (!v.Project(pivot + _basis[a] * len, out var tip)) continue;
-            if (Vector2.Distance(c, tip) < 12 * Theme.Scale) continue; // axis points at the camera
-            if (Picker.DistanceToSegment(mouse, c, tip, out _) < PickPx) return Handle.X + a;
+            if (Vector2.Distance(c, tip) < 12 * Theme.Scale) continue;
+            if (Mode == GizmoMode.Translate) tip += Vector2.Normalize(tip - c) * 9 * Theme.Scale;
+            float d = Picker.DistanceToSegment(mouse, c, tip, out _);
+            float depth = Vector3.Dot(_basis[a], forward);
+            if (d < PickPx && (d < nearestDistance - Theme.Scale
+                || (MathF.Abs(d - nearestDistance) <= Theme.Scale && depth < nearestDepth)))
+            {
+                nearest = Handle.X + a;
+                nearestDistance = d;
+                nearestDepth = depth;
+            }
         }
-        return Handle.None;
+        return nearest;
     }
 
     /// <summary>Handle for a temporary-pivot drag: any handle, or the pivot dot of the rotate gizmo.</summary>
@@ -198,6 +211,7 @@ public sealed class Gizmo
         Amount = new DragAmount(_pivot, Vector3.Zero, 0, Vector3.One);
         _startMouse = mouse;
         _angle = 0;
+        _snapped = false;
         AlignTarget = null;
         _prevScreenAngle = ScreenAngle(v, mouse);
         var ray = v.ScreenRay(mouse);
@@ -220,6 +234,7 @@ public sealed class Gizmo
     public (Matrix4x4 M, bool Rigid)? Exact(IReadOnlyList<float> values)
     {
         if (!Dragging || values.Count == 0) return null;
+        _snapped = false;
         switch (Mode)
         {
             case GizmoMode.Translate:
@@ -469,16 +484,30 @@ public sealed class Gizmo
         return true;
     }
 
-    List<Vector2> Ring(ViewInfo v, Vector3 pivot, int axis, float radius)
+    internal readonly record struct RingSegment(Vector2 A, Vector2 B, int Axis, float Depth);
+
+    // One common geometry path for painting and picking. Whole-ring painter ordering cannot
+    // represent intersecting circles: each small segment must be sorted in camera depth.
+    internal List<RingSegment> RingSegments(ViewInfo v, Vector3 pivot, float radius)
     {
-        var (u, w) = PlaneAxes(axis);
-        var pts = new List<Vector2>(65);
-        for (int i = 0; i <= 64; i++)
+        var result = new List<RingSegment>(288);
+        v.Project(pivot, out var center);
+        var forward = v.IsOrthographic ? v.ScreenRay(center).Dir : Vector3.Normalize(pivot - v.Eye);
+        for (int axis = 0; axis < 3; axis++)
         {
-            float t = i / 64f * MathF.Tau;
-            if (v.Project(pivot + (u * MathF.Cos(t) + w * MathF.Sin(t)) * radius, out var s)) pts.Add(s);
+            if (MathF.Abs(Vector3.Dot(_basis[axis], forward)) < 0.02f) continue;
+            var (u, w) = PlaneAxes(axis);
+            for (int i = 0; i < 96; i++)
+            {
+                float t0 = i / 96f * MathF.Tau, t1 = (i + 1) / 96f * MathF.Tau;
+                var a = (u * MathF.Cos(t0) + w * MathF.Sin(t0)) * radius;
+                var b = (u * MathF.Cos(t1) + w * MathF.Sin(t1)) * radius;
+                if (v.Project(pivot + a, out var pa) && v.Project(pivot + b, out var pb))
+                    result.Add(new(pa, pb, axis, Vector3.Dot((a + b) * 0.5f, forward)));
+            }
         }
-        return pts;
+        result.Sort((a, b) => b.Depth.CompareTo(a.Depth));
+        return result;
     }
 
     const uint Backing = 0xE6100F0E;
@@ -486,7 +515,7 @@ public sealed class Gizmo
 
     bool Lit(Handle h) => Active == h || PivotHandle == h || (!Dragging && !PivotDragging && Hover == h);
 
-    /// <summary>Every stroke sits on a dark backing so handles stay legible over orange and grey dev textures.</summary>
+    /// <summary>Fine, depth-ordered strokes with a narrow contrast halo over scene textures.</summary>
     public void Draw(ImDrawListPtr dl, Vector2 origin, ViewInfo v, Vector3 pivot)
     {
         if (AlignTarget is { } at && v.Project(at, out var ap)) DrawAlignMarker(dl, origin + ap);
@@ -497,58 +526,65 @@ public sealed class Gizmo
 
         if (Mode == GizmoMode.Rotate)
         {
-            for (int a = 0; a < 3; a++)
+            foreach (var segment in RingSegments(v, pivot, len))
             {
-                var pts = Ring(v, pivot, a, len).Select(p => p + origin).ToArray();
-                if (pts.Length < 2) continue;
-                float w = (Active == Handle.X + a ? 3f : 2f) * k;
-                dl.AddPolyline(ref pts[0], pts.Length, Backing, ImDrawFlags.None, w + 3 * k);
-                dl.AddPolyline(ref pts[0], pts.Length, Col(Handle.X + a, a), ImDrawFlags.None, w);
+                var h = Handle.X + segment.Axis;
+                bool rear = segment.Depth > len * 0.01f;
+                uint col = Col(h, segment.Axis);
+                if (rear) col = (col & 0x00FFFFFF) | 0x80000000;
+                float width = (Lit(h) ? 2.6f : 1.8f) * k;
+                var a = origin + segment.A;
+                var b = origin + segment.B;
+                dl.AddLine(a, b, rear ? 0x60100F0E : Backing, width + 1.2f * k);
+                dl.AddLine(a, b, col, width);
             }
-            dl.AddCircleFilled(origin + c, 5 * k, Backing);
-            dl.AddCircleFilled(origin + c, 3 * k, Theme.HoverU32);
+            dl.AddCircleFilled(origin + c, 3 * k, Backing);
+            dl.AddCircleFilled(origin + c, 1.5f * k, 0xFFD0D0D0);
             return;
         }
 
+        var forward = v.ScreenRay(c).Dir;
+        var axes = Enumerable.Range(0, 3).OrderByDescending(a => Vector3.Dot(_basis[a], forward)).ToArray();
         if (Mode == GizmoMode.Translate)
-            for (int a = 0; a < 3; a++)
+            foreach (int a in Enumerable.Range(0, 3).OrderByDescending(a =>
+                { var (u, w) = PlaneAxes(a); return Vector3.Dot(u + w, forward); }))
             {
                 var (u, w) = PlaneAxes(a);
                 if (PlaneQuad(v, pivot, u, w, len) is not { } q) continue;
                 uint col = Col(Handle.PlaneYZ + a, a);
                 Vector2 q0 = origin + q[0], q1 = origin + q[1], q2 = origin + q[2], q3 = origin + q[3];
-                dl.AddQuadFilled(q0, q1, q2, q3, (col & 0x00FFFFFF) | 0x70000000);
-                dl.AddQuad(q0, q1, q2, q3, Backing, 3.5f * k);
-                dl.AddQuad(q0, q1, q2, q3, col, 1.5f * k);
+                dl.AddQuadFilled(q0, q1, q2, q3, (col & 0x00FFFFFF) | (Lit(Handle.PlaneYZ + a) ? 0x50000000u : 0x20000000u));
+                dl.AddQuad(q0, q1, q2, q3, Backing, 2.6f * k);
+                dl.AddQuad(q0, q1, q2, q3, col, 1.4f * k);
             }
 
-        for (int a = 0; a < 3; a++)
+        foreach (int a in axes)
         {
             if (!v.Project(pivot + _basis[a] * len, out var tip) || Vector2.Distance(c, tip) < 12 * k) continue;
             uint col = Col(Handle.X + a, a);
             var dir = Vector2.Normalize(tip - c);
             var perp = new Vector2(-dir.Y, dir.X);
             Vector2 s0 = origin + c, s1 = origin + tip;
-            dl.AddLine(s0, s1, Backing, 5.5f * k);
-            dl.AddLine(s0, s1, col, 2.5f * k);
+            dl.AddLine(s0, s1, Backing, 3.8f * k);
+            dl.AddLine(s0, s1, col, (Lit(Handle.X + a) ? 2.6f : 2f) * k);
             if (Mode == GizmoMode.Translate)
             {
-                Vector2 t0 = s1 + dir * 13 * k, t1 = s1 + perp * 6 * k, t2 = s1 - perp * 6 * k;
-                dl.AddTriangle(t0, t1, t2, Backing, 3f * k);
+                Vector2 t0 = s1 + dir * 9 * k, t1 = s1 + perp * 3.5f * k, t2 = s1 - perp * 3.5f * k;
+                dl.AddTriangle(t0, t1, t2, Backing, 1.5f * k);
                 dl.AddTriangleFilled(t0, t1, t2, col);
             }
             else
             {
-                dl.AddRectFilled(s1 - new Vector2(7 * k), s1 + new Vector2(7 * k), Backing);
-                dl.AddRectFilled(s1 - new Vector2(5 * k), s1 + new Vector2(5 * k), col);
+                dl.AddRectFilled(s1 - new Vector2(4.5f * k), s1 + new Vector2(4.5f * k), Backing);
+                dl.AddRectFilled(s1 - new Vector2(3.5f * k), s1 + new Vector2(3.5f * k), col);
             }
             var label = s1 + dir * 24 * k - ImGui.CalcTextSize(AxisNames[a]) * 0.5f;
             dl.AddText(label + new Vector2(k), Backing, AxisNames[a]);
             dl.AddText(label, col, AxisNames[a]);
         }
         uint cc = Lit(Handle.Center) ? Theme.HoverU32 : 0xFFE8E8E8;
-        dl.AddRect(origin + c - new Vector2(7 * k), origin + c + new Vector2(7 * k), Backing, 0, ImDrawFlags.None, 4f * k);
-        dl.AddRect(origin + c - new Vector2(6 * k), origin + c + new Vector2(6 * k), cc, 0, ImDrawFlags.None, 2f * k);
+        dl.AddRect(origin + c - new Vector2(7 * k), origin + c + new Vector2(7 * k), Backing, 0, ImDrawFlags.None, 2.8f * k);
+        dl.AddRect(origin + c - new Vector2(6 * k), origin + c + new Vector2(6 * k), cc, 0, ImDrawFlags.None, 1.6f * k);
     }
 
     /// <summary>Diamond on the element a CapsLock drag is aligning to.</summary>

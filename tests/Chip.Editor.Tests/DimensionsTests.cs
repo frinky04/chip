@@ -204,18 +204,42 @@ public class DimensionsTests
     {
         var basis = new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
         var amount = new Gizmo.DragAmount(Vector3.Zero, new Vector3(1.25f, 0, 0), 0, Vector3.One);
-        Assert.Equal([("Move", -1), ("X +1.25 m", 0)],
+        Assert.Equal([("Move", -1), ("X: +1.25 m", 0)],
             DragReadout.Describe(GizmoMode.Translate, Handle.X, basis, amount, GestureKind.Transform, Vector3.One));
 
         amount = amount with { Delta = new Vector3(3, 0, -4) };
-        Assert.Equal([("Extrude", -1), ("X +3 m", 0), ("Z −4 m", 2), ("5 m in all", -1)],
+        Assert.Equal([("Extrude", -1), ("X: +3 m", 0), ("Z: −4 m", 2), ("Distance 5 m", -1)],
             DragReadout.Describe(GizmoMode.Translate, Handle.PlaneXZ, basis, amount, GestureKind.Extrude, Vector3.One));
 
-        Assert.Equal([("Rotate", -1), ("+90°", 1)],
+        Assert.Equal([("Rotate", -1), ("Y +90°", 1)],
             DragReadout.Describe(GizmoMode.Rotate, Handle.Y, basis, amount with { Degrees = 90 }, GestureKind.Transform, Vector3.One));
 
         Assert.Equal([("Scale", -1), ("×2", 1), ("2 m → 4 m", 1)],
             DragReadout.Describe(GizmoMode.Scale, Handle.Y, basis, amount with { Scale = new Vector3(1, 2, 1) }, GestureKind.Transform, new Vector3(1, 2, 3)));
+    }
+
+    [Fact]
+    public void Plane_readout_keeps_both_coordinates_visible_at_zero()
+    {
+        var runs = DragReadout.Describe(GizmoMode.Translate, Handle.PlaneXZ,
+            [Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ],
+            new(Vector3.Zero, Vector3.Zero, 0, Vector3.One), GestureKind.Transform, Vector3.One);
+        Assert.Contains(("X: +0 cm", 0), runs);
+        Assert.Contains(("Z: +0 cm", 2), runs);
+        Assert.DoesNotContain(runs, r => r.Axis == 1);
+    }
+
+    [Fact]
+    public void Interval_ticks_are_signed_grid_multiples_and_thin_dense_rulers()
+    {
+        Assert.Equal([0.25f, 0.5f, 0.75f], DragReadout.IntervalMarks(1, 0.25f, 100));
+        Assert.Equal([-0.25f, -0.5f, -0.75f], DragReadout.IntervalMarks(-1, 0.25f, 100));
+        var dense = DragReadout.IntervalMarks(1000, 0.01f, 500).ToArray();
+        Assert.InRange(dense.Length, 1, 64);
+        Assert.All(dense, d => Assert.True(MathF.Abs(d / 0.01f - MathF.Round(d / 0.01f)) < 0.01f));
+        Assert.Empty(DragReadout.IntervalMarks(1, 0.25f, 5));
+        Assert.Empty(DragReadout.IntervalMarks(1, 0, 100));
+        Assert.Empty(DragReadout.IntervalMarks(float.PositiveInfinity, 1, 100));
     }
 
     [Fact]

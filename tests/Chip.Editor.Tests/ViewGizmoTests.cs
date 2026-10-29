@@ -20,6 +20,65 @@ public class ViewGizmoTests
         Assert.True(Vector3.Distance(expected, actual) < tol, $"expected {expected}, got {actual}");
 
     [Fact]
+    public void Rotation_strokes_sort_back_to_front_and_pick_the_front_ring_at_crossings()
+    {
+        var camera = new Camera { Position = new Vector3(5, 4, 6) };
+        camera.LookAt(Vector3.Zero);
+        var view = camera.View(new Vector2(1000));
+        var gizmo = new Gizmo { Mode = GizmoMode.Rotate };
+        float radius = Gizmo.WorldLength(view, Vector3.Zero);
+        var segments = gizmo.RingSegments(view, Vector3.Zero, radius);
+        Assert.Equal(288, segments.Count);
+        Assert.True(segments.Zip(segments.Skip(1)).All(pair => pair.First.Depth >= pair.Second.Depth));
+        int crossings = 0;
+        foreach (var a in segments)
+        foreach (var b in segments)
+        {
+            if (a.Axis >= b.Axis || MathF.Abs(a.Depth - b.Depth) < radius * 0.3f) continue;
+            var r = a.B - a.A;
+            var t = b.B - b.A;
+            float Cross(Vector2 x, Vector2 y) => x.X * y.Y - x.Y * y.X;
+            float denominator = Cross(r, t);
+            if (MathF.Abs(denominator) < 1e-5f) continue;
+            float u = Cross(b.A - a.A, t) / denominator;
+            float w = Cross(b.A - a.A, r) / denominator;
+            if (u < 0 || u > 1 || w < 0 || w > 1) continue;
+            var mouse = a.A + r * u;
+            Assert.Equal(Handle.X + (a.Depth < b.Depth ? a.Axis : b.Axis), gizmo.HitTest(view, Vector3.Zero, mouse));
+            crossings++;
+        }
+        Assert.True(crossings > 0, "Exercise projected crossings with distinct front and rear depths.");
+    }
+
+    [Fact]
+    public void Orthographic_rotation_only_draws_and_picks_the_face_on_ring()
+    {
+        var gizmo = new Gizmo { Mode = GizmoMode.Rotate };
+        var view = Front();
+        var segments = gizmo.RingSegments(view, Vector3.Zero, Gizmo.WorldLength(view, Vector3.Zero));
+        Assert.Equal(96, segments.Count);
+        Assert.All(segments, s => Assert.Equal(2, s.Axis));
+        Assert.Equal(Handle.Z, gizmo.HitTest(view, Vector3.Zero, Center + new Vector2(96, 0)));
+        Assert.Equal(Handle.None, gizmo.HitTest(view, Vector3.Zero, Center));
+    }
+
+    [Fact]
+    public void Exact_entry_and_new_drags_do_not_retain_a_stale_world_snap_marker()
+    {
+        var gizmo = new Gizmo();
+        var view = Front();
+        gizmo.BeginDrag(Handle.X, view, Vector3.Zero, Center);
+        gizmo.DragTransform(view, Center + new Vector2(100, 0), 0.25f, true);
+        Assert.NotNull(gizmo.SnapMark);
+        gizmo.Exact([1.125f]);
+        Assert.Null(gizmo.SnapMark);
+        gizmo.DragTransform(view, Center + new Vector2(100, 0), 0.25f, true);
+        gizmo.EndDrag();
+        gizmo.BeginDrag(Handle.X, view, Vector3.Zero, Center);
+        Assert.Null(gizmo.SnapMark);
+    }
+
+    [Fact]
     public void Invalid_or_offscreen_mouse_cannot_hover_a_gizmo()
     {
         var camera = new Camera { Position = new Vector3(5, 4, 5) };

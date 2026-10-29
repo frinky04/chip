@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Chip.Editor.Tests" />
     <ProjectReference Include="..\Chip.Core\Chip.Core.csproj" />
   </ItemGroup>
 

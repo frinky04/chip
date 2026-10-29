@@ -28,17 +28,21 @@ public static class DragReadout
                 for (int i = 0; i < 3; i++)
                 {
                     float c = Vector3.Dot(amount.Delta, basis[i]);
-                    if (MathF.Abs(c) < 5e-5f && i != handleAxis) continue;
-                    runs.Add(($"{AxisNames[i]} {Labels.SignedMeasure(c)}", i));
+                    bool constrained = i == handleAxis || handle == Handle.Center
+                        || (handle == Handle.PlaneYZ && i != 0)
+                        || (handle == Handle.PlaneXZ && i != 1)
+                        || (handle == Handle.PlaneXY && i != 2);
+                    if (MathF.Abs(c) < 5e-5f && !constrained) continue;
+                    runs.Add(($"{AxisNames[i]}: {Labels.SignedMeasure(c)}", i));
                     moved++;
                 }
                 if (moved == 0) runs.Add((Labels.Measure(0), -1));
-                else if (moved > 1) runs.Add(($"{Labels.Length(amount.Delta.Length())} in all", -1)); // a diagonal: the centimetre is enough
+                else if (moved > 1) runs.Add(($"Distance {Labels.Measure(amount.Delta.Length())}", -1));
                 break;
             }
             case GizmoMode.Rotate:
                 runs.Add(("Rotate", -1));
-                runs.Add(($"{(Math.Round(amount.Degrees, 2) < 0 ? "−" : "+")}{Math.Abs(Math.Round(amount.Degrees, 2)):0.##}°", handleAxis));
+                runs.Add(($"{(handleAxis >= 0 ? AxisNames[handleAxis] + " " : "")}{(Math.Round(amount.Degrees, 2) < 0 ? "−" : "+")}{Math.Abs(Math.Round(amount.Degrees, 2)):0.##}°", handleAxis));
                 break;
             default:
             {
@@ -58,6 +62,19 @@ public static class DragReadout
             }
         }
         return runs;
+    }
+
+    /// <summary>Interior ruler ticks, in metres from the drag start. Thin dense intervals to at most 64 marks.</summary>
+    public static IEnumerable<float> IntervalMarks(float distance, float interval, float pixels)
+    {
+        double length = Math.Abs(distance);
+        if (!double.IsFinite(length) || length < 1e-6 || !float.IsFinite(interval) || interval <= 0
+            || !float.IsFinite(pixels) || pixels < 12) yield break;
+        double count = length / interval;
+        double stride = Math.Max(1, Math.Ceiling(Math.Max(count / 64, count * 8 / pixels)));
+        double step = interval * stride;
+        for (int i = 1; i <= 64 && i * step < length - 1e-6; i++)
+            yield return (float)(Math.Sign(distance) * i * step);
     }
 
     /// <summary>What a typed value means for this gizmo mode.</summary>

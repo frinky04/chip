@@ -342,12 +342,17 @@ public static class DimensionDraw
     }
 
     /// <summary>A tag of coloured pieces (the drag readout), anchored beside a point and kept on screen.</summary>
-    public static void Runs(ImDrawListPtr dl, Vector2 origin, ViewInfo v, Vector3 anchor, IReadOnlyList<(string Text, uint Color)> runs, Vector2 offset)
+    public static void Runs(ImDrawListPtr dl, Vector2 origin, ViewInfo v, Vector3 anchor, IReadOnlyList<(string Text, uint Color)> runs, Vector2 offset, string? detail = null)
     {
         if (!v.Project(anchor, out var a)) return;
         float gap = Theme.Px(6);
         var size = new Vector2(runs.Sum(r => ImGui.CalcTextSize(r.Text).X) + gap * (runs.Count - 1), ImGui.GetTextLineHeight());
-        var pad = Theme.Px(7, 4);
+        if (detail != null)
+        {
+            size.X = MathF.Max(size.X, ImGui.CalcTextSize(detail).X);
+            size.Y += ImGui.GetTextLineHeight() + Theme.Px(5);
+        }
+        var pad = Theme.Px(8, 6);
         var pos = Vector2.Clamp(a + offset, pad + Theme.Px(2, 2), Vector2.Max(pad + Theme.Px(2, 2), v.Size - size - pad - Theme.Px(2, 2)));
         dl.AddRectFilled(origin + pos - pad, origin + pos + size + pad, Tag, Theme.Px(3));
         float x = pos.X;
@@ -356,5 +361,8 @@ public static class DimensionDraw
             dl.AddText(origin + new Vector2(x, pos.Y), color, text);
             x += ImGui.CalcTextSize(text).X + gap;
         }
+        if (detail != null)
+            dl.AddText(origin + pos + new Vector2(0, ImGui.GetTextLineHeight() + Theme.Px(5)),
+                ImGui.ColorConvertFloat4ToU32(Theme.TextDim), detail);
     }
 }
