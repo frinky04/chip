@@ -116,9 +116,18 @@ public sealed class EntityIoSection : IInspectorSection
             ImGui.EndPopup();
             if (_addOn != null) ImGui.OpenPopup("##addtarget");
         }
-        if (_addOn != null && _editor.TargetMenuPopup(ctx, e, "##addtarget", null) is { } target)
+        // Capture the output before the popup closes and clears the pending menu state.
+        var addOn = _addOn;
+        if (addOn != null && _editor.TargetMenuPopup(ctx, e, "##addtarget", null, () =>
+            LogicFeature.Picker.Start(ctx, $"io:{e.Id}/add", "an entity with inputs",
+                other => other.Id != e.Id && EntityClasses.Get(other.ClassName).Inputs.Count > 0,
+                other =>
+                {
+                    if (ConnectionEditor.Add(ctx, e, addOn, new ConnectionTarget(TargetKind.Entity, other.Id)) is { } added)
+                        _out = (e.Id, added);
+                })) is { } target)
         {
-            if (ConnectionEditor.Add(ctx, e, _addOn, target) is { } added) _out = (e.Id, added);
+            if (ConnectionEditor.Add(ctx, e, addOn, target) is { } added) _out = (e.Id, added);
             _addOn = null;
         }
         else if (_addOn != null && !ImGui.IsPopupOpen("##addtarget")) _addOn = null;

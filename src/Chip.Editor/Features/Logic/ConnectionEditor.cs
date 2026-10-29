@@ -155,11 +155,20 @@ public sealed class ConnectionEditor
         ImGui.EndCombo();
     }
 
-    /// <summary>The target menu in a popup opened with <c>ImGui.OpenPopup(id)</c>; returns the pick, closing it.</summary>
-    public ConnectionTarget? TargetMenuPopup(EditorContext ctx, Entity e, string id, ConnectionTarget? current)
+    /// <summary>The target menu in a popup, with an option to close it and pick in the viewport instead.</summary>
+    public ConnectionTarget? TargetMenuPopup(EditorContext ctx, Entity e, string id, ConnectionTarget? current, Action pickInViewport)
     {
         if (!ImGui.BeginPopup(id)) return null;
         if (ImGui.IsWindowAppearing()) _filter = "";
+        if (ImGui.Selectable("Pick target in viewport…"))
+        {
+            ImGui.CloseCurrentPopup();
+            pickInViewport();
+            ImGui.EndPopup();
+            return null;
+        }
+        Tip("Use the eyedropper to choose an entity with inputs");
+        ImGui.Separator();
         var picked = TargetMenu(ctx, e, current);
         if (picked != null) ImGui.CloseCurrentPopup();
         ImGui.EndPopup();
