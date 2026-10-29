@@ -37,7 +37,13 @@ public sealed class Navigator
     {
         var io = ImGui.GetIO();
         var cam = ctx.Camera;
-        return cam.IsOrtho ? UpdateOrtho(ctx, cam, io) : UpdatePerspective(ctx, cam, io, dt);
+        bool wasActive = Active;
+        bool navigating = cam.IsOrtho ? UpdateOrtho(ctx, cam, io) : UpdatePerspective(ctx, cam, io, dt);
+        // RMB/MMB don't focus an ImGui window automatically. Release text inputs as soon
+        // as navigation starts, including wheel zoom/dolly, so movement keys can't edit them.
+        if (!wasActive && (Active || (ctx.ViewportHovered && io.MouseWheel != 0)))
+            ImGui.SetWindowFocus();
+        return navigating;
     }
 
     bool UpdateOrtho(EditorContext ctx, Camera cam, ImGuiIOPtr io)

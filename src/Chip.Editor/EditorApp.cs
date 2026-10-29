@@ -90,6 +90,11 @@ public sealed partial class EditorApp : IDisposable
         UpdateUiScale(); // between frames: may rebuild the font atlas
         Ctx.SyncTexelDensity();
         _imgui.Update(dt);
+        // Raw rectangle hover checks bypass NoMouse. Hide the position during UI submission,
+        // after the backend has calculated MouseDelta, and restore it before ending the frame.
+        bool hideMouse = _nav.Flying;
+        var backendMousePos = ImGui.GetIO().MousePos;
+        if (hideMouse) ImGui.GetIO().MousePos = new Vector2(-float.MaxValue);
         // Capture drags: the backend re-reads the real mouse every frame, so hold the injected button after it has.
         if (_shotButtonHeld) ImGui.GetIO().MouseDown[0] = true;
         var bg = Theme.Bg;
@@ -127,6 +132,7 @@ public sealed partial class EditorApp : IDisposable
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _captureFbo);
         _gl.Viewport(0, 0, (uint)fb.X, (uint)fb.Y);
         if (_captureFbo != 0) _gl.Clear(ClearBufferMask.ColorBufferBit);
+        if (hideMouse) ImGui.GetIO().MousePos = backendMousePos;
         _imgui.Render();
         _bench?.Mark("imgui");
     }
@@ -156,6 +162,11 @@ public sealed partial class EditorApp : IDisposable
 
     void SetCursorCaptured(bool captured)
     {
+        // Keep relative motion and button/key state for navigation, but stop ImGui hit-testing
+        // the invisible cursor against panels. NoMouse is applied by the next NewFrame.
+        var io = ImGui.GetIO();
+        if (captured) io.ConfigFlags |= ImGuiConfigFlags.NoMouse;
+        else io.ConfigFlags &= ~ImGuiConfigFlags.NoMouse;
         if (_input.Mice.Count > 0) _input.Mice[0].Cursor.CursorMode = captured ? CursorMode.Raw : CursorMode.Normal;
     }
 
