@@ -138,6 +138,10 @@ public sealed class Gizmo
 
     public Handle HitTest(ViewInfo v, Vector3 pivot, Vector2 mouse)
     {
+        // Hidden/unavailable ImGui cursors use extreme coordinates that can overflow the
+        // plane hit-test arithmetic. Only positions inside this viewport can hover a handle.
+        if (!float.IsFinite(mouse.X) || !float.IsFinite(mouse.Y)
+            || mouse.X < 0 || mouse.Y < 0 || mouse.X >= v.Size.X || mouse.Y >= v.Size.Y) return Handle.None;
         if (!v.Project(pivot, out var c)) return Handle.None;
         float len = WorldLength(v, pivot);
         if (Mode != GizmoMode.Rotate && Vector2.Distance(mouse, c) < PickPx + 2) return Handle.Center;

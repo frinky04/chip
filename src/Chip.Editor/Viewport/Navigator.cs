@@ -32,7 +32,7 @@ public sealed class Navigator
         commands.AddReference("Camera", "MMB", "pan");
     }
 
-    /// <summary>Runs one frame. Returns true while a navigation gesture owns the mouse (tools should not update).</summary>
+    /// <summary>Runs one frame. Returns true while navigation owns the mouse, including its release frame.</summary>
     public bool Update(EditorContext ctx, float dt)
     {
         var io = ImGui.GetIO();
@@ -43,7 +43,9 @@ public sealed class Navigator
         // as navigation starts, including wheel zoom/dolly, so movement keys can't edit them.
         if (!wasActive && (Active || (ctx.ViewportHovered && io.MouseWheel != 0)))
             ImGui.SetWindowFocus();
-        return navigating;
+        // The host still hides the mouse on the release frame. Give tools the mouse back
+        // next frame, after the backend has restored its position and normal hit-testing.
+        return wasActive || navigating;
     }
 
     bool UpdateOrtho(EditorContext ctx, Camera cam, ImGuiIOPtr io)

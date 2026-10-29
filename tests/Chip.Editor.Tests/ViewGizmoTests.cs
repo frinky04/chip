@@ -20,6 +20,29 @@ public class ViewGizmoTests
         Assert.True(Vector3.Distance(expected, actual) < tol, $"expected {expected}, got {actual}");
 
     [Fact]
+    public void Invalid_or_offscreen_mouse_cannot_hover_a_gizmo()
+    {
+        var camera = new Camera { Position = new Vector3(5, 4, 5) };
+        camera.LookAt(Vector3.Zero);
+        var view = camera.View(new Vector2(1000, 1000));
+        var gizmo = new Gizmo();
+        foreach (var mouse in new[]
+        {
+            new Vector2(-float.MaxValue), // ImGui's hidden cursor position
+            new Vector2(float.MaxValue),
+            new Vector2(float.NaN, 500),
+            new Vector2(500, float.PositiveInfinity),
+            new Vector2(-1, 500),
+        })
+        {
+            Assert.Equal(Handle.None, gizmo.HitTest(view, Vector3.Zero, mouse));
+            Assert.Equal(Handle.None, gizmo.PivotHitTest(view, Vector3.Zero, mouse));
+        }
+        view.Project(Vector3.Zero, out var center);
+        Assert.Equal(Handle.Center, gizmo.HitTest(view, Vector3.Zero, center));
+    }
+
+    [Fact]
     public void Axis_drag_snaps_to_the_grid_and_ctrl_bypasses_it()
     {
         var g = new Gizmo();

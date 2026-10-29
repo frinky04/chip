@@ -78,6 +78,37 @@ public sealed class NavigatorTests : IDisposable
     }
 
     [Fact]
+    public void Releasing_flight_consumes_the_last_frame_with_a_hidden_mouse()
+    {
+        var ctx = RegistryTests.Headless();
+        ctx.ViewportSize = new Vector2(500, 600);
+        ctx.ViewportHovered = true;
+        var nav = new Navigator();
+        var io = ImGui.GetIO();
+        nav.CaptureCursor = captured =>
+        {
+            if (captured) io.ConfigFlags |= ImGuiConfigFlags.NoMouse;
+            else io.ConfigFlags &= ~ImGuiConfigFlags.NoMouse;
+        };
+        Frame(() => { });
+        io.AddMousePosEvent(500, 300);
+        io.AddMouseButtonEvent(1, true);
+        Frame(() => Assert.True(nav.Update(ctx, 1f / 60)));
+        Assert.True(nav.Flying);
+
+        ctx.ViewportHovered = false;
+        ctx.Mouse = new Vector2(-float.MaxValue);
+        io.AddMouseButtonEvent(1, false);
+        Frame(() => Assert.True(nav.Update(ctx, 1f / 60)), hideMouse: true);
+        Assert.False(nav.Active);
+        Assert.False(io.ConfigFlags.HasFlag(ImGuiConfigFlags.NoMouse));
+
+        ctx.ViewportHovered = true;
+        ctx.Mouse = new Vector2(200, 300);
+        Frame(() => Assert.False(nav.Update(ctx, 1f / 60)));
+    }
+
+    [Fact]
     public void NoMouse_suppresses_panel_hover_but_preserves_navigation_input()
     {
         var io = ImGui.GetIO();
