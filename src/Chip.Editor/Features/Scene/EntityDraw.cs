@@ -27,13 +27,9 @@ public enum EntityLook { Normal, Hovered, Selected, Ghost }
 /// </summary>
 public static class EntityDraw
 {
-    // Icons.Text creates a string on each call. Entity glyphs repeat hundreds of times per frame.
-    static readonly Dictionary<Icon, string> Glyphs = new[] { Icon.User, Icon.Bulb, Icon.Lamp, Icon.Target, Icon.Box, Icon.Flag, Icon.MapPin }
-        .ToDictionary(icon => icon, Icons.Text);
-
     static void DrawGlyph(ImDrawListPtr dl, Icon icon, Vector2 center, uint color)
     {
-        string text = Glyphs[icon];
+        string text = Icons.Text(icon);
         ImGui.PushFont(Fonts.Icons);
         var size = ImGui.CalcTextSize(text);
         ImGui.PopFont();
@@ -43,7 +39,27 @@ public static class EntityDraw
 
     const uint Shadow = 0xE6100F0E;
 
-    public static (Icon Icon, uint Color) Style(string className) => className switch
+    // Styles by class name, rebuilt when the classes change or the atlas gains a manifest's icons.
+    static readonly Dictionary<string, (Icon, uint)> Styles = [];
+    static (int Classes, int Icons) _stylesAt = (-1, -1);
+
+    /// <summary>
+    /// The class's glyph and colour: the manifest's <c>"icon"</c> and <c>"color"</c> when it gives them, else the
+    /// built-in look for the well-known class names, else a box.
+    /// </summary>
+    public static (Icon Icon, uint Color) Style(string className)
+    {
+        if (_stylesAt != (EntityClasses.Revision, Icons.Revision)) { Styles.Clear(); _stylesAt = (EntityClasses.Revision, Icons.Revision); }
+        if (Styles.TryGetValue(className, out var style)) return style;
+        var (icon, col) = DefaultStyle(className);
+        var cls = EntityClasses.Current.Find(className);
+        // An icon the atlas doesn't hold yet draws as the default for a frame; the rebuild bumps Icons.Revision.
+        if (cls?.Icon is { } name && Icons.Named(name) is { } named) icon = named;
+        if (cls?.Color is { } c) col = ImGui.ColorConvertFloat4ToU32(new Vector4(c, 1));
+        return Styles[className] = (icon, col);
+    }
+
+    static (Icon Icon, uint Color) DefaultStyle(string className) => className switch
     {
         "info_player_start" => (Icon.User, Rgb(0x5BB35B)),
         "light_point" => (Icon.Bulb, Rgb(0xF2C94C)),

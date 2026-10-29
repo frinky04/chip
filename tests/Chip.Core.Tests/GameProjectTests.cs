@@ -159,6 +159,42 @@ public class GameProjectTests : IDisposable
         Assert.Contains("declared twice", text);
     }
 
+    static string IconFont()
+    {
+        for (var dir = AppContext.BaseDirectory; dir != null; dir = Path.GetDirectoryName(dir))
+            if (File.Exists(Path.Combine(dir, "Chip.slnx"))) return Path.Combine(dir, "assets", "fonts", "tabler-icons.ttf");
+        throw new DirectoryNotFoundException("no Chip.slnx above the test output");
+    }
+
+    [Fact]
+    public void Icon_names_are_the_tabler_fonts_own()
+    {
+        EntityIcons.FontPath = IconFont();
+        Assert.Equal(0xEF4E, EntityIcons.Codepoint("door"));
+        Assert.Equal(0xEA89, EntityIcons.Codepoint("device-desktop"));
+        Assert.Null(EntityIcons.Codepoint("not-an-icon"));
+        Assert.True(EntityIcons.Names.Count > 5000);
+        Assert.Null(EntityIcons.Problem("door"));
+        Assert.Contains("can't draw yet", EntityIcons.Problem("number-34-small")); // past U+FFFF
+    }
+
+    [Fact]
+    public void The_check_warns_about_icons_and_colours_it_cant_draw()
+    {
+        EntityIcons.FontPath = IconFont();
+        var manifest = Write("entities.json", """
+            { "classes": {
+                "door": { "icon": "door", "color": "#3e8eed" },
+                "crate": { "icon": "crate-box", "color": "brown" } } }
+            """);
+        var o = new StringWriter();
+        Assert.Equal(1, EntityManifestCheck.Run(manifest, o));
+        var text = o.ToString();
+        Assert.DoesNotContain("door:", text);
+        Assert.Contains("crate: icon \"crate-box\" isn't a Tabler icon", text);
+        Assert.Contains("crate: color should be \"#rrggbb\"", text);
+    }
+
     [Fact]
     public void The_check_fails_on_broken_json_and_on_a_missing_project()
     {

@@ -10,7 +10,8 @@ extends RefCounted
 ## A class's properties are the root script's exported variables, plus any native properties named in the root's
 ## "chip_expose" metadata (a PackedStringArray, e.g. ["light_color", "omni_range"]). Defaults come from the instantiated
 ## scene, so values set in the scene override the script's. "##" doc comments become tooltips. The root's optional
-## "chip_bounds" metadata (an AABB) sets the box Chip draws when the scene has no meshes.
+## "chip_bounds" metadata (an AABB) sets the box Chip draws when the scene has no meshes; "chip_icon" (a Tabler icon
+## name, e.g. "door") and "chip_color" (a Color) set how Chip marks the class.
 ##
 ## The manifest is generated: never edit it. Chip watches it and reloads on change. It is only rewritten when its
 ## content changes.
@@ -171,6 +172,10 @@ static func describe(path: String, name: String, warnings: PackedStringArray) ->
 	var box = node.get_meta("chip_bounds") if node.has_meta("chip_bounds") else _visual_bounds(node, Transform3D.IDENTITY)
 	if box is AABB and box.size != Vector3.ZERO:
 		c["bounds"] = [_vec(box.position), _vec(box.end)]
+	if node.has_meta("chip_icon"):
+		c["icon"] = str(node.get_meta("chip_icon"))
+	if node.get_meta("chip_color", null) is Color:
+		c["color"] = "#" + (node.get_meta("chip_color") as Color).to_html(false)
 	if _has_mesh(node):
 		var doc := GLTFDocument.new()
 		var state := GLTFState.new()

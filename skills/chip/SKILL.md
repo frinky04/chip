@@ -33,7 +33,9 @@ read its path from `CHIP_EXE`.
    be free text.
 3. **Generate the manifest** from the source of truth with a small tool or build step in the game's own language, and
    commit its output ([`reference/manifest.md`](reference/manifest.md), Format and Generate it from the game). Asset
-   fields carry their `kind`, references their `class` or `trait`.
+   fields carry their `kind`, references their `class` or `trait`. Every class gets an `icon` and a `color`, declared
+   beside its other class settings in the code: one colour per family (lights, logic, enemies), an icon per class.
+   Without them every class is the same blue box.
 4. **Check it**: `Chip.exe --entities-check <game root>` exits 0.
 5. **Write the loader** against [`reference/export.md`](reference/export.md): entities by `chip_class` with their
    values over the game's defaults, references resolved by `chip_id`, colliders, triggers, clip.

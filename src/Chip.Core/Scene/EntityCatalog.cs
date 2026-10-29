@@ -65,6 +65,10 @@ public sealed class EntityClass
     public Vector3 BoxMax { get; init; } = new(0.2f);
     /// <summary>Absolute path of a .glb showing the scene's meshes, drawn in place of the box.</summary>
     public string? Preview { get; init; }
+    /// <summary>A Tabler icon name (<c>door</c>) for the class's glyph in the viewport and lists, when the manifest gives one (<see cref="EntityIcons"/>).</summary>
+    public string? Icon { get; init; }
+    /// <summary>The colour the class is drawn in (0..1 RGB), when the manifest gives one.</summary>
+    public Vector3? Color { get; init; }
     public IReadOnlyList<PropSpec> Props { get; init; } = [];
     /// <summary>False for a class name the catalog doesn't define (a level from another project, or a deleted scene).</summary>
     public bool Known { get; init; } = true;
@@ -192,6 +196,8 @@ public sealed class EntityCatalog
             max = new Vector3(hi[0], hi[1], hi[2]);
         }
         string? preview = Str(c, "preview") is { Length: > 0 } rel && dir != null ? Path.GetFullPath(Path.Combine(dir, rel)) : null;
+        // A colour Chip can't read leaves the default, as a surface's does; --entities-check says so.
+        Vector3? color = c.TryGetProperty("color", out var cv) && EntityValues.Color(cv) is { } rgba ? new Vector3(rgba.X, rgba.Y, rgba.Z) : null;
         return new EntityClass
         {
             Name = name, Label = Str(c, "label") ?? EntityClass.Humanize(name), Doc = Str(c, "doc") ?? "",
@@ -204,7 +210,7 @@ public sealed class EntityCatalog
                 Name = Str(o, "name") ?? throw new InvalidDataException("Output needs a name"), Doc = Str(o, "doc") ?? "", Was = Strings(o, "was"),
                 Required = Flag(o, "required"), Timeline = Flag(o, "timeline"),
                 Payload = o.TryGetProperty("payload", out var pay) ? ParseProp(name, pay, "payload") : null }).ToArray() : [],
-            BoxMin = min, BoxMax = max, Preview = preview, Props = props, IsMesh = Flag(c, "mesh"),
+            BoxMin = min, BoxMax = max, Preview = preview, Icon = Str(c, "icon"), Color = color, Props = props, IsMesh = Flag(c, "mesh"),
         };
     }
 

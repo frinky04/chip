@@ -65,6 +65,8 @@
           0.05
         ]
       ],
+      "icon": "door",
+      "color": "#c49a6c",
       "traits": [
         "toggleable"
       ],
@@ -124,6 +126,8 @@
           "default": []
         }
       ],
+      "icon": "bulb",
+      "color": "#f2c94c",
       "traits": [
         "toggleable"
       ],
@@ -152,6 +156,8 @@
       "label": "Logic relay",
       "doc": "Forwards a trigger to its connections.",
       "props": [],
+      "icon": "route",
+      "color": "#a78bfa",
       "logic": true,
       "inputs": [
         {
@@ -202,7 +208,9 @@
           0.5,
           0.25
         ]
-      ]
+      ],
+      "icon": "coin",
+      "color": "#8bd450"
     },
     "player_start": {
       "label": "Player start",
@@ -231,7 +239,9 @@
           1.8,
           0.3
         ]
-      ]
+      ],
+      "icon": "user",
+      "color": "#5bb35b"
     },
     "screen": {
       "label": "Screen",
@@ -249,6 +259,8 @@
           "default": true
         }
       ],
+      "icon": "device-tv",
+      "color": "#4c9aff",
       "mesh": true
     }
   }

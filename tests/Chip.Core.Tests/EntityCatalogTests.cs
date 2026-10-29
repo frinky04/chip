@@ -114,6 +114,22 @@ public class EntityCatalogTests : IDisposable
         Assert.True(EntityValues.IsNull(health.Default));
     }
 
+    [Fact]
+    public void A_class_can_give_its_icon_and_colour()
+    {
+        var catalog = EntityCatalog.Parse("""
+            { "classes": {
+                "door": { "icon": "door", "color": "#3e8eed" },
+                "crate": { "color": [0.5, 0.25, 0] },
+                "lamp": { "color": "mauve" } } }
+            """, null);
+        var door = catalog.Find("door")!;
+        Assert.Equal("door", door.Icon);
+        Assert.Equal(new Vector3(0x3e / 255f, 0x8e / 255f, 0xed / 255f), door.Color);
+        Assert.Equal((null, new Vector3(0.5f, 0.25f, 0)), (catalog.Find("crate")!.Icon, catalog.Find("crate")!.Color));
+        Assert.Null(catalog.Find("lamp")!.Color); // unreadable: the default colour, and --entities-check warns
+    }
+
     [Theory]
     [InlineData("A door.", "A door.")]
     [InlineData("A pedestal with a button. Pressed, it does its action:\n- HEALTH: hurts\n- SPAWN: spawns", "A pedestal with a button. Pressed, it does its action…")]

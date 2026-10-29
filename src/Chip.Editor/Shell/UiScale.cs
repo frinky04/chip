@@ -24,6 +24,7 @@ public sealed partial class EditorApp
     void UpdateUiScale()
     {
         if (_snapshotRescaleTo is { } forced) { _snapshotRescaleTo = null; Rescale(forced); return; }
+        if (Icons.Pending) RebuildFontAtlas(); // a manifest named icons the atlas lacks (captures need them too)
         if (!_persistent) return;
         if (!_scaleCheckNow && ++_scaleCheckFrame % 20 != 0) return;
         _scaleCheckNow = false;
@@ -34,9 +35,17 @@ public sealed partial class EditorApp
     void Rescale(float scale)
     {
         _uiScale = scale;
+        RebuildFontAtlas();
+        Theme.Apply(scale);
+        Ctx.Status($"Interface scale is now {scale:0.##}×"); // no '%': the status bar draws text as a printf format
+    }
+
+    /// <summary>Builds the font atlas at the current scale, with every icon asked for so far, and uploads it.</summary>
+    void RebuildFontAtlas()
+    {
         var io = ImGui.GetIO();
         io.Fonts.Clear();
-        Fonts.Load(FontDir, scale);
+        Fonts.Load(FontDir, _uiScale);
         io.Fonts.GetTexDataAsRGBA32(out nint pixels, out int w, out int h, out _);
 
         _gl.GetInteger(GetPName.TextureBinding2D, out int previous);
@@ -51,9 +60,6 @@ public sealed partial class EditorApp
         io.Fonts.ClearTexData();
         DeleteFontTexture();
         _fontTexture = tex;
-
-        Theme.Apply(scale);
-        Ctx.Status($"Interface scale is now {scale:0.##}×"); // no '%': the status bar draws text as a printf format
     }
 
     void DeleteFontTexture()

@@ -84,6 +84,8 @@ carry over (Renames, below).
 | `props` | The properties, in display order. |
 | `bounds` | `[[minX, minY, minZ], [maxX, maxY, maxZ]]` in metres around the origin: the box Chip draws and clicks. Default: a 0.4 m cube. |
 | `preview` | A `.glb` path relative to the manifest, drawn in place of the box. |
+| `icon` | The class's glyph in the viewport, the outliner and the class lists: a [Tabler](https://tabler.io/icons) icon name (`"door"`, `"device-desktop"`). Default: a box (the built-in classes' names keep their own). |
+| `color` | The colour the class is drawn in: `"#rrggbb"` or `[r, g, b]` in 0..1. Avoid orange, Chip's selection colour. |
 | `mesh` | `true`: a mesh class, made of level geometry tied to it (a door, a platform) instead of placed as a point ([`surfaces.md`](surfaces.md)). |
 | `scene`, `uid` | The engine asset that makes the class and its stable id. Exported as `chip_scene` / `chip_uid`. |
 | `base` | The engine type, informational. |

@@ -84,6 +84,8 @@ metadata cover what a script can't say:
 - `chip_expose` (`PackedStringArray`): native properties to edit as well (`["light_color", "omni_range"]`). The built-in
   light scenes are nothing but this, with no script.
 - `chip_bounds` (`AABB`): the box Chip draws and picks when the scene has no meshes (the player start's 0.6 × 1.8 m).
+- `chip_icon` (`String`) and `chip_color` (`Color`): the class's glyph, a Tabler icon name (`"door"`), and the colour
+  Chip draws it in, so classes tell apart in the viewport and the lists.
 
 A scene with meshes gets a preview: the addon exports its visuals to `.chip/previews/<class>.glb` and Chip draws that, as
 clay, instead of a box. Bounds come from the meshes.

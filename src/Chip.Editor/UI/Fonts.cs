@@ -57,12 +57,14 @@ public static class Fonts
             Strong = io.Fonts.AddFontFromFileTTF(semibold, BodySize, cfg, ranges);
             Small = io.Fonts.AddFontFromFileTTF(regular, SmallSize, cfg, ranges);
 
-            // Icon font: only the glyphs the UI uses, so the atlas stays small.
+            // Icon font: only the glyphs the UI and the manifest's classes use, so the atlas stays small. The set grows
+            // when a manifest names new icons; the old ranges are free once the atlas has been cleared for this load.
             var iconFile = Path.Combine(fontDir, "tabler-icons.ttf");
             if (File.Exists(iconFile))
             {
-                var iconRanges = UI.Icons.Codepoints.Distinct().Order().SelectMany(c => new[] { c, c }).Append((ushort)0).ToArray();
-                if (!_iconRangesHandle.IsAllocated) _iconRangesHandle = GCHandle.Alloc(iconRanges, GCHandleType.Pinned);
+                var iconRanges = UI.Icons.Bake().Order().SelectMany(c => new[] { c, c }).Append((ushort)0).ToArray();
+                if (_iconRangesHandle.IsAllocated) _iconRangesHandle.Free();
+                _iconRangesHandle = GCHandle.Alloc(iconRanges, GCHandleType.Pinned);
                 Icons = io.Fonts.AddFontFromFileTTF(iconFile, IconSize, cfg, _iconRangesHandle.AddrOfPinnedObject());
             }
             else Icons = Body;

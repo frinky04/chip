@@ -12,9 +12,37 @@ public enum Icon { Select, Block, Vertex, Edge, Face, Object, Move, Rotate, Scal
     // the side dock and menu bar
     Palette, Brush, Search, Dots, SidebarCollapse, SidebarExpand, FileExport }
 
-/// <summary>Tool glyphs from the Tabler icon font (MIT), drawn on whole pixels so they stay crisp at small sizes.</summary>
+/// <summary>
+/// Tool glyphs from the Tabler icon font (MIT), drawn on whole pixels so they stay crisp at small sizes. Besides the
+/// named <see cref="Icon"/>s, a manifest's entity class can ask for any Tabler icon by name (<see cref="Named"/>): it
+/// comes back as an <see cref="Icon"/> past the named ones, <see cref="NamedBase"/> plus its codepoint.
+/// </summary>
 public static class Icons
 {
+    const int NamedBase = 0x10000;
+
+    // Icons a manifest named, and those the atlas holds. A new one waits for the atlas to rebuild between frames.
+    static readonly HashSet<ushort> Wanted = [];
+    static readonly HashSet<ushort> Baked = [];
+    static readonly Dictionary<Icon, string> TextCache = [];
+
+    /// <summary>A manifest named an icon the atlas lacks: the editor rebuilds the font atlas before the next frame.</summary>
+    public static bool Pending { get; private set; }
+    /// <summary>Changes when the atlas gains icons, so styles cached while they were missing pick them up.</summary>
+    public static int Revision { get; private set; }
+
+    /// <summary>
+    /// The Tabler icon called <paramref name="name"/> (<c>door</c>), or null when there's none Chip can draw. Also null
+    /// until the atlas holds it: the first ask queues it for the rebuild.
+    /// </summary>
+    public static Icon? Named(string name)
+    {
+        if (Chip.Core.Scene.EntityIcons.Codepoint(name) is not { } c || c > Chip.Core.Scene.EntityIcons.MaxDrawable) return null;
+        if (Baked.Contains((ushort)c)) return (Icon)(NamedBase + c);
+        if (Wanted.Add((ushort)c)) Pending = true;
+        return null;
+    }
+
     static readonly Dictionary<Icon, char> Glyphs = new()
     {
         [Icon.Select] = '',    // pointer
@@ -81,10 +109,22 @@ public static class Icons
         [Icon.FileExport] = '',      // file-export
     };
 
-    /// <summary>Codepoints to bake into the icon atlas.</summary>
-    public static IEnumerable<ushort> Codepoints => Glyphs.Values.Select(c => (ushort)c);
+    /// <summary>Codepoints to bake into the icon atlas, counted as baked from here on (call once per atlas build).</summary>
+    public static IEnumerable<ushort> Bake()
+    {
+        Baked.UnionWith(Glyphs.Values.Select(c => (ushort)c));
+        if (!Wanted.IsSubsetOf(Baked)) { Baked.UnionWith(Wanted); Revision++; }
+        Pending = false;
+        return Baked;
+    }
 
-    public static string Text(Icon icon) => Glyphs[icon].ToString();
+    /// <summary>The glyph as text, made once per icon: entity glyphs repeat hundreds of times per frame.</summary>
+    public static string Text(Icon icon)
+    {
+        if (TextCache.TryGetValue(icon, out var text)) return text;
+        char c = (int)icon >= NamedBase ? (char)((int)icon - NamedBase) : Glyphs[icon];
+        return TextCache[icon] = c.ToString();
+    }
 
     public static void Draw(ImDrawListPtr dl, Icon icon, Vector2 center, uint col)
     {

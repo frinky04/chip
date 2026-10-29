@@ -13,6 +13,9 @@ public sealed class EntityAttribute(string name) : Attribute
     public string Doc { get; init; } = "";
     /// <summary>The box Chip draws: min x, y, z then max x, y, z, in metres.</summary>
     public float[]? Bounds { get; init; }
+    /// <summary>How Chip marks the class: a Tabler icon name (<c>door</c>) and a colour (<c>#rrggbb</c>).</summary>
+    public string? Icon { get; init; }
+    public string? Color { get; init; }
     /// <summary>Made of level geometry (tie meshes to it in Chip) instead of placed as a point.</summary>
     public bool Mesh { get; init; }
 }
@@ -41,20 +44,20 @@ public abstract class GameEntity
     public List<Collider> Colliders = [];
 }
 
-[Entity("screen", Mesh = true, Doc = "A screen that plays a video on its faces painted with the video surface.")]
+[Entity("screen", Mesh = true, Icon = "device-tv", Color = "#4c9aff", Doc = "A screen that plays a video on its faces painted with the video surface.")]
 public sealed class Screen : GameEntity
 {
     [Prop(Doc = "What it plays.", Asset = true)] public string Video = "assets/videos/intro.webm";
     [Prop] public bool Loop = true;
 }
 
-[Entity("player_start", Doc = "Where the player appears.", Bounds = [-0.3f, 0, -0.3f, 0.3f, 1.8f, 0.3f])]
+[Entity("player_start", Icon = "user", Color = "#5bb35b", Doc = "Where the player appears.", Bounds = [-0.3f, 0, -0.3f, 0.3f, 1.8f, 0.3f])]
 public sealed class PlayerStart : GameEntity
 {
     [Prop(Doc = "Which team spawns here.", Min = 1, Max = 4)] public int Team = 1;
 }
 
-[Entity("pickup", Doc = "Something the player collects by walking into it.", Bounds = [-0.25f, 0, -0.25f, 0.25f, 0.5f, 0.25f])]
+[Entity("pickup", Icon = "coin", Color = "#8bd450", Doc = "Something the player collects by walking into it.", Bounds = [-0.25f, 0, -0.25f, 0.25f, 0.5f, 0.25f])]
 public sealed class Pickup : GameEntity
 {
     [Prop(Doc = "Item id.")] public string Item = "coin";
@@ -64,7 +67,7 @@ public sealed class Pickup : GameEntity
 
 public enum DoorMode { Swing, Slide }
 
-[Entity("door", Doc = "A door that opens when the player comes near.", Bounds = [-0.5f, 0, -0.05f, 0.5f, 2, 0.05f])]
+[Entity("door", Icon = "door", Color = "#c49a6c", Doc = "A door that opens when the player comes near.", Bounds = [-0.5f, 0, -0.05f, 0.5f, 2, 0.05f])]
 public sealed class Door : GameEntity
 {
     [Prop] public DoorMode Mode;
@@ -74,7 +77,7 @@ public sealed class Door : GameEntity
     [Prop(Doc = "Any of these keys unlocks it; none means it's never locked.", Group = "Lock")] public List<string> Keys = [];
 }
 
-[Entity("light", Doc = "A point light.")]
+[Entity("light", Icon = "bulb", Color = "#f2c94c", Doc = "A point light.")]
 public sealed class Light : GameEntity
 {
     [Prop] public Vector4 Color = Vector4.One;
@@ -82,5 +85,5 @@ public sealed class Light : GameEntity
     [Prop(Doc = "Lights that switch on and off with this one.")] public List<Light> Linked = [];
 }
 
-[Entity("logic_relay", Doc = "Forwards a trigger to its connections.")]
+[Entity("logic_relay", Icon = "route", Color = "#a78bfa", Doc = "Forwards a trigger to its connections.")]
 public sealed class LogicRelay : GameEntity { }

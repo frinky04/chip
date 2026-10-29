@@ -14,7 +14,7 @@ public static class EntityManifestCheck
 {
     static readonly HashSet<string> Types =
         ["bool", "int", "float", "string", "enum", "color", "vector2", "vector3", "node", "entity", "resource", "asset", "array", "unsupported"];
-    static readonly HashSet<string> ClassKeys = ["scene", "uid", "label", "base", "doc", "props", "bounds", "preview", "mesh", "traits", "was", "logic", "inputs", "outputs"];
+    static readonly HashSet<string> ClassKeys = ["scene", "uid", "label", "base", "doc", "props", "bounds", "preview", "icon", "color", "mesh", "traits", "was", "logic", "inputs", "outputs"];
     static readonly HashSet<string> PropKeys =
         ["name", "type", "of", "default", "doc", "group", "options", "range", "or_greater", "or_less", "suffix", "class", "integer",
          "engine", "godot", "file", "multiline", "kind", "trait", "was"];
@@ -74,6 +74,13 @@ public static class EntityManifestCheck
             if (c.Value.TryGetProperty("preview", out var pv) && pv.ValueKind == JsonValueKind.String
                 && !File.Exists(Path.Combine(dir, pv.GetString()!)))
                 Warn($"{cls}: preview {pv.GetString()} doesn't exist (relative to the manifest); the box is drawn");
+            if (c.Value.TryGetProperty("icon", out var icon))
+            {
+                if (icon.ValueKind != JsonValueKind.String) Warn($"{cls}: icon should be a Tabler icon name (\"door\"); the default icon is drawn");
+                else if (EntityIcons.Problem(icon.GetString()!) is { } why) Warn($"{cls}: {why}; the default icon is drawn");
+            }
+            if (c.Value.TryGetProperty("color", out var color) && EntityValues.Color(color) == null)
+                Warn($"{cls}: color should be \"#rrggbb\" or [r, g, b] in 0..1; the default colour is used");
             foreach (var portKey in new[] { "inputs", "outputs" })
                 if (c.Value.TryGetProperty(portKey, out var ports) && ports.ValueKind == JsonValueKind.Array)
                     foreach (var port in ports.EnumerateArray())
