@@ -19,6 +19,7 @@ public sealed class OffsetTool : IViewportTool
 {
     List<(PolyMesh Mesh, OffsetResult Offset)>? _parts;
     bool _leaving;
+    bool _snapping;
     Vector2 _lastMouse;
     Vector3 _pivot;
     float _amount, _raw;
@@ -52,6 +53,7 @@ public sealed class OffsetTool : IViewportTool
         _pivot = pivot;
         _lastMouse = ctx.Mouse;
         _raw = _remembered != 0 ? _remembered : ctx.Grid;
+        _snapping = ctx.Snap;
         SetAmount(ctx, _raw);
     }
 
@@ -71,9 +73,11 @@ public sealed class OffsetTool : IViewportTool
         // Only motion over the viewport counts, so reaching for the inspector field doesn't change the distance.
         float dx = ctx.Mouse.X - _lastMouse.X;
         _lastMouse = ctx.Mouse;
-        if (ctx.ViewportHovered && dx != 0)
+        bool snapping = ctx.Snap && !ImGui.GetIO().KeyCtrl;
+        if (ctx.ViewportHovered && (dx != 0 || snapping != _snapping))
         {
             _raw += dx * UnitsPerPixel(ctx);
+            _snapping = snapping;
             SetAmount(ctx, Snapped(ctx, _raw));
         }
         bool confirm = (ctx.ViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))

@@ -47,6 +47,7 @@ public sealed class ArcExtrudeTool : IViewportTool
     enum Stage { Off, Axis, Angle }
     Stage _stage;
     bool _leaving;
+    bool _free;
     SelectMode _mode;
     List<(int Mesh, List<int> Faces, List<Edge> Edges)> _targets = new();
     readonly List<Vector3> _points = new();
@@ -252,7 +253,8 @@ public sealed class ArcExtrudeTool : IViewportTool
         }
 
         // Only motion over the viewport counts, so reaching for the inspector doesn't change the values.
-        bool moved = ctx.ViewportHovered && ctx.Mouse != _lastMouse;
+        bool moved = ctx.ViewportHovered && (ctx.Mouse != _lastMouse || free != _free);
+        _free = free;
         _lastMouse = ctx.Mouse;
         if (moved && _stage == Stage.Axis) PlaceAxis(ctx, free);
         if (moved && _stage == Stage.Angle) SweepAngle(ctx, free);

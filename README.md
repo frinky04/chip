@@ -72,7 +72,7 @@ From left to right:
 **Creating.** The block tool (`Shift+B`) makes boxes, cylinders, wedges, stairs, arches, spheres, tori and spiral stairs;
 pick the shape in the tool's options. The polygon tool (`Shift+P`) takes an outline you click point by point, then a
 height, and makes a prism. The rectangle tool (`Shift+R`) makes a single one-sided quad whose open edges you extrude
-from. Hold Ctrl on the first click to stand the drawing plane up toward the camera.
+from. Hold Shift on the first click to stand the drawing plane up toward the camera. Hold Ctrl to bypass snapping while drawing or setting height.
 
 **Selecting.** `1`–`4` switch between vertex, edge, face and object mode. Click to select, Shift to add, Ctrl to toggle,
 or drag to paint a selection. `Ctrl+Alt+drag` box-selects. Double-click selects everything connected, `L` and `X` select

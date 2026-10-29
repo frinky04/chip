@@ -12,7 +12,7 @@ namespace Chip.Editor.Tools.Block;
 
 /// <summary>
 /// The axis-aligned, grid-snapped plane the creation tools draw on: the hovered surface, else the ground.
-/// With Ctrl the plane stands up toward the camera (Scythe): it passes through the same point but uses the world axis
+/// With Shift the plane stands up toward the camera (Scythe): it passes through the same point but uses the world axis
 /// that faces the view most, excluding the surface normal, so a base can be drawn face-on in mid-air.
 /// </summary>
 public sealed class ConstructionPlane
@@ -22,17 +22,17 @@ public sealed class ConstructionPlane
     float _grid = 0.25f;
     bool _snap = true;
 
-    float S(float x) => _snap ? MeshOps.Snap(x, _grid) : x;
+    float S(float x, bool free = false) => _snap && !free ? MeshOps.Snap(x, _grid) : x;
 
     /// <summary>Snapped point on the plane, kept exactly in it.</summary>
-    public Vector3 SnapInPlane(Vector3 p)
+    public Vector3 SnapInPlane(Vector3 p, bool free = false)
     {
-        var q = new Vector3(S(p.X), S(p.Y), S(p.Z));
+        var q = new Vector3(S(p.X, free), S(p.Y, free), S(p.Z, free));
         return q - Normal * Vector3.Dot(q - Point, Normal);
     }
 
     /// <summary>Chooses the plane under the mouse and returns the snapped start point on it (null when nothing is under the cursor).</summary>
-    public Vector3? Pick(EditorContext ctx, bool flipTowardCamera)
+    public Vector3? Pick(EditorContext ctx, bool flipTowardCamera, bool free = false)
     {
         _grid = ctx.Grid;
         _snap = ctx.Snap;
@@ -41,7 +41,7 @@ public sealed class ConstructionPlane
         if (ctx.Picks.RaycastFace(ray, ctx.Backfaces) is { } hit)
         {
             normal = TextureMapping.DominantAxis(hit.Normal);
-            point = normal * S(Vector3.Dot(hit.Point, normal));
+            point = normal * S(Vector3.Dot(hit.Point, normal), free);
         }
         else
         {
@@ -51,7 +51,7 @@ public sealed class ConstructionPlane
         if (!Picker.RayPlane(ray, point, normal, out float t)) return null;
         Normal = normal;
         Point = point;
-        var start = SnapInPlane(ray.At(t));
+        var start = SnapInPlane(ray.At(t), free);
         if (!flipTowardCamera) return start;
 
         var toCamera = -ray.Dir;
@@ -62,17 +62,17 @@ public sealed class ConstructionPlane
         return start;
     }
 
-    /// <summary>Where the mouse ray meets the chosen plane, snapped. Keeps the plane and snap settings from <see cref="Pick"/>.</summary>
-    public Vector3? Hit(Ray ray) => Picker.RayPlane(ray, Point, Normal, out float t) ? SnapInPlane(ray.At(t)) : null;
+    /// <summary>Where the mouse ray meets the chosen plane. Ctrl's free flag can change throughout the gesture.</summary>
+    public Vector3? Hit(Ray ray, bool free = false) => Picker.RayPlane(ray, Point, Normal, out float t) ? SnapInPlane(ray.At(t), free) : null;
 
     /// <summary>Snapped height along the normal: the point on the normal line through <paramref name="anchor"/> closest to the ray.</summary>
-    public float? Height(Ray ray, Vector3 anchor)
+    public float? Height(Ray ray, Vector3 anchor, bool free = false)
     {
         var w0 = anchor - ray.Origin;
         float bd = Vector3.Dot(Normal, ray.Dir);
         float denom = 1 - bd * bd;
         if (denom <= 1e-5f) return null;
-        return S((bd * Vector3.Dot(ray.Dir, w0) - Vector3.Dot(Normal, w0)) / denom);
+        return S((bd * Vector3.Dot(ray.Dir, w0) - Vector3.Dot(Normal, w0)) / denom, free);
     }
 
     /// <summary>Snapped construction cursor: a cross along the plane, one grid step per arm.</summary>

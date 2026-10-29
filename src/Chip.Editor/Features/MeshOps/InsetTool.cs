@@ -18,6 +18,7 @@ public sealed class InsetTool : IViewportTool
 {
     List<(PolyMesh Mesh, InsetResult Inset)>? _parts;
     bool _outset, _leaving;
+    bool _snapping;
     Vector2 _lastMouse;
     Vector3 _pivot;
     float _amount, _raw, _max;
@@ -34,7 +35,7 @@ public sealed class InsetTool : IViewportTool
     public float Amount => _amount;
 
     public (string Key, string Action)[] Hints =>
-        [("Move", "set width"), ("Click/Enter", "apply"), ("Esc", "cancel")];
+        [("Move", "set width"), ("Ctrl", "no snap"), ("Click/Enter", "apply"), ("Esc", "cancel")];
 
     /// <summary>Picks inset or outset for the next activation.</summary>
     public InsetTool For(bool outset)
@@ -59,6 +60,7 @@ public sealed class InsetTool : IViewportTool
         _pivot = pivot;
         _lastMouse = ctx.Mouse;
         _raw = _remembered > 0 ? _remembered : ctx.Grid;
+        _snapping = ctx.Snap;
         SetAmount(ctx, _raw);
     }
 
@@ -78,10 +80,12 @@ public sealed class InsetTool : IViewportTool
         // Only motion over the viewport counts, so reaching for the inspector field doesn't change the width.
         float dx = ctx.Mouse.X - _lastMouse.X;
         _lastMouse = ctx.Mouse;
-        if (ctx.ViewportHovered && dx != 0)
+        bool snapping = ctx.Snap && !ImGui.GetIO().KeyCtrl;
+        if (ctx.ViewportHovered && (dx != 0 || snapping != _snapping))
         {
             _raw = Math.Clamp(_raw + dx * UnitsPerPixel(ctx), 0, _max);
-            SetAmount(ctx, ctx.Snap ? Ops.Snap(_raw, ctx.Grid) : _raw);
+            _snapping = snapping;
+            SetAmount(ctx, snapping ? Ops.Snap(_raw, ctx.Grid) : _raw);
         }
         bool confirm = (ctx.ViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
             || ImGui.IsKeyPressed(ImGuiKey.Enter) || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter);

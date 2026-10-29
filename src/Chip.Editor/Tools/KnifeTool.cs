@@ -34,9 +34,9 @@ public sealed class KnifeTool : IViewportTool
 
     public (string Key, string Action)[] Hints => _points.Count switch
     {
-        0 => [("Click", "start a cut line"), ("Esc", "exit tool")],
-        1 => [("Click", "add a point"), ("Backspace", "remove last"), ("Esc", "cancel")],
-        _ => [("Click", "add a point"), ("Enter", "cut"), ("Backspace", "remove last"), ("Esc", "cancel")],
+        0 => [("Click", "start a cut line"), ("Ctrl", "no snap"), ("Esc", "exit tool")],
+        1 => [("Click", "add a point"), ("Ctrl", "no snap"), ("Backspace", "remove last"), ("Esc", "cancel")],
+        _ => [("Click", "add a point"), ("Ctrl", "no snap"), ("Enter", "cut"), ("Backspace", "remove last"), ("Esc", "cancel")],
     };
 
     public bool Cancel(EditorContext ctx)
@@ -51,7 +51,7 @@ public sealed class KnifeTool : IViewportTool
     public void Update(EditorContext ctx)
     {
         ctx.Hover = null;
-        _cursor = ctx.ViewportHovered ? CutSnap.At(ctx, ctx.Mouse) : null;
+        _cursor = ctx.ViewportHovered ? CutSnap.At(ctx, ctx.Mouse, ImGui.GetIO().KeyCtrl) : null;
         if (ctx.ViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && _cursor is { } c
             && (_points.Count == 0 || Vector3.Distance(_points[^1], c.Position) > 1e-4f))
             _points.Add(c.Position);
@@ -154,7 +154,7 @@ public sealed class KnifeTool : IViewportTool
         ImGui.TextWrapped(faces
             ? (ctx.Sel.Count == 1 ? "Cuts the selected face." : $"Cuts the {ctx.Sel.Count} selected faces, front and back.")
             : "Cuts the faces you see under the line.");
-        ImGui.TextWrapped("Points snap to vertices, then edges, then the grid.");
+        ImGui.TextWrapped("Points snap to vertices, then edges, then the grid. Hold Ctrl to bypass snapping.");
         ImGui.PopStyleColor();
         if (_points.Count > 0) ImGui.Text(_points.Count == 1 ? "1 point" : $"{_points.Count} points");
     }

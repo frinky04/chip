@@ -12,7 +12,7 @@ namespace Chip.Editor.Tools;
 
 /// <summary>
 /// Add Rectangle (Scythe): drag a rectangle on a surface or the grid, like a block base, and release to create a single
-/// one-sided quad. Its four open edges are the start of edge-extrude workflows. Ctrl stands the plane up toward the camera.
+/// one-sided quad. Its four open edges are the start of edge-extrude workflows. Shift stands the plane up toward the camera.
 /// </summary>
 public sealed class RectangleTool : IViewportTool
 {
@@ -30,8 +30,8 @@ public sealed class RectangleTool : IViewportTool
     public bool Busy => _dragging;
 
     public (string Key, string Action)[] Hints => _dragging
-        ? [("Release", "create the rectangle"), ("Esc", "cancel")]
-        : [("Drag", "draw a rectangle on a surface or the grid"), ("Ctrl+drag", "on a plane facing you"), ("Esc", "exit tool")];
+        ? [("Release", "create the rectangle"), ("Ctrl", "no snap"), ("Esc", "cancel")]
+        : [("Drag", "draw a rectangle on a surface or the grid"), ("Shift+drag", "on a plane facing you"), ("Ctrl", "no snap"), ("Esc", "exit tool")];
 
     public bool Cancel(EditorContext ctx)
     {
@@ -47,7 +47,7 @@ public sealed class RectangleTool : IViewportTool
         var ray = ctx.MouseRay();
         if (!_dragging)
         {
-            _cursor = ctx.ViewportHovered ? _plane.Pick(ctx, ImGui.GetIO().KeyCtrl) : null;
+            _cursor = ctx.ViewportHovered ? _plane.Pick(ctx, ImGui.GetIO().KeyShift, ImGui.GetIO().KeyCtrl) : null;
             if (_cursor == null || !ImGui.IsMouseClicked(ImGuiMouseButton.Left)) return;
             _a = _b = _cursor.Value;
             // Face the side of the plane the camera is on, so the new quad is visible.
@@ -55,7 +55,7 @@ public sealed class RectangleTool : IViewportTool
             _dragging = true;
             return;
         }
-        if (_plane.Hit(ray) is { } p) _b = p;
+        if (_plane.Hit(ray, ImGui.GetIO().KeyCtrl) is { } p) _b = p;
         if (ImGui.IsMouseDown(ImGuiMouseButton.Left)) return;
         _dragging = false;
         if (Primitive.Rectangle(_a, _b, _facing, ctx.ActiveMaterial, ctx.Materials.MappingFor(ctx.ActiveMaterial)) is not { } mesh) return;

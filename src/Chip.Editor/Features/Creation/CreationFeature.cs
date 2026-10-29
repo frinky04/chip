@@ -34,6 +34,7 @@ public sealed class CreationFeature : IEditorFeature
                 IsChecked = () => Block()?.Shape == shape,
             });
         }
-        ctx.Commands.AddReference("Tools", "Ctrl + drag", "draw on a plane facing you");
+        ctx.Commands.AddReference("Tools", "Shift + drag", "draw on a plane facing you");
+        ctx.Commands.AddReference("Tools", "Ctrl", "bypass snapping");
     }
 }

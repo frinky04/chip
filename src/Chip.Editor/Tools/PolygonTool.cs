@@ -13,7 +13,7 @@ namespace Chip.Editor.Tools;
 /// <summary>
 /// Polygon draw tool (Hammer): click snapped points on a surface or the grid, close the outline with Enter (or by clicking
 /// the first point), move to set the height, then click to extrude it into a closed prism. Concave outlines are fine;
-/// crossing edges are refused. Ctrl on the first click stands the plane up toward the camera.
+/// crossing edges are refused. Shift on the first click stands the plane up toward the camera.
 /// </summary>
 public sealed class PolygonTool : IViewportTool
 {
@@ -37,9 +37,9 @@ public sealed class PolygonTool : IViewportTool
 
     public (string Key, string Action)[] Hints => _stage switch
     {
-        Stage.Idle => [("Click", "place the first point"), ("Ctrl+click", "on a plane facing you"), ("Esc", "exit tool")],
-        Stage.Points => [("Click", "add a point"), ("Enter", "close the outline"), ("Backspace", "remove the last point"), ("Esc", "cancel")],
-        _ => [("Move", "set height"), ("Click/Enter", "create"), ("Esc", "cancel")],
+        Stage.Idle => [("Click", "place the first point"), ("Shift+click", "on a plane facing you"), ("Ctrl", "no snap"), ("Esc", "exit tool")],
+        Stage.Points => [("Click", "add a point"), ("Ctrl", "no snap"), ("Enter", "close the outline"), ("Backspace", "remove the last point"), ("Esc", "cancel")],
+        _ => [("Move", "set height"), ("Ctrl", "no snap"), ("Click/Enter", "create"), ("Esc", "cancel")],
     };
 
     public bool Cancel(EditorContext ctx)
@@ -63,14 +63,14 @@ public sealed class PolygonTool : IViewportTool
         switch (_stage)
         {
             case Stage.Idle:
-                _cursor = ctx.ViewportHovered ? _plane.Pick(ctx, ImGui.GetIO().KeyCtrl) : null;
+                _cursor = ctx.ViewportHovered ? _plane.Pick(ctx, ImGui.GetIO().KeyShift, ImGui.GetIO().KeyCtrl) : null;
                 if (_cursor is not { } first || !click) return;
                 _points.Add(first);
                 _stage = Stage.Points;
                 return;
 
             case Stage.Points:
-                _cursor = _plane.Hit(ray);
+                _cursor = _plane.Hit(ray, ImGui.GetIO().KeyCtrl);
                 if (ImGui.IsKeyPressed(ImGuiKey.Backspace))
                 {
                     _points.RemoveAt(_points.Count - 1);
@@ -86,7 +86,7 @@ public sealed class PolygonTool : IViewportTool
                 return;
 
             default:
-                if (_plane.Height(ray, Centroid()) is { } h) _height = h;
+                if (_plane.Height(ray, Centroid(), ImGui.GetIO().KeyCtrl) is { } h) _height = h;
                 if (!click && !enter) return;
                 Create(ctx);
                 return;

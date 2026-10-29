@@ -52,7 +52,7 @@ public sealed class Gizmo
     public Handle Active { get; private set; }
     public bool Dragging => Active != Handle.None;
 
-    /// <summary>Ctrl held: bypasses snapping mid-drag (unless the drag started as Ctrl+Shift push/pull).</summary>
+    /// <summary>Ctrl held: bypasses snapping mid-drag.</summary>
     public bool CtrlHeld { get; set; }
     public bool ShiftHeld { get; set; }
     /// <summary>CapsLock held: the move gizmo aligns the pivot to the element under the cursor (<see cref="SnapProvider"/>).</summary>
@@ -92,7 +92,6 @@ public sealed class Gizmo
     float _startAxisParam;
     Vector3 _startPlaneHit;
     float _prevScreenAngle, _angle;
-    bool _pushPullStart;
 
     // Temporary-pivot drag (MMB on the gizmo).
     public Handle PivotHandle { get; private set; }
@@ -199,7 +198,6 @@ public sealed class Gizmo
         Amount = new DragAmount(_pivot, Vector3.Zero, 0, Vector3.One);
         _startMouse = mouse;
         _angle = 0;
-        _pushPullStart = CtrlHeld && ShiftHeld && Mode == GizmoMode.Translate;
         AlignTarget = null;
         _prevScreenAngle = ScreenAngle(v, mouse);
         var ray = v.ScreenRay(mouse);
@@ -259,8 +257,8 @@ public sealed class Gizmo
         }
     }
 
-    /// <summary>Snapping applies unless Ctrl is held (a Ctrl+Shift push/pull keeps snapping: Ctrl is part of its chord).</summary>
-    bool Snapping(bool snap) => snap && !(CtrlHeld && !_pushPullStart);
+    /// <summary>Snapping applies unless Ctrl is held, including during push/pull.</summary>
+    bool Snapping(bool snap) => snap && !CtrlHeld;
 
     /// <summary>Transform from the drag start to now, and whether it is rigid (keeps texture lock valid).</summary>
     public (Matrix4x4 M, bool Rigid) DragTransform(ViewInfo v, Vector2 mouse, float grid, bool snap)
@@ -395,7 +393,6 @@ public sealed class Gizmo
         if (Mode == GizmoMode.Rotate) h = Handle.Center;
         PivotHandle = h;
         _pivot = pivot;
-        _pushPullStart = false;
         var ray = v.ScreenRay(mouse);
         _startAxisParam = AxisParam(ray, pivot, AxisOf(h));
         _startPlaneHit = PlaneHit(v, ray, h, pivot) ?? pivot;

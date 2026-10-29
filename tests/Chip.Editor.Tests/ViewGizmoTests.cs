@@ -54,11 +54,13 @@ public class ViewGizmoTests
     }
 
     [Fact]
-    public void Ctrl_does_not_bypass_snapping_for_a_push_pull_drag()
+    public void Ctrl_bypasses_snapping_for_a_push_pull_drag_and_releasing_it_restores_snapping()
     {
         var g = new Gizmo { CtrlHeld = true, ShiftHeld = true };
         var v = Front();
         g.BeginDrag(Handle.X, v, Vector3.Zero, Center);
+        Near(new Vector3(1.12f, 0, 0), g.DragTransform(v, new Vector2(612, 500), 0.25f, snap: true).M.Translation);
+        g.CtrlHeld = false;
         Near(new Vector3(1, 0, 0), g.DragTransform(v, new Vector2(612, 500), 0.25f, snap: true).M.Translation);
     }
 

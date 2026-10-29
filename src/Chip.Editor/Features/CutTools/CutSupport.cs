@@ -19,31 +19,33 @@ public static class CutSnap
 {
     /// <summary>
     /// Where a click would land: a vertex near the cursor, else a point on a nearby edge (on a grid line when snapping),
-    /// else a grid point on the hovered surface, else a grid point on the ground. Null if the cursor sees nothing.
+    /// else a grid point on the hovered surface, else a grid point on the ground. Free bypasses all snapping.
+    /// Null if the cursor sees nothing.
     /// </summary>
-    public static CutPoint? At(EditorContext ctx, Vector2 mouse)
+    public static CutPoint? At(EditorContext ctx, Vector2 mouse, bool free = false)
     {
         var view = ctx.View;
         var ray = view.ScreenRay(mouse);
         var hit = ctx.Picks.RaycastFace(ray, ctx.Backfaces);
         var normal = hit?.Normal ?? Vector3.UnitY;
+        bool snap = ctx.Snap && !free;
 
-        if (ctx.Picks.Pick(view, mouse, SelectMode.Vertex, Theme.Scale, ctx.Backfaces) is { } v && ctx.Doc.Find(v.Mesh) is { } vm)
+        if (!free && ctx.Picks.Pick(view, mouse, SelectMode.Vertex, Theme.Scale, ctx.Backfaces) is { } v && ctx.Doc.Find(v.Mesh) is { } vm)
             return new CutPoint(vm.Positions[v.A], normal, CutSnapKind.Vertex);
 
-        if (ctx.Picks.Pick(view, mouse, SelectMode.Edge, Theme.Scale, ctx.Backfaces) is { } e && ctx.Doc.Find(e.Mesh) is { } em)
+        if (!free && ctx.Picks.Pick(view, mouse, SelectMode.Edge, Theme.Scale, ctx.Backfaces) is { } e && ctx.Doc.Find(e.Mesh) is { } em)
         {
             var a = em.Positions[e.A];
             var b = em.Positions[e.B];
             float t = ClosestOnSegment(ray, a, b);
-            if (ctx.Snap) t = SnapAlong(a, b, t, ctx.Grid);
+            if (snap) t = SnapAlong(a, b, t, ctx.Grid);
             return new CutPoint(Vector3.Lerp(a, b, t), normal, CutSnapKind.Edge);
         }
 
         if (hit is { } h)
         {
             var p = h.Point;
-            if (ctx.Snap)
+            if (snap)
             {
                 // Snap on the face's dominant grid plane, then slide back onto the face along that axis.
                 var axis = TextureMapping.DominantAxis(h.Normal);
@@ -56,7 +58,7 @@ public static class CutSnap
 
         if (!Picker.RayPlane(ray, Vector3.Zero, Vector3.UnitY, out float tg)) return null;
         var g = ray.At(tg);
-        if (ctx.Snap) g = new Vector3(MeshOps.Snap(g.X, ctx.Grid), 0, MeshOps.Snap(g.Z, ctx.Grid));
+        if (snap) g = new Vector3(MeshOps.Snap(g.X, ctx.Grid), 0, MeshOps.Snap(g.Z, ctx.Grid));
         return new CutPoint(g, Vector3.UnitY, CutSnapKind.Ground);
     }
 

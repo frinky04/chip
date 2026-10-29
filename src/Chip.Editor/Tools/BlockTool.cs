@@ -14,7 +14,7 @@ namespace Chip.Editor.Tools;
 /// <summary>
 /// Hammer-style block creation: drag the base on the hovered surface (or the ground), release, move to set the height,
 /// click or Enter to create. The dragged box is filled by the chosen shape (box, cylinder, wedge, stairs, arch, sphere,
-/// torus, spiral stairs), previewed as a wireframe. Ctrl at the start of the drag stands the base plane up toward the camera.
+/// torus, spiral stairs), previewed as a wireframe. Shift at the start of the drag stands the base plane up toward the camera.
 /// Shape and parameters live on the tool instance, so they are remembered between uses.
 /// </summary>
 public sealed class BlockTool : IViewportTool
@@ -53,9 +53,9 @@ public sealed class BlockTool : IViewportTool
 
     public (string Key, string Action)[] Hints => _stage switch
     {
-        Stage.Idle => [("Drag", "draw a base on a surface or the grid"), ("Ctrl+drag", "on a plane facing you"), ("Esc", "exit tool")],
-        Stage.Base => [("Release", "set the base")],
-        _ => [("Move", "set height"), ("Click/Enter", $"create {Label(Shape).ToLowerInvariant()}"), ("Esc", "cancel")],
+        Stage.Idle => [("Drag", "draw a base on a surface or the grid"), ("Shift+drag", "on a plane facing you"), ("Ctrl", "no snap"), ("Esc", "exit tool")],
+        Stage.Base => [("Release", "set the base"), ("Ctrl", "no snap")],
+        _ => [("Move", "set height"), ("Ctrl", "no snap"), ("Click/Enter", $"create {Label(Shape).ToLowerInvariant()}"), ("Esc", "cancel")],
     };
 
     public bool Cancel(EditorContext ctx)
@@ -76,14 +76,14 @@ public sealed class BlockTool : IViewportTool
         switch (_stage)
         {
             case Stage.Idle:
-                _cursor = ctx.ViewportHovered ? _plane.Pick(ctx, ImGui.GetIO().KeyCtrl) : null;
+                _cursor = ctx.ViewportHovered ? _plane.Pick(ctx, ImGui.GetIO().KeyShift, ImGui.GetIO().KeyCtrl) : null;
                 if (_cursor == null || !ImGui.IsMouseClicked(ImGuiMouseButton.Left)) return;
                 _a = _b = _cursor.Value;
                 _stage = Stage.Base;
                 return;
 
             case Stage.Base:
-                if (_plane.Hit(ray) is { } p) _b = p;
+                if (_plane.Hit(ray, ImGui.GetIO().KeyCtrl) is { } p) _b = p;
                 if (ImGui.IsMouseDown(ImGuiMouseButton.Left)) return;
                 var d = Vector3.Abs(_b - _a);
                 int flat = (d.X < 1e-3f ? 1 : 0) + (d.Y < 1e-3f ? 1 : 0) + (d.Z < 1e-3f ? 1 : 0);
@@ -92,7 +92,7 @@ public sealed class BlockTool : IViewportTool
                 return;
 
             default:
-                if (_plane.Height(ray, _b) is { } h) _height = h;
+                if (_plane.Height(ray, _b, ImGui.GetIO().KeyCtrl) is { } h) _height = h;
                 bool confirm = (ctx.ViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
                     || ImGui.IsKeyPressed(ImGuiKey.Enter) || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter);
                 if (!confirm) return;
@@ -124,7 +124,7 @@ public sealed class BlockTool : IViewportTool
         return o;
     }
 
-    /// <summary>Puts the tool mid-gesture with a fixed 4 × 3 × 3 m box, so headless captures show the shape preview.</summary>
+    /// <summary>Puts the tool mid-gesture with a fixed 4 Ã— 3 Ã— 3 m box, so headless captures show the shape preview.</summary>
     public void PreviewForCapture()
     {
         _a = new Vector3(2, 0, 2);
@@ -184,7 +184,7 @@ public sealed class BlockTool : IViewportTool
                 break;
             case PrimitiveShape.Arch:
                 Int("Curve", "Segments along the curve", ref o.ArchSegments);
-                Float("Arc", "Degrees swept by the arch; 180 is a semicircle", ref o.ArchDegrees, 5, "%.0f°");
+                Float("Arc", "Degrees swept by the arch; 180 is a semicircle", ref o.ArchDegrees, 5, "%.0fÂ°");
                 Float("Width", "Thickness of the arch band in metres", ref o.ArchThickness, ctx.Grid, "%.3g m");
                 break;
             case PrimitiveShape.Sphere:
@@ -198,7 +198,7 @@ public sealed class BlockTool : IViewportTool
                 break;
             case PrimitiveShape.SpiralStairs:
                 StepOptions(ctx);
-                Float("Turn", "Total rotation in degrees", ref o.SpiralDegrees, 15, "%.0f°");
+                Float("Turn", "Total rotation in degrees", ref o.SpiralDegrees, 15, "%.0fÂ°");
                 Percent("Inner", "Opening in the middle as a share of the radius; 0 makes a solid centre", ref o.SpiralInner, 0, 0.9f);
                 RowLabel("");
                 ImGui.Checkbox("Solid to floor", ref o.SpiralSolid);
@@ -211,7 +211,7 @@ public sealed class BlockTool : IViewportTool
         {
             RowLabel("");
             bool turn = Turn;
-            if (ImGui.Checkbox("Rotate 90°", ref turn)) Turn = turn;
+            if (ImGui.Checkbox("Rotate 90Â°", ref turn)) Turn = turn;
             Tip("Run along the other side of the base. By default the shape runs along the longer side, in the drag direction");
         }
         if (Shape is PrimitiveShape.Cylinder or PrimitiveShape.Arch or PrimitiveShape.Sphere or PrimitiveShape.Torus)

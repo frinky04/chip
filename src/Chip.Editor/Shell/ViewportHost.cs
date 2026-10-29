@@ -172,7 +172,7 @@ public sealed partial class EditorApp
     bool TryBeginPivotDrag()
     {
         var io = ImGui.GetIO();
-        if (!ImGui.IsMouseClicked(ImGuiMouseButton.Middle) || io.KeyCtrl || io.KeyShift || io.KeyAlt) return false;
+        if (!ImGui.IsMouseClicked(ImGuiMouseButton.Middle) || io.KeyShift || io.KeyAlt) return false;
         if (Ctx.ActiveTool != Ctx.DefaultTool || Ctx.SelectionPivot() is not { } pivot) return false;
         var h = Ctx.Gizmo.PivotHitTest(Ctx.View, pivot, Ctx.Mouse);
         if (h == Handle.None) return false;
@@ -224,7 +224,7 @@ public sealed partial class EditorApp
         if (!Ctx.ViewportHovered || Ctx.RaycastFace() is not { } hit) return null;
         var n = TextureMapping.DominantAxis(hit.Normal);
         float depth = Vector3.Dot(hit.Point, n);
-        if (Ctx.Snap) depth = MathF.Round(depth / Ctx.Grid) * Ctx.Grid;
+        if (Ctx.Snap && !ImGui.GetIO().KeyCtrl) depth = MathF.Round(depth / Ctx.Grid) * Ctx.Grid;
         return new GridPlane(n * depth, n, hit.Point);
     }
 

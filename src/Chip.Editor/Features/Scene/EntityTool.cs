@@ -42,7 +42,7 @@ public sealed class EntityTool : IViewportTool
     bool PlacingReference => ClassName.Trim() == ReferenceModels.ClassName;
     string Label => PlacingReference ? ReferenceModels.DisplayName(Model) : EntityClasses.Get(ClassName).Label;
 
-    public (string Key, string Action)[] Hints => [("LMB", $"place {Label.ToLowerInvariant()}"), ("Esc", "exit tool")];
+    public (string Key, string Action)[] Hints => [("LMB", $"place {Label.ToLowerInvariant()}"), ("Ctrl", "no snap"), ("Esc", "exit tool")];
 
     public bool Cancel(EditorContext ctx)
     {
@@ -83,7 +83,7 @@ public sealed class EntityTool : IViewportTool
         {
             var n = Vector3.Dot(hit.Normal, ctx.MouseRay().Dir) > 0 ? -hit.Normal : hit.Normal;
             var p = hit.Point;
-            if (ctx.Snap)
+            if (ctx.Snap && !ImGui.GetIO().KeyCtrl)
             {
                 p = new Vector3(Core.Geometry.MeshOps.Snap(p.X, ctx.Grid), p.Y, Core.Geometry.MeshOps.Snap(p.Z, ctx.Grid));
                 p -= n * Vector3.Dot(p - hit.Point, n); // back onto the wall's plane
@@ -92,7 +92,7 @@ public sealed class EntityTool : IViewportTool
             var r = ReferencePlacement.OnWall(ctx.Doc, p, n, bottom, model);
             return (r.Position, r.Yaw, FitText(model, r));
         }
-        if (_plane.Pick(ctx, false) is not { } point) return null;
+        if (_plane.Pick(ctx, false, ImGui.GetIO().KeyCtrl) is not { } point) return null;
         var normal = _plane.Normal;
         if (Vector3.Dot(normal, ctx.MouseRay().Dir) > 0) normal = -normal; // a back face, or the grid seen from below: stay on the camera's side
         float below = EntityOps.BoxCorners(Probe(Vector3.Zero, Yaw)).Min(c => Vector3.Dot(c, normal));
@@ -107,7 +107,7 @@ public sealed class EntityTool : IViewportTool
     {
         var n = on.Normal;
         var p = on.Point;
-        if (ctx.Snap)
+        if (ctx.Snap && !ImGui.GetIO().KeyCtrl)
         {
             var axis = Core.Texturing.TextureMapping.DominantAxis(n);
             float S(float v, float a) => a != 0 ? v : Core.Geometry.MeshOps.Snap(v, ctx.Grid);

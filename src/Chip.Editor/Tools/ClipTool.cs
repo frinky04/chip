@@ -41,8 +41,8 @@ public sealed class ClipTool : IViewportTool
 
     public (string Key, string Action)[] Hints => _stage switch
     {
-        Stage.Idle => [("Click", "start the cut line"), ("Drag", "draw it in one go"), ("Esc", "exit tool")],
-        Stage.Second => [("Click", "end the cut line"), ("Esc", "cancel")],
+        Stage.Idle => [("Click", "start the cut line"), ("Ctrl", "no snap"), ("Drag", "draw it in one go"), ("Esc", "exit tool")],
+        Stage.Second => [("Click", "end the cut line"), ("Ctrl", "no snap"), ("Esc", "cancel")],
         _ => [("Enter", "clip"), ("Tab", $"keep {KeepName(NextKeep(Keep))}"), ("Click", "redraw the line"), ("Esc", "cancel")],
     };
 
@@ -57,7 +57,7 @@ public sealed class ClipTool : IViewportTool
     public void Update(EditorContext ctx)
     {
         ctx.Hover = null;
-        _cursor = ctx.ViewportHovered ? CutSnap.At(ctx, ctx.Mouse) : null;
+        _cursor = ctx.ViewportHovered ? CutSnap.At(ctx, ctx.Mouse, ImGui.GetIO().KeyCtrl) : null;
         bool click = ctx.ViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left);
 
         switch (_stage)
