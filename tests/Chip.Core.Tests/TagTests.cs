@@ -92,6 +92,13 @@ public class TagTests
         // The bend's axis (x = 2.5) is past the 2 m top, so the sweep doesn't fold the sides over themselves.
         Run("arc extrude", m => MeshOps.ArcExtrudeFaces(m, [3], ArcSweep.Bend(new(0.5f, 1, 0.5f), Vector3.UnitY, Vector3.UnitX, 2, 1.5f, 3), true));
         Run("push/pull", m => MeshOps.PushPullFaces(m, [3, 1], Vector3.UnitY), valid: false);
+        Run("resolve push/pull", m =>
+        {
+            MeshOps.ConnectEdges(m, [new(2, 3), new(6, 7)]);
+            var (move, sides) = MeshOps.PushPullFaces(m, [3], Vector3.UnitY);
+            foreach (int v in move) m.Positions[v] -= Vector3.UnitY * 0.5f;
+            MeshOps.ResolvePushPullSides(m, sides, new HashSet<int> { 3 });
+        });
         Run("inset", m => MeshOps.Inset(m, [3]).Apply(m, 0.25f, outset: false));
         Run("outset", m => MeshOps.Inset(m, [3]).Apply(m, 0.25f, outset: true));
         Run("offset", m => MeshOps.Offset(m, [3]).Apply(m, 0.25f));

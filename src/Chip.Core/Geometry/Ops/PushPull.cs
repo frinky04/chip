@@ -118,4 +118,72 @@ public static partial class MeshOps
         var groups = parent.Keys.GroupBy(Find).Select(g => (IReadOnlyList<int>)g.Order().ToList()).Where(g => g.Count > 1).ToList();
         return MergeFaceGroups(m, groups);
     }
+
+    /// <summary>
+    /// Absorbs extrusion strips into adjacent coplanar surfaces, including oppositely wound strips from inward pushes.
+    /// The combined outline can fold back over itself: planar untangling removes its cancelled area and stitches the
+    /// resulting rim into the other faces. Original surfaces supply material, mapping and tags, rather than the strips.
+    /// </summary>
+    public static MergeFacesResult? ResolvePushPullSides(PolyMesh m, IReadOnlyCollection<int> sides, IReadOnlySet<int> pushed)
+    {
+        var sideSet = sides.ToHashSet();
+        var edgeFaces = Topology.EdgeFaces(m);
+        bool Coplanar(int f, Vector3 normal, Vector3 point) =>
+            MathF.Abs(Vector3.Dot(m.FaceNormal(f), normal)) >= 0.9999f &&
+            m.Faces[f].Verts.All(v => MathF.Abs(Vector3.Dot(m.Positions[v] - point, normal)) <= 1e-4f);
+        var owners = new Dictionary<int, int>();
+        foreach (int s in sides)
+        {
+            if (Topology.FaceArea(m, s) < 1e-8f) continue;
+            var normal = m.FaceNormal(s);
+            var point = m.Positions[m.Faces[s].Verts[0]];
+            foreach (int f in m.Faces[s].Edges().SelectMany(e => edgeFaces[e]))
+                if (!sideSet.Contains(f) && !pushed.Contains(f) && Coplanar(f, normal, point))
+                { owners[s] = f; break; }
+        }
+        bool SameSurface(int a, int b) => a == b ||
+            (m.Faces[a].UVs == null && m.Faces[b].UVs == null &&
+             m.Faces[a].Material == m.Faces[b].Material && m.Faces[a].Map.Equals(m.Faces[b].Map) &&
+             m.Faces[a].Tags == m.Faces[b].Tags && m.Faces[a].Dominant == m.Faces[b].Dominant);
+        var seen = new HashSet<int>();
+        var groups = new List<IReadOnlyList<int>>();
+        foreach (int side in sides)
+        {
+            if (seen.Contains(side) || !owners.TryGetValue(side, out int owner)) continue;
+            var normal = m.FaceNormal(side);
+            var point = m.Positions[m.Faces[side].Verts[0]];
+            var group = new List<int>();
+            var pending = new Queue<int>();
+            pending.Enqueue(side);
+            seen.Add(side);
+            while (pending.TryDequeue(out int f))
+            {
+                group.Add(f);
+                foreach (var e in m.Faces[f].Edges())
+                    foreach (int g in edgeFaces[e])
+                    {
+                        if (seen.Contains(g) || pushed.Contains(g)) continue;
+                        if (!Coplanar(g, normal, point)) continue;
+                        // Keep existing material/tag/UV seams; each strip belongs to the surface at its original edge.
+                        int surface = sideSet.Contains(g) ? owners.GetValueOrDefault(g, -1) : g;
+                        if (surface < 0 || !SameSurface(owner, surface)) continue;
+                        seen.Add(g);
+                        pending.Enqueue(g);
+                    }
+            }
+            if (group.Count > 1 && group.Any(f => !sideSet.Contains(f)))
+                groups.Add(group.OrderBy(f => sideSet.Contains(f)).ThenBy(f => f).ToArray());
+        }
+        if (groups.Count == 0) return null;
+        var surfaces = groups.Select(g => (Face: g[0], Original: m.Faces[g[0]].Clone(),
+            Corners: m.FacePoints(g[0]).ToArray())).ToList();
+        var merged = MergeFaceGroups(m, groups);
+        foreach (var (face, original, corners) in surfaces)
+            if (original.UVs is { } uvs && merged.FaceMap[face] is var target && target >= 0)
+                m.Faces[target].UVs = m.Faces[target].Verts.Select(v => InterpolateUV(corners, uvs, m.Positions[v])).ToArray();
+        var clean = CleanUp(m, 1e-5f);
+        return new MergeFacesResult(
+            merged.VertexMap.Select(v => v < 0 ? -1 : clean.VertexMap[v]).ToArray(),
+            merged.FaceMap.Select(f => f < 0 ? -1 : clean.FaceMap[f]).ToArray(), [], merged.Skipped);
+    }
 }

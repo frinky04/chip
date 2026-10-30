@@ -24,6 +24,8 @@ public sealed class TransformGesture
     readonly List<(PolyMesh Mesh, int Face, TextureMapping Start)> _lockedFaces = new();
     readonly List<(PolyMesh Mesh, List<int> Faces)> _extrudeSides = new();
     readonly List<(PolyMesh Mesh, HashSet<int> Pushed)> _pushed = new();
+    readonly List<(PolyMesh Mesh, PolyMesh Start)> _pushStarts = new();
+    readonly Selection? _pushSelection;
     readonly List<(Entity Entity, Vector3 Position, Vector3 Rotation)> _entities = new();
     /// <summary>Push/pull only moves along this direction (the selected faces' average normal).</summary>
     readonly Vector3? _constraint;
@@ -106,6 +108,11 @@ public sealed class TransformGesture
         }
         StartBounds = _parts.Count + _entities.Count == 0 ? (Vector3.Zero, Vector3.Zero) : (min, max);
         Pivot = (StartBounds.Min + StartBounds.Max) * 0.5f;
+        if (_pushed.Count > 0)
+        {
+            _pushSelection = sel.Clone();
+            foreach (var (mesh, _) in _pushed) _pushStarts.Add((mesh, mesh.Clone()));
+        }
     }
 
     /// <summary>Starts a gesture on the session's selection. Returns null when nothing is selected.</summary>
@@ -122,6 +129,18 @@ public sealed class TransformGesture
     public void Apply(Matrix4x4 m, bool rigid)
     {
         if (_constraint is { } n) m = Matrix4x4.CreateTranslation(n * Vector3.Dot(m.Translation, n));
+        // Rebuild each preview from the initial extrusion: trimming changes indices and must never accumulate.
+        foreach (var (mesh, start) in _pushStarts)
+        {
+            mesh.Positions = new(start.Positions);
+            mesh.Faces = start.Faces.Select(f => f.Clone()).ToList();
+            mesh.SoftEdges = new(start.SoftEdges);
+        }
+        if (_pushSelection != null)
+        {
+            _session.Sel.Clear();
+            foreach (var item in _pushSelection.Items) _session.Sel.Add(item);
+        }
         foreach (var (mesh, verts, start) in _parts)
             for (int i = 0; i < verts.Length; i++)
                 mesh.Positions[verts[i]] = Vector3.Transform(start[i], m);
@@ -139,24 +158,27 @@ public sealed class TransformGesture
             }
         }
         _last = m;
+        if (!m.IsIdentity)
+            foreach (var (mesh, pushed) in _pushed)
+            {
+                var sides = _extrudeSides.First(s => s.Mesh == mesh).Faces;
+                MeshOps.AlignToGrid(mesh, sides);
+                if (MeshOps.ResolvePushPullSides(mesh, sides, pushed) is { } resolved)
+                    _session.Sel.Remap(mesh.Id, resolved.VertexMap, resolved.FaceMap);
+            }
         _session.Touch();
     }
 
     /// <summary>
-    /// Commits one undo step. An extrude or push/pull that never moved is discarded; push/pull merges side faces that
-    /// ended up flush with their neighbours; component edits that drop vertices onto each other merge them (so pulling
+    /// Commits one undo step. An extrude or push/pull that never moved is discarded; push/pull's trimmed preview is
+    /// retained; component edits that drop vertices onto each other merge them (so pulling
     /// a box's top edge down to the floor yields a clean wedge).
     /// </summary>
     public void Commit()
     {
         if ((_extrudeSides.Count > 0 || _constraint != null) && _last.IsIdentity) { _session.Cancel(); return; }
-        foreach (var (mesh, sides) in _extrudeSides) MeshOps.AlignToGrid(mesh, sides);
-        foreach (var (mesh, pushed) in _pushed)
-        {
-            var sides = _extrudeSides.First(s => s.Mesh == mesh).Faces;
-            if (MeshOps.MergeCoplanarSides(mesh, sides, pushed) is { } merged)
-                _session.Sel.Remap(mesh.Id, merged.VertexMap, merged.FaceMap);
-        }
+        foreach (var (mesh, sides) in _extrudeSides)
+            if (!_pushed.Any(p => p.Mesh == mesh)) MeshOps.AlignToGrid(mesh, sides);
         if (_session.Sel.Mode != SelectMode.Object)
             foreach (var mesh in _parts.Select(p => p.Mesh).Distinct())
                 if (MeshOps.CollapseCoincident(mesh, 1e-3f) is { } maps)

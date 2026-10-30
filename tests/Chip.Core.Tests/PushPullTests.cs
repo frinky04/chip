@@ -7,6 +7,77 @@ namespace Chip.Core.Tests;
 
 public class PushPullTests
 {
+    [Theory]
+    [InlineData(0.5f)]
+    [InlineData(-0.5f)]
+    public void Absorbing_strips_preserves_existing_wall_material_seams(float distance)
+    {
+        var (m, top) = SplitBoxTop();
+        var front = Enumerable.Range(0, m.Faces.Count).Where(f => m.FaceNormal(f).Z < -0.99f).ToArray();
+        foreach (int f in front) m.Faces[f].Material = m.FaceCenter(f).X < 0.5f ? "left" : "right";
+        var doc = new Document();
+        doc.Add(m);
+        var s = new Session();
+        s.Reset(doc, null);
+        s.Sel.ConvertTo(SelectMode.Face, doc);
+        s.Sel.Add(ElementRef.Face(m.Id, top));
+        var g = TransformGesture.Start(s, "Push/Pull", GestureKind.PushPull)!;
+        g.Apply(Matrix4x4.CreateTranslation(0, distance, 0), rigid: true);
+        g.Commit();
+        Assert.True(IsClosedManifold(m));
+        Assert.Empty(MeshOps.Check(m));
+        int left = m.Faces.IndexOf(Assert.Single(m.Faces, f => f.Material == "left"));
+        int right = m.Faces.IndexOf(Assert.Single(m.Faces, f => f.Material == "right"));
+        Assert.Equal(0.5f * (1 + distance), Topology.FaceArea(m, left), 4);
+        Assert.Equal(0.5f, Topology.FaceArea(m, right), 4);
+    }
+
+    [Theory]
+    [InlineData(0.5f)]
+    [InlineData(-0.5f)]
+    public void Partial_top_trims_or_extends_uncut_walls_during_the_drag(float distance)
+    {
+        var m = UnitBox();
+        // Only split the top. The front/back walls remain single polygons with an extra rim corner.
+        MeshOps.ConnectEdges(m, [new(2, 3), new(6, 7)]);
+        int top = Enumerable.Range(0, m.Faces.Count).Single(f =>
+            m.FaceNormal(f).Y > 0.99f && m.FaceCenter(f).X < 0.5f);
+        m.Faces[0].Material = "different wall material";
+        m.Faces[0].Tags = TagSet.Of("wall");
+        m.Faces[0].UVs = m.FacePoints(0).Select(p => new Vector2(p.Z, p.Y)).ToArray();
+        var doc = new Document();
+        doc.Add(m);
+        var s = new Session();
+        s.Reset(doc, null);
+        s.Sel.ConvertTo(SelectMode.Face, doc);
+        s.Sel.Add(ElementRef.Face(m.Id, top));
+        var g = TransformGesture.Start(s, "Push/Pull", GestureKind.PushPull)!;
+        foreach (float d in new[] { distance, -distance, distance })
+        {
+            g.Apply(Matrix4x4.CreateTranslation(0, d, 0), rigid: true);
+            Assert.True(IsClosedManifold(m));
+            Assert.Empty(MeshOps.Check(m));
+            float AreaOnPlane(int axis, float value) => Enumerable.Range(0, m.Faces.Count)
+                .Where(f => m.FacePoints(f).All(p => MathF.Abs(p[axis] - value) < 1e-5f))
+                .Sum(f => Topology.FaceArea(m, f));
+            Assert.Equal(1 + d, AreaOnPlane(0, 0), 4);
+            Assert.Equal(1, AreaOnPlane(0, 1), 4);
+            Assert.Equal(1 + 0.5f * d, AreaOnPlane(2, 0), 4);
+            Assert.Equal(1 + 0.5f * d, AreaOnPlane(2, 1), 4);
+            var wall = Assert.Single(m.Faces, f => f.Material == "different wall material");
+            Assert.Equal(TagSet.Of("wall"), wall.Tags);
+            Assert.NotNull(wall.UVs);
+            for (int i = 0; i < wall.Verts.Length; i++)
+            {
+                var p = m.Positions[wall.Verts[i]];
+                Assert.True(Vector2.Distance(new(p.Z, p.Y), wall.UVs[i]) < 1e-4f);
+            }
+            Assert.Equal(1 + d, m.FaceCenter(Assert.Single(s.Sel.Items).A).Y, 4);
+        }
+        g.Commit();
+        Assert.Empty(MeshOps.Check(m));
+    }
+
     static (PolyMesh Mesh, int Face) SplitBoxTop()
     {
         var m = UnitBox();
