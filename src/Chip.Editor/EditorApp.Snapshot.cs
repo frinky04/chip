@@ -113,6 +113,13 @@ public sealed partial class EditorApp
                 if (int.TryParse(Environment.GetEnvironmentVariable("CHIP_SHOT_CONNECTION"), out int connection))
                     Features.Logic.IoFocus.Show(ctx, entity, connection);
                 break;
+            // Several entities edited together; CHIP_SHOT_ENTITY=<name or id>,<name or id>,… picks which (default: all).
+            case "entities" when doc.Entities.Count > 1:
+                ctx.SetMode(SelectMode.Object);
+                var picks = (Environment.GetEnvironmentVariable("CHIP_SHOT_ENTITY") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                foreach (var e in doc.Entities)
+                    if (picks.Length == 0 || picks.Contains(e.Name) || picks.Contains($"{e.Id}")) ctx.Sel.Add(ElementRef.Object(e.Id));
+                break;
             case "outliner-menu" when doc.Entities.Count > 0: // the Scene tab with the first entity's right-click menu open
                 ctx.SetMode(SelectMode.Object);
                 ctx.Sel.Add(ElementRef.Object(doc.Entities[0].Id));

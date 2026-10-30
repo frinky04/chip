@@ -15,22 +15,26 @@ public static class AssetPicker
 {
     static string _filter = "";
 
-    /// <summary>Draws the field at the width already set. True with the value to store (empty text for none) when the pick changed.</summary>
-    public static bool Draw(string id, AssetKind kind, JsonElement value, out JsonElement picked)
+    /// <summary>
+    /// Draws the field at the width already set. True with the value to store (empty text for none) when the pick changed.
+    /// A <paramref name="mixed"/> field stands for several entities' differing values: it reads "mixed" and any pick counts.
+    /// </summary>
+    public static bool Draw(string id, AssetKind kind, JsonElement value, out JsonElement picked, bool mixed = false)
     {
         picked = value;
-        string current = EntityValues.IsNull(value) ? "" : EntityValues.Text(value);
+        string current = mixed || EntityValues.IsNull(value) ? "" : EntityValues.Text(value);
         var entries = kind.List();
         var entry = current.Length > 0 ? entries.FirstOrDefault(e => e.Value.Equals(current, StringComparison.OrdinalIgnoreCase)) : null;
         bool missing = current.Length > 0 && entry == null;
-        string preview = current.Length == 0 ? "None" : entry != null ? Display(kind, entry) : current;
+        string preview = mixed ? "mixed" : current.Length == 0 ? "None" : entry != null ? Display(kind, entry) : current;
 
         if (missing) ImGui.PushStyleColor(ImGuiCol.Text, Theme.Error);
         bool open = ImGui.BeginCombo(id, preview, ImGuiComboFlags.HeightLarge);
         if (missing) ImGui.PopStyleColor();
         if (!open)
         {
-            Tip(missing ? $"{current} isn't a {Name(kind)} under {Folder(kind)}. Pick one that exists"
+            Tip(mixed ? $"The selected entities use different {Name(kind)} files. A pick sets all of them"
+                : missing ? $"{current} isn't a {Name(kind)} under {Folder(kind)}. Pick one that exists"
                 : current.Length == 0 ? $"No {Name(kind)}" : Display(kind, entry!) != current ? $"{Display(kind, entry!)}\n{current}" : current);
             return false;
         }
@@ -40,7 +44,7 @@ public static class AssetPicker
         ImGui.InputTextWithHint("##filter", $"Search {entries.Count} in {Folder(kind)}", ref _filter, 128);
         bool changed = false;
         // A kind's "none" is empty text (docs/logic.md), which the game reads as a string like any other value.
-        if (ImGui.Selectable("None", current.Length == 0) && current.Length > 0) { picked = EntityValues.Of(""); changed = true; }
+        if (ImGui.Selectable("None", !mixed && current.Length == 0) && (mixed || current.Length > 0)) { picked = EntityValues.Of(""); changed = true; }
         if (missing) ImGui.Selectable($"{current} (missing)##missing", true, ImGuiSelectableFlags.Disabled);
 
         var shown = _filter.Length == 0 ? entries

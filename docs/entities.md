@@ -143,6 +143,14 @@ changing back loses nothing. v2 levels load as they are: their string values rea
 built-in lights' old keys (`color`, `energy`, `range`, `angle`, `shadows` and the old addon's aliases) move to Godot's
 names (`light_color`, `light_energy`, `omni_range` / `spot_range`, `spot_angle`, `shadow_enabled`).
 
+With several entities selected, the inspector edits them together, and each change is one undo step for all of them.
+A field whose values differ reads "mixed": a dash in a checkbox, "mixed" in a number, text or dropdown. Any new value
+sets it on every selected entity. Origin, angles and vector properties are mixed per axis. Typing one axis sets only
+that axis, so typing Y = 0 drops every selected entity to the floor and leaves its X and Z alone. Only the properties
+that all the classes declare are listed. Each entity checks the value against its own class's type and default. When
+the classes differ, a row of class chips (`Light point 2`, `Light spot 1`) narrows the selection to one class. Lists
+that differ show "mixed" and aren't edited together. Free key-values on only some of the entities are dimmed.
+
 Each entity exports as an empty glTF node with
 `extras = { chip_class, chip_id, chip_uid?, chip_scene?, chip_name?, properties }`. Values are typed by the class on the
 way out (a v2 `"10"` goes out as `10`). The addon finds the scene by `chip_uid` (survives moving or renaming the scene),

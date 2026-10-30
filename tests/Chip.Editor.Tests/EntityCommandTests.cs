@@ -81,6 +81,39 @@ public class EntityCommandTests
     }
 
     [Fact]
+    public void An_edit_on_several_entities_is_one_undo_step_and_one_failure_changes_none()
+    {
+        var doc = Level(out _, out var a);
+        var b = doc.Add(EntityClasses.Create("light_spot", new Vector3(5, 1, 0)));
+        var ctx = RegistryTests.Headless(doc);
+        int[] ids = [a.Id, b.Id];
+        var energy = EntityClasses.Get("light_point").Prop("light_energy")!;
+
+        Assert.True(EntitySection.Edit(ctx, ids, "Set Energy on 2 Entities",
+            e => EntityOps.SetProperty(e, EntityMultiEdit.SpecFor(e, energy), EntityValues.Of(3.0))));
+        Assert.All(ids, id => Assert.Equal(3, ctx.Doc.FindEntity(id)!.Properties["light_energy"].GetDouble()));
+
+        // Typing one axis lines them up on it and keeps each one's others.
+        Assert.True(EntitySection.Edit(ctx, ids, "Move 2 Entities", e => { e.Position = EntityMultiEdit.WithAxis(e.Position, 1, 0); return null; }));
+        Assert.Equal(new Vector3(1, 0, 1), ctx.Doc.FindEntity(a.Id)!.Position);
+        Assert.Equal(new Vector3(5, 0, 0), ctx.Doc.FindEntity(b.Id)!.Position);
+
+        // The second entity refuses: the first keeps its value too, and the error names the one that refused.
+        Assert.True(EntitySection.Edit(ctx, [b.Id], "Edit Property", e => EntityOps.SetProperty(e, "taken", "x")));
+        Assert.False(EntitySection.Edit(ctx, ids, "Edit Property", e => { e.Properties["note"] = EntityValues.Of("y"); return EntityOps.RenameProperty(e, "note", "taken"); }));
+        Assert.True(ctx.StatusIsError);
+        Assert.False(ctx.Doc.FindEntity(a.Id)!.Properties.ContainsKey("note"));
+        Assert.False(ctx.Doc.FindEntity(a.Id)!.Properties.ContainsKey("taken"));
+
+        ctx.Commands.Execute("edit.undo"); // the one-entity edit
+        ctx.Commands.Execute("edit.undo"); // the move, both at once
+        Assert.Equal(new Vector3(1, 4, 1), ctx.Doc.FindEntity(a.Id)!.Position);
+        Assert.Equal(new Vector3(5, 1, 0), ctx.Doc.FindEntity(b.Id)!.Position);
+        ctx.Commands.Execute("edit.undo");
+        Assert.All(ids, id => Assert.False(ctx.Doc.FindEntity(id)!.Properties.ContainsKey("light_energy")));
+    }
+
+    [Fact]
     public void Class_properties_are_typed_and_a_default_value_is_not_stored()
     {
         var ctx = RegistryTests.Headless(Level(out _, out var light));
