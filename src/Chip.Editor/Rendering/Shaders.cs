@@ -80,7 +80,7 @@ static class Shaders
             return mix(col, col * tint * 1.6, clamp(abs(r) * 0.45 - 0.08, 0.0, 0.55));
         }
         void main() {
-            vec3 n = normalize(vNrm);
+            vec3 n = normalize(gl_FrontFacing ? vNrm : -vNrm); // double-sided faces light their back like a front
             float d = dot(n, normalize(vec3(0.35, 1.0, 0.6))) * 0.5 + 0.5;
             vec4 t = texture(uTex, vUv);
             vec3 c;

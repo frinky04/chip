@@ -119,6 +119,10 @@ Textures with an alpha channel draw see-through. Chip reads the alpha: crisp hol
 grates; holes under 50 %) and soft alpha becomes **blend** (glass, water). Change it under Alpha in the Materials tab.
 The glTF export writes the same `alphaMode`, so the engine shows what the viewport shows.
 
+Faces draw from the front only. Tick **Double-sided** under the active material for single-plane fences and foliage
+cards. They then draw and pick from behind, and export with glTF `doubleSided`. It only changes rendering: a one-plane
+collider may still block from the front only.
+
 The Texture menu and the inspector align, fit, justify, shift, scale and rotate the texture on the selected faces, and
 unwrap them five ways. `Alt`+right-click continues the selected face's texture onto the face you click. The **fast texture tool**
 (`Shift+Q`) floats over the viewport and puts the common texture operations on single keys.

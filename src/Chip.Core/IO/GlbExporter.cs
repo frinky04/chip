@@ -117,6 +117,7 @@ public static class GlbExporter
                     case AlphaMode.Mask: mat["alphaMode"] = "MASK"; mat["alphaCutoff"] = MaterialAlpha.Cutoff; break;
                     case AlphaMode.Blend: mat["alphaMode"] = "BLEND"; break;
                 }
+            if (info.DoubleSided) mat["doubleSided"] = true;
             var matExtras = new JsonObject();
             if (opt.Remap(name) is { } path) matExtras["chip_path"] = path;
             if (Surfaces.Of(name) is { } surface) matExtras["chip_surface"] = surface.Name; // a rendered surface (a screen) the game swaps

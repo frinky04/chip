@@ -56,6 +56,15 @@ public sealed class PickCache(Session session)
     Document? _doc;
     int _version = -1;
 
+    /// <summary>
+    /// Whether a material draws from both sides (by name). Such faces stay pickable from behind with backface selection
+    /// off, since they are drawn there. Read at query time, so changing a material needs no rebuild.
+    /// </summary>
+    public Func<string, bool>? DoubleSided { get; set; }
+
+    bool Facing(MeshData data, int f, Vector3 normal, Vector3 dir, bool backfaces) =>
+        backfaces || Vector3.Dot(normal, dir) < 0 || DoubleSided?.Invoke(data.Mesh.Faces[f].Material) == true;
+
     /// <summary>Diagnostic counter for verifying that a single-mesh edit rebuilds just one mesh.</summary>
     public int MeshBuildCount { get; private set; }
 
@@ -209,7 +218,7 @@ public sealed class PickCache(Session session)
         foreach (var c in _objects) result.Add(ElementRef.Object(c.Id));
     }
 
-    static void VisitFaces(MeshData data, int meshIndex, int node, Ray ray, bool backfaces, ref FaceHit? best, ref int bestMesh)
+    void VisitFaces(MeshData data, int meshIndex, int node, Ray ray, bool backfaces, ref FaceHit? best, ref int bestMesh)
     {
         ref readonly var n = ref data.Faces.Nodes[node];
         if (!n.Bounds.Intersects(ray, best?.Distance ?? float.MaxValue)) return;
@@ -221,7 +230,7 @@ public sealed class PickCache(Session session)
         }
         int f = n.Item;
         var normal = data.Normals[f];
-        if (!backfaces && Vector3.Dot(normal, ray.Dir) >= 0) return;
+        if (!Facing(data, f, normal, ray.Dir, backfaces)) return;
         var tris = data.Triangles[f];
         for (int i = 0; i < tris.Length; i += 3)
         {
@@ -325,7 +334,7 @@ public sealed class PickCache(Session session)
                     break;
                 case SelectMode.Face:
                     for (int f = 0; f < data.Centers.Length; f++)
-                        if ((backfaces || Vector3.Dot(data.Normals[f], data.Centers[f] - view.Eye) < 0) && Inside(view, min, max, data.Centers[f]))
+                        if (Facing(data, f, data.Normals[f], data.Centers[f] - view.Eye, backfaces) && Inside(view, min, max, data.Centers[f]))
                             result.Add(ElementRef.Face(mesh.Id, f));
                     break;
                 case SelectMode.Object:

@@ -19,6 +19,8 @@ public sealed record MaterialInfo(string Name, string? Path, int Width, int Heig
     public float? TexelDensity { get; init; }
     /// <summary>How this material's alpha draws, when set by hand; null detects it from the image (<see cref="MaterialLibrary.AlphaOf"/>).</summary>
     public AlphaMode? Alpha { get; init; }
+    /// <summary>Faces draw from both sides (glTF <c>doubleSided</c>): single-plane fences, foliage cards. Off culls back faces.</summary>
+    public bool DoubleSided { get; init; }
     /// <summary>Shared with every material of one library, so changing the level's density needs no republish.</summary>
     internal DensityDefault? Base { get; init; }
 
@@ -53,7 +55,7 @@ public sealed partial class MaterialLibrary
     public const string EnvVar = "CHIP_TEXTURE_DIRS";
     /// <summary>
     /// Per-folder side-car holding per-texture overrides:
-    /// <c>{ "texelDensity": { "brick": 256 }, "alpha": { "glass": "blend" } }</c>.
+    /// <c>{ "texelDensity": { "brick": 256 }, "alpha": { "glass": "blend" }, "doubleSided": { "fence": true } }</c>.
     /// </summary>
     public const string SidecarName = "chip-materials.json";
     public static readonly string[] Extensions = [".png", ".jpg", ".jpeg", ".tga"];
@@ -86,6 +88,7 @@ public sealed partial class MaterialLibrary
     readonly List<string> _folders = new();
     readonly Dictionary<string, float> _density = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, AlphaMode> _alpha = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> _doubleSided = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>Alpha read from image pixels, by file path; the write time notices edits.</summary>
     readonly Dictionary<string, (DateTime Stamp, AlphaMode Mode)> _detected = new(StringComparer.OrdinalIgnoreCase);
 
@@ -191,8 +194,9 @@ public sealed partial class MaterialLibrary
         {
             float? d = _density.TryGetValue(list[i].Name, out var v) ? v : list[i].TexelDensity;
             AlphaMode? a = _alpha.TryGetValue(list[i].Name, out var am) ? am : list[i].Alpha;
-            if (d != list[i].TexelDensity || a != list[i].Alpha || !ReferenceEquals(list[i].Base, _base))
-                list[i] = list[i] with { TexelDensity = d, Alpha = a, Base = _base };
+            bool two = _doubleSided.Contains(list[i].Name) || list[i].DoubleSided;
+            if (d != list[i].TexelDensity || a != list[i].Alpha || two != list[i].DoubleSided || !ReferenceEquals(list[i].Base, _base))
+                list[i] = list[i] with { TexelDensity = d, Alpha = a, DoubleSided = two, Base = _base };
         }
         _byName.Clear();
         foreach (var m in list) _byName.TryAdd(m.Name, m);
@@ -281,6 +285,20 @@ public sealed partial class MaterialLibrary
         return source.Length == 0 || WriteSidecar(source);
     }
 
+    // ---- Sides ----
+
+    /// <summary>
+    /// Makes a material draw from both sides (or, with false, cull back faces again) and writes its folder's side-car.
+    /// Returns false if the side-car could not be written (the change still applies for this session).
+    /// </summary>
+    public bool SetDoubleSided(string name, bool doubleSided)
+    {
+        if (doubleSided) _doubleSided.Add(name); else _doubleSided.Remove(name);
+        Publish(All.Select(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase) ? x with { DoubleSided = doubleSided } : x).ToList());
+        var source = Get(name).Source;
+        return source.Length == 0 || WriteSidecar(source);
+    }
+
     // ---- Side-car ----
 
     void ReadSidecar(string folder)
@@ -297,6 +315,9 @@ public sealed partial class MaterialLibrary
                 foreach (var (name, value) in alpha)
                     if (value is JsonValue jv && jv.TryGetValue(out string? s) && Enum.TryParse<AlphaMode>(s, ignoreCase: true, out var mode))
                         _alpha[name] = mode;
+            if (root?["doubleSided"] is JsonObject sides)
+                foreach (var (name, value) in sides)
+                    if (value is JsonValue jv && jv.TryGetValue(out bool on) && on) _doubleSided.Add(name);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
     }
@@ -309,9 +330,12 @@ public sealed partial class MaterialLibrary
         foreach (var m in mine.Where(m => m.TexelDensity != null)) density[m.Name] = m.TexelDensity!.Value;
         var alpha = new JsonObject();
         foreach (var m in mine.Where(m => m.Alpha != null)) alpha[m.Name] = m.Alpha!.Value.ToString().ToLowerInvariant();
+        var sides = new JsonObject();
+        foreach (var m in mine.Where(m => m.DoubleSided)) sides[m.Name] = true;
         var root = new JsonObject();
         if (density.Count > 0) root["texelDensity"] = density;
         if (alpha.Count > 0) root["alpha"] = alpha;
+        if (sides.Count > 0) root["doubleSided"] = sides;
         try
         {
             if (root.Count == 0) { if (File.Exists(path)) File.Delete(path); }

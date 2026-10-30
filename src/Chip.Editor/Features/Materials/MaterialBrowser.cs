@@ -240,6 +240,7 @@ public sealed class MaterialBrowser : IDockPanel
 
         DrawOwnDensity(ctx, active);
         DrawAlpha(ctx, active);
+        DrawSides(ctx, active);
 
         ImGui.Dummy(Theme.Px(0, 2));
         ImGui.TextColored(Theme.TextDim, "Slots");
@@ -309,6 +310,19 @@ public sealed class MaterialBrowser : IDockPanel
                 if (ImGui.Selectable(AlphaLabel(mode), active.Alpha == mode)) SetAlpha(ctx, active, mode);
             ImGui.EndCombo();
         }
+    }
+
+    /// <summary>Whether faces with this material draw from both sides (saved next to the texture, exported as glTF doubleSided).</summary>
+    static void DrawSides(EditorContext ctx, MaterialInfo active)
+    {
+        if (MaterialLibrary.IsMissing(active) || active.Surface is { IsTool: true }) return; // tool surfaces never render in the game
+        RowLabel("Sides", "Double-sided faces draw from behind too, in the viewport and the export (glTF doubleSided): a "
+            + "single-plane fence or foliage card. Leave it off for blocks, whose back faces are never seen. Rendering only: "
+            + "a single-plane collider may still block from the front alone (Godot's trimesh default).");
+        bool on = active.DoubleSided;
+        if (ImGui.Checkbox("Double-sided##sides", ref on)
+            && !ctx.Materials.SetDoubleSided(active.Name, on))
+            ctx.Status($"Couldn't write {MaterialLibrary.SidecarName} in {active.Source}. The change applies until Chip closes; check the folder is writable.", error: true);
     }
 
     static void SetAlpha(EditorContext ctx, MaterialInfo m, AlphaMode? mode)

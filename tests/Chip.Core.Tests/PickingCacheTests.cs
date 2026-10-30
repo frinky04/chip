@@ -29,6 +29,32 @@ public class PickingCacheTests
 
     static PolyMesh Box(Vector3 min, Vector3 max) => MeshOps.CreateBox(min, max, "m", TextureMapping.Default);
 
+    [Fact]
+    public void Double_sided_faces_pick_from_behind_without_backface_selection()
+    {
+        static PolyMesh Card(string material) => new()
+        {
+            Positions = [new(-1, -1, 0), new(1, -1, 0), new(1, 1, 0), new(-1, 1, 0)],
+            Faces = [new Face([0, 1, 2, 3], material, TextureMapping.Default)],
+        };
+        var doc = new Document();
+        var card = doc.Add(Card("card"));
+        var picks = new PickCache(Session(doc)) { DoubleSided = name => name == "card" };
+        Ray From(float z) => new(new Vector3(0, 0, z), Vector3.Normalize(new Vector3(0, 0, -z)));
+        Assert.NotNull(picks.RaycastFace(From(5)));
+        Assert.NotNull(picks.RaycastFace(From(-5)));
+        var front = View(new(0, 0, 5), Vector3.Zero);
+        var back = View(new(0, 0, -5), Vector3.Zero);
+        Assert.Single(picks.Marquee(front, Vector2.Zero, new(1600, 900), SelectMode.Face));
+        Assert.Single(picks.Marquee(back, Vector2.Zero, new(1600, 900), SelectMode.Face));
+
+        // A single-sided card is hit from its front only (and from both with backface selection).
+        card.Faces[0].Material = "m";
+        var single = new PickCache(Session(doc)) { DoubleSided = name => name == "card" };
+        Assert.Equal(1, new[] { 5f, -5f }.Count(z => single.RaycastFace(From(z)) != null));
+        Assert.Equal(2, new[] { 5f, -5f }.Count(z => single.RaycastFace(From(z), backfaces: true) != null));
+    }
+
     static Document Fixture()
     {
         var doc = new Document();

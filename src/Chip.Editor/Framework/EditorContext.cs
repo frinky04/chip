@@ -42,7 +42,7 @@ public sealed class EditorContext
     public EditorContext(Session session, MaterialLibrary materials, Func<double>? clock = null)
     {
         Session = session;
-        Picks = new PickCache(session);
+        Picks = new PickCache(session) { DoubleSided = name => materials.Get(name).DoubleSided };
         Materials = materials;
         ActiveMaterial = materials.All.Count > 0 ? materials.All[0].Name : MaterialLibrary.Missing.Name;
         _clock = clock ?? ImGui.GetTime;

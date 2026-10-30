@@ -205,9 +205,19 @@ public sealed unsafe class Renderer : IDisposable
         _gl.Disable(EnableCap.Blend);
     }
 
+    bool _culling;
+
+    void SetCulling(bool on)
+    {
+        if (on == _culling) return;
+        if (on) _gl.Enable(EnableCap.CullFace); else _gl.Disable(EnableCap.CullFace);
+        _culling = on;
+    }
+
     void BindMaterial(string mat, Surface? surface, MeshPass pass)
     {
         var info = _lib.Get(mat);
+        SetCulling(!info.DoubleSided);
         _gl.Uniform2(Loc(_meshProg, "uTexSize"), new Vector2(info.Width, info.Height));
         _gl.Uniform1(Loc(_meshProg, "uDensity"), info.TexelsPerMeter); // UV checker: the target this texture should hit
         _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
@@ -324,8 +334,9 @@ public sealed unsafe class Renderer : IDisposable
         _gl.DepthFunc(DepthFunction.Lequal);
         _gl.DepthMask(true);
         _gl.Disable(EnableCap.Blend);
-        // Always cull: backface mode only changes what picking can hit, never what's drawn.
+        // Cull unless a material is double-sided: backface mode only changes what picking can hit, never what's drawn.
         _gl.Enable(EnableCap.CullFace);
+        _culling = true;
         _gl.CullFace(TriangleFace.Back);
         _gl.FrontFace(FrontFaceDirection.Ccw);
 

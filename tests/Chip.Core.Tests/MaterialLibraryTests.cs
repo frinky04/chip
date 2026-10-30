@@ -293,6 +293,33 @@ public sealed class MaterialLibraryTests : IDisposable
     }
 
     [Fact]
+    public void Double_sided_is_saved_in_the_sidecar_and_exported()
+    {
+        Write("fence.png", Png(8, 8));
+        Write("wall.png", Png(8, 8));
+        var lib = MaterialLibrary.LoadFolder(_dir);
+        Assert.False(lib.Get("fence").DoubleSided);
+        Assert.True(lib.SetDoubleSided("fence", true));
+        Assert.True(lib.Get("fence").DoubleSided);
+        var json = JsonNode.Parse(File.ReadAllText(Path.Combine(_dir, MaterialLibrary.SidecarName)))!;
+        Assert.True(json["doubleSided"]!["fence"]!.GetValue<bool>());
+        Assert.True(MaterialLibrary.LoadFolder(_dir).Get("fence").DoubleSided);
+
+        var doc = new Document();
+        var box = doc.Add(MeshOps.CreateBox(Vector3.Zero, Vector3.One, "wall", TextureMapping.Default));
+        box.Faces[0].Material = "fence";
+        var glb = GlbExporter.Build(doc, lib);
+        var gltf = JsonNode.Parse(Encoding.UTF8.GetString(glb, 20, (int)BitConverter.ToUInt32(glb, 12)))!;
+        var mats = gltf["materials"]!.AsArray().ToDictionary(m => m!["name"]!.GetValue<string>(), m => m!);
+        Assert.True(mats["fence"]["doubleSided"]!.GetValue<bool>());
+        Assert.Null(mats["wall"]["doubleSided"]); // false is glTF's default
+
+        lib.SetDoubleSided("fence", false);
+        Assert.False(lib.Get("fence").DoubleSided);
+        Assert.False(File.Exists(Path.Combine(_dir, MaterialLibrary.SidecarName)));
+    }
+
+    [Fact]
     public void Export_writes_the_alpha_mode()
     {
         Write("fence.png", MaterialLibrary.EncodePng(8, 8, Rgba(8, 8, i => i % 2 == 0 ? (byte)0 : (byte)255)));
