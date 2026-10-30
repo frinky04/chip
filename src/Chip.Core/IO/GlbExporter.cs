@@ -111,6 +111,12 @@ public static class GlbExporter
             }
             else pbr["baseColorFactor"] = new JsonArray(1f, 0f, 1f, 1f);
             var mat = new JsonObject { ["name"] = name, ["pbrMetallicRoughness"] = pbr };
+            if (pbr.ContainsKey("baseColorTexture"))
+                switch (materials.AlphaOf(name))
+                {
+                    case AlphaMode.Mask: mat["alphaMode"] = "MASK"; mat["alphaCutoff"] = MaterialAlpha.Cutoff; break;
+                    case AlphaMode.Blend: mat["alphaMode"] = "BLEND"; break;
+                }
             var matExtras = new JsonObject();
             if (opt.Remap(name) is { } path) matExtras["chip_path"] = path;
             if (Surfaces.Of(name) is { } surface) matExtras["chip_surface"] = surface.Name; // a rendered surface (a screen) the game swaps

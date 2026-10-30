@@ -220,6 +220,105 @@ public sealed class MaterialLibraryTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_dir, MaterialLibrary.SidecarName)));
     }
 
+    // ---- Alpha ----
+
+    /// <summary>A w×h image whose texel i has alpha <paramref name="alpha"/>(i) and colour (10, 20, 30).</summary>
+    static byte[] Rgba(int w, int h, Func<int, byte> alpha)
+    {
+        var px = new byte[w * h * 4];
+        for (int i = 0; i < w * h; i++) { px[i * 4] = 10; px[i * 4 + 1] = 20; px[i * 4 + 2] = 30; px[i * 4 + 3] = alpha(i); }
+        return px;
+    }
+
+    [Fact]
+    public void Alpha_is_classified_from_the_pixels()
+    {
+        static AlphaMode Classify(Func<int, byte> alpha) => MaterialAlpha.Classify(Rgba(16, 16, alpha), 16, 16);
+        Assert.Equal(AlphaMode.Opaque, Classify(_ => 255));
+        Assert.Equal(AlphaMode.Mask, Classify(i => i % 16 < 8 ? (byte)0 : (byte)255));
+        // Antialiased cut-outs: partial alpha along each edge reads as a mask, even when thin wires make half the
+        // texels edges...
+        Assert.Equal(AlphaMode.Mask, Classify(i => (i % 16) switch { < 7 => 0, 7 => 128, _ => 255 }));
+        Assert.Equal(AlphaMode.Mask, Classify(i => (i % 4) switch { 0 => 0, 2 => 255, _ => 128 }));
+        // ...while partial alpha filling regions of its own is see-through.
+        Assert.Equal(AlphaMode.Blend, Classify(_ => 128));
+        Assert.Equal(AlphaMode.Blend, Classify(i => (byte)(i % 16 * 16)));
+    }
+
+    [Fact]
+    public void Bleed_fills_hidden_texels_with_the_visible_colour()
+    {
+        // Left half visible (10, 20, 30); the right half hides white under alpha 0.
+        var px = Rgba(32, 4, i => i % 32 < 16 ? (byte)255 : (byte)0);
+        for (int i = 0; i < 32 * 4; i++)
+            if (px[i * 4 + 3] == 0) px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = 255;
+        MaterialAlpha.Bleed(px, 32, 4, passes: 2);
+        for (int i = 0; i < 32 * 4; i++)
+        {
+            Assert.Equal([10, 20, 30], px.AsSpan(i * 4, 3).ToArray()); // near texels by growing, far ones by the average
+            Assert.Equal(i % 32 < 16 ? 255 : 0, px[i * 4 + 3]);      // alpha untouched
+        }
+    }
+
+    [Fact]
+    public void Alpha_is_detected_from_files_and_overridden_in_the_sidecar()
+    {
+        Write("fence.png", MaterialLibrary.EncodePng(8, 8, Rgba(8, 8, i => i % 2 == 0 ? (byte)0 : (byte)255)));
+        Write("glass.png", MaterialLibrary.EncodePng(8, 8, Rgba(8, 8, _ => 100)));
+        Write("wall.png", MaterialLibrary.EncodePng(8, 8, Rgba(8, 8, _ => 255)));
+        Write("photo.jpg", Jpeg(8, 8));
+        var lib = MaterialLibrary.LoadFolder(_dir);
+        Assert.Equal(AlphaMode.Mask, lib.AlphaOf("fence"));
+        Assert.Equal(AlphaMode.Blend, lib.AlphaOf("glass"));
+        Assert.Equal(AlphaMode.Opaque, lib.AlphaOf("wall"));
+        Assert.Equal(AlphaMode.Opaque, lib.AlphaOf("photo"));
+        Assert.Equal(AlphaMode.Opaque, lib.AlphaOf("no_such_texture"));
+
+        // An override sits beside a density override in one side-car, and both survive a fresh scan.
+        lib.SetTexelDensity("wall", 256);
+        Assert.True(lib.SetAlphaMode("glass", AlphaMode.Mask));
+        Assert.Equal(AlphaMode.Mask, lib.AlphaOf("glass"));
+        var json = JsonNode.Parse(File.ReadAllText(Path.Combine(_dir, MaterialLibrary.SidecarName)))!;
+        Assert.Equal("mask", json["alpha"]!["glass"]!.GetValue<string>());
+        var again = MaterialLibrary.LoadFolder(_dir);
+        Assert.Equal(AlphaMode.Mask, again.Get("glass").Alpha);
+        Assert.Equal(256f, again.Get("wall").TexelDensity);
+
+        // Clearing the alpha keeps the density; clearing both removes the side-car.
+        lib.SetAlphaMode("glass", null);
+        Assert.Equal(AlphaMode.Blend, lib.AlphaOf("glass"));
+        Assert.Equal(256f, MaterialLibrary.LoadFolder(_dir).Get("wall").TexelDensity);
+        lib.SetTexelDensity("wall", null);
+        Assert.False(File.Exists(Path.Combine(_dir, MaterialLibrary.SidecarName)));
+    }
+
+    [Fact]
+    public void Export_writes_the_alpha_mode()
+    {
+        Write("fence.png", MaterialLibrary.EncodePng(8, 8, Rgba(8, 8, i => i % 2 == 0 ? (byte)0 : (byte)255)));
+        Write("glass.png", MaterialLibrary.EncodePng(8, 8, Rgba(8, 8, _ => 100)));
+        Write("wall.png", MaterialLibrary.EncodePng(8, 8, Rgba(8, 8, _ => 255)));
+        var lib = MaterialLibrary.LoadFolder(_dir);
+        var doc = new Document();
+        var box = doc.Add(MeshOps.CreateBox(Vector3.Zero, Vector3.One, "wall", TextureMapping.Default));
+        box.Faces[0].Material = "fence";
+        box.Faces[1].Material = "glass";
+
+        var glb = GlbExporter.Build(doc, lib);
+        var json = JsonNode.Parse(Encoding.UTF8.GetString(glb, 20, (int)BitConverter.ToUInt32(glb, 12)))!;
+        var mats = json["materials"]!.AsArray().ToDictionary(m => m!["name"]!.GetValue<string>(), m => m!);
+        Assert.Equal("MASK", mats["fence"]["alphaMode"]!.GetValue<string>());
+        Assert.Equal(0.5f, mats["fence"]["alphaCutoff"]!.GetValue<float>());
+        Assert.Equal("BLEND", mats["glass"]["alphaMode"]!.GetValue<string>());
+        Assert.Null(mats["glass"]["alphaCutoff"]);
+        Assert.Null(mats["wall"]["alphaMode"]); // OPAQUE is glTF's default
+
+        var obj = ObjExporter.Build(doc, lib, Path.Combine(_dir, "out.obj"));
+        Assert.Contains("map_d fence.png", obj.Mtl);
+        Assert.Contains("map_d glass.png", obj.Mtl);
+        Assert.DoesNotContain("map_d wall.png", obj.Mtl);
+    }
+
     static MaterialLibrary TwoDensities()
     {
         var lib = new MaterialLibrary();

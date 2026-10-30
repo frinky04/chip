@@ -96,6 +96,7 @@ public static class ObjExporter
             if (ExportImages.Resolve(materials.Get(name), objPath, embed: false) is { RelativePath: { } rel } image)
             {
                 mtl.Append("map_Kd ").Append(rel).Append('\n');
+                if (materials.AlphaOf(name) != AlphaMode.Opaque) mtl.Append("map_d ").Append(rel).Append('\n'); // transparency from the same image's alpha
                 if (image.Copy != null) sideFiles.Add(image.Copy);
             }
         }

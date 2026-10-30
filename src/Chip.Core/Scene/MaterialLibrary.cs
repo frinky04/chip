@@ -17,6 +17,8 @@ public sealed record MaterialInfo(string Name, string? Path, int Width, int Heig
     public string Source { get; init; } = "";
     /// <summary>Pixels per metre for this material; null uses its library's default (the level's density).</summary>
     public float? TexelDensity { get; init; }
+    /// <summary>How this material's alpha draws, when set by hand; null detects it from the image (<see cref="MaterialLibrary.AlphaOf"/>).</summary>
+    public AlphaMode? Alpha { get; init; }
     /// <summary>Shared with every material of one library, so changing the level's density needs no republish.</summary>
     internal DensityDefault? Base { get; init; }
 
@@ -49,7 +51,10 @@ public sealed partial class MaterialLibrary
 {
     /// <summary>Extra texture folders, ';'-separated.</summary>
     public const string EnvVar = "CHIP_TEXTURE_DIRS";
-    /// <summary>Per-folder side-car holding texel density overrides: <c>{ "texelDensity": { "brick": 256 } }</c>.</summary>
+    /// <summary>
+    /// Per-folder side-car holding per-texture overrides:
+    /// <c>{ "texelDensity": { "brick": 256 }, "alpha": { "glass": "blend" } }</c>.
+    /// </summary>
     public const string SidecarName = "chip-materials.json";
     public static readonly string[] Extensions = [".png", ".jpg", ".jpeg", ".tga"];
     public static readonly MaterialInfo Missing = new("missing", null, 64, 64);
@@ -80,6 +85,9 @@ public sealed partial class MaterialLibrary
     readonly List<MaterialInfo> _manual = new();
     readonly List<string> _folders = new();
     readonly Dictionary<string, float> _density = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, AlphaMode> _alpha = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Alpha read from image pixels, by file path; the write time notices edits.</summary>
+    readonly Dictionary<string, (DateTime Stamp, AlphaMode Mode)> _detected = new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyList<MaterialInfo> All { get; private set; } = [];
     /// <summary>Library folders (full paths) in scan order.</summary>
@@ -182,7 +190,9 @@ public sealed partial class MaterialLibrary
         for (int i = 0; i < list.Count; i++)
         {
             float? d = _density.TryGetValue(list[i].Name, out var v) ? v : list[i].TexelDensity;
-            if (d != list[i].TexelDensity || !ReferenceEquals(list[i].Base, _base)) list[i] = list[i] with { TexelDensity = d, Base = _base };
+            AlphaMode? a = _alpha.TryGetValue(list[i].Name, out var am) ? am : list[i].Alpha;
+            if (d != list[i].TexelDensity || a != list[i].Alpha || !ReferenceEquals(list[i].Base, _base))
+                list[i] = list[i] with { TexelDensity = d, Alpha = a, Base = _base };
         }
         _byName.Clear();
         foreach (var m in list) _byName.TryAdd(m.Name, m);
@@ -215,15 +225,78 @@ public sealed partial class MaterialLibrary
         return source.Length == 0 || WriteSidecar(source);
     }
 
+    // ---- Alpha ----
+
+    /// <summary>How a material's alpha draws and exports: its override, else what its image's pixels show.</summary>
+    public AlphaMode AlphaOf(string name)
+    {
+        var m = Get(name);
+        return m.Alpha ?? DetectAlpha(m.Path);
+    }
+
+    /// <summary>The alpha mode an image's pixels show (decoded once per file version). Opaque for no file or an unreadable one.</summary>
+    public AlphaMode DetectAlpha(string? path)
+    {
+        if (path == null || !File.Exists(path)) return AlphaMode.Opaque;
+        var stamp = Stamp(path);
+        lock (_detected)
+            if (_detected.TryGetValue(path, out var hit) && hit.Stamp == stamp) return hit.Mode;
+        var mode = AlphaMode.Opaque;
+        try
+        {
+            var bytes = File.ReadAllBytes(path);
+            if (!(bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8)) // JPEG has no alpha
+            {
+                var img = StbImageSharp.ImageResult.FromMemory(bytes, StbImageSharp.ColorComponents.RedGreenBlueAlpha);
+                mode = MaterialAlpha.Classify(img.Data, img.Width, img.Height);
+            }
+        }
+        catch (Exception) { } // unreadable or unsupported: draws as the missing checker anyway
+        lock (_detected) _detected[path] = (stamp, mode);
+        return mode;
+    }
+
+    /// <summary>Classifies pixels already decoded from <paramref name="path"/> (the viewport's texture upload) and remembers the result.</summary>
+    public AlphaMode DetectAlpha(string path, ReadOnlySpan<byte> rgba, int width, int height)
+    {
+        var mode = MaterialAlpha.Classify(rgba, width, height);
+        lock (_detected) _detected[path] = (Stamp(path), mode);
+        return mode;
+    }
+
+    static DateTime Stamp(string path)
+    {
+        try { return File.GetLastWriteTimeUtc(path); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return default; }
+    }
+
+    /// <summary>
+    /// Overrides (or with null, goes back to detecting) how a material's alpha draws, and writes its folder's side-car.
+    /// Returns false if the side-car could not be written (the override still applies for this session).
+    /// </summary>
+    public bool SetAlphaMode(string name, AlphaMode? mode)
+    {
+        if (mode is AlphaMode m) _alpha[name] = m; else _alpha.Remove(name);
+        Publish(All.Select(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase) ? x with { Alpha = mode } : x).ToList());
+        var source = Get(name).Source;
+        return source.Length == 0 || WriteSidecar(source);
+    }
+
+    // ---- Side-car ----
+
     void ReadSidecar(string folder)
     {
         var path = System.IO.Path.Combine(folder, SidecarName);
         if (!File.Exists(path)) return;
         try
         {
-            if (JsonNode.Parse(File.ReadAllText(path))?["texelDensity"] is JsonObject map)
+            var root = JsonNode.Parse(File.ReadAllText(path));
+            if (root?["texelDensity"] is JsonObject map)
                 foreach (var (name, value) in map)
                     if (value is JsonValue jv && jv.TryGetValue(out float d) && d > 0) _density[name] = d;
+            if (root?["alpha"] is JsonObject alpha)
+                foreach (var (name, value) in alpha)
+                    if (value is JsonValue jv && jv.TryGetValue(out string? s) && Enum.TryParse<AlphaMode>(s, ignoreCase: true, out var mode))
+                        _alpha[name] = mode;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
     }
@@ -231,13 +304,18 @@ public sealed partial class MaterialLibrary
     bool WriteSidecar(string folder)
     {
         var path = System.IO.Path.Combine(folder, SidecarName);
-        var map = new JsonObject();
-        foreach (var m in All.Where(m => m.Source == folder && m.TexelDensity != null).OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
-            map[m.Name] = m.TexelDensity!.Value;
+        var mine = All.Where(m => m.Source == folder).OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        var density = new JsonObject();
+        foreach (var m in mine.Where(m => m.TexelDensity != null)) density[m.Name] = m.TexelDensity!.Value;
+        var alpha = new JsonObject();
+        foreach (var m in mine.Where(m => m.Alpha != null)) alpha[m.Name] = m.Alpha!.Value.ToString().ToLowerInvariant();
+        var root = new JsonObject();
+        if (density.Count > 0) root["texelDensity"] = density;
+        if (alpha.Count > 0) root["alpha"] = alpha;
         try
         {
-            if (map.Count == 0) { if (File.Exists(path)) File.Delete(path); }
-            else AtomicFile.Write(path, System.Text.Encoding.UTF8.GetBytes(new JsonObject { ["texelDensity"] = map }.ToJsonString(new() { WriteIndented = true })));
+            if (root.Count == 0) { if (File.Exists(path)) File.Delete(path); }
+            else AtomicFile.Write(path, System.Text.Encoding.UTF8.GetBytes(root.ToJsonString(new() { WriteIndented = true })));
             return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }

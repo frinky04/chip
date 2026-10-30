@@ -19,6 +19,7 @@ static class Shaders
     // texture tile borders, and a tint for texel density off target: red = denser than uDensity, blue = stretched.
     // uSurface 1: a surface's look instead of a texture, in world space on the face's dominant plane, so it needs no UVs
     // and stays crisp at any size (uPattern 0 solid, 1 stripes, 2 checker). uAlpha < 1: drawn see-through.
+    // uAlphaMode: 0 ignores the texture's alpha, 1 cuts it out at 0.5 (drawn with alpha to coverage), 2 blends by it.
     public const string MeshFs = """
         #version 330 core
         in vec3 vNrm;
@@ -32,7 +33,17 @@ static class Shaders
         uniform int uPattern;
         uniform vec3 uSurfColor;
         uniform float uAlpha;
+        uniform int uAlphaMode;
         out vec4 frag;
+        // Cut-out coverage: the alpha sharpened to a one-pixel ramp around the cutoff, so alpha to coverage antialiases
+        // the edge instead of blurring it. Mipmaps average holes into the alpha and thin cut-outs out with distance;
+        // scaling alpha up with the mip level keeps them as thick far away as up close.
+        float cutout(float a) {
+            vec2 t = vUv * uTexSize;
+            float lod = 0.5 * log2(max(max(dot(dFdx(t), dFdx(t)), dot(dFdy(t), dFdy(t))), 1e-8));
+            a *= 1.0 + max(lod, 0.0) * 0.25;
+            return clamp((a - 0.5) / max(fwidth(a), 1e-4) + 0.5, 0.0, 1.0);
+        }
         vec3 surface(vec3 n) {
             vec3 a = abs(n);
             vec2 p = a.x >= a.y && a.x >= a.z ? vWorld.zy : a.y >= a.z ? vWorld.xz : vWorld.xy;
@@ -71,12 +82,18 @@ static class Shaders
         void main() {
             vec3 n = normalize(vNrm);
             float d = dot(n, normalize(vec3(0.35, 1.0, 0.6))) * 0.5 + 0.5;
+            vec4 t = texture(uTex, vUv);
             vec3 c;
             if (uSurface == 1) c = uMode == 1 ? surface(n) : surface(n) * (0.48 + 0.52 * d);
             else if (uMode == 3) c = checker() * (0.62 + 0.38 * d);
-            else if (uMode == 1) c = texture(uTex, vUv).rgb;
-            else c = texture(uTex, vUv).rgb * (0.48 + 0.52 * d);
-            frag = vec4(c, uAlpha);
+            else if (uMode == 1) c = t.rgb;
+            else c = t.rgb * (0.48 + 0.52 * d);
+            float a = uAlpha;
+            if (uAlphaMode == 1) {
+                a = cutout(t.a);
+                if (a <= 0.0) discard;
+            } else if (uAlphaMode == 2) a *= t.a;
+            frag = vec4(c, a);
         }
         """;
 

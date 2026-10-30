@@ -115,6 +115,10 @@ Texel density is set per level, Scythe style, under Level in the inspector (with
 default, so a 128 px texture tiles every 50 cm. A texture can have its own density, set in the Materials tab under the
 active material.
 
+Textures with an alpha channel draw see-through. Chip reads the alpha: crisp holes become a **cutout** (fences, foliage,
+grates; holes under 50 %) and soft alpha becomes **blend** (glass, water). Change it under Alpha in the Materials tab.
+The glTF export writes the same `alphaMode`, so the engine shows what the viewport shows.
+
 The Texture menu and the inspector align, fit, justify, shift, scale and rotate the texture on the selected faces, and
 unwrap them five ways. `Alt`+right-click continues the selected face's texture onto the face you click. The **fast texture tool**
 (`Shift+Q`) floats over the viewport and puts the common texture operations on single keys.

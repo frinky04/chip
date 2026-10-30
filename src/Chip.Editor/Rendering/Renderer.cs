@@ -45,7 +45,8 @@ public sealed unsafe class Renderer : IDisposable
         public int Revision;
         public float[] Vertices = [], Wires = [];
         public uint Vao, Vbo, WireVao, WireVbo;
-        public readonly List<(string Material, int First, int Count)> Batches = new();
+        /// <summary>One draw per material; the centre sorts see-through batches back to front.</summary>
+        public readonly List<(string Material, int First, int Count, Vector3 Center)> Batches = new();
         /// <summary>Wire buffer layout: [hard interior edges][soft interior edges][boundary edges].</summary>
         public int EdgeVerts, SoftVerts, BoundaryVerts;
     }
@@ -54,7 +55,7 @@ public sealed unsafe class Renderer : IDisposable
     readonly MaterialLibrary _lib;
     readonly uint _meshProg, _colorProg, _lineProg, _gridProg;
     readonly uint _overlayVao, _overlayVbo, _gridVao, _gridVbo;
-    readonly Dictionary<string, (string? Path, uint Tex)> _textures = new(StringComparer.OrdinalIgnoreCase); // loaded on first use
+    readonly Dictionary<string, (string? Path, uint Tex, AlphaMode Alpha)> _textures = new(StringComparer.OrdinalIgnoreCase); // loaded on first use
     readonly List<uint> _uploads = new();
     readonly uint _missingTex;
     readonly Dictionary<int, MeshGpu> _meshes = new();
@@ -117,47 +118,108 @@ public sealed unsafe class Renderer : IDisposable
         if (_textures.TryGetValue(material, out var t) && t.Path == key) return t.Tex;
         if (t.Tex != 0 && t.Tex != _missingTex) _gl.DeleteTexture(t.Tex);
         uint tex = _missingTex;
+        var alpha = AlphaMode.Opaque;
         if (path != null)
-            try { tex = LoadTexture(path); }
+            try { (tex, alpha) = LoadTexture(path); }
             catch (Exception) { } // corrupt or unsupported image: keep the checker so the scene still draws
         else if (look != null) tex = SurfaceTile(look);
-        _textures[material] = (key, tex);
+        _textures[material] = (key, tex, alpha);
         return tex;
     }
 
+    /// <summary>How the material's alpha draws: its override, else what its texture's pixels showed when loaded.</summary>
+    AlphaMode AlphaOf(string material)
+    {
+        EnsureTexture(material);
+        return _lib.Get(material).Alpha ?? _textures[material].Alpha;
+    }
+
+    enum MeshPass { Opaque, Cutout, Translucent }
+
     /// <summary>
-    /// One pass over the scene's mesh batches. Ordinary materials sample their texture; surfaces draw their look (a
-    /// world-space pattern, or their image through the UVs). Tool surfaces (they don't render in the game) go in the
-    /// translucent pass when <paramref name="translucentTools"/> is on, everything else in the opaque one.
+    /// Which pass draws a material. Textures with alpha are cut out or see-through (the UV checker draws them solid);
+    /// tool surfaces (they don't render in the game) are see-through with <paramref name="translucentTools"/> on.
     /// </summary>
-    void DrawMeshes(Document doc, bool translucentPass, bool translucentTools)
+    MeshPass PassOf(string mat, Surface? surface, ViewMode mode, bool translucentTools)
+    {
+        if (translucentTools && surface is { IsTool: true }) return MeshPass.Translucent;
+        if (mode == ViewMode.UvChecker || surface?.Look is { Image: null }) return MeshPass.Opaque;
+        return AlphaOf(mat) switch
+        {
+            AlphaMode.Mask => MeshPass.Cutout,
+            AlphaMode.Blend => MeshPass.Translucent,
+            _ => MeshPass.Opaque,
+        };
+    }
+
+    /// <summary>
+    /// One pass over the scene's mesh batches, in scene order. Ordinary materials sample their texture; surfaces draw
+    /// their look (a world-space pattern, or their image through the UVs).
+    /// </summary>
+    void DrawMeshes(Document doc, MeshPass pass, RenderSettings s)
     {
         string? bound = null;
         foreach (var mesh in _scene?.Meshes ?? doc.Meshes)
         {
             if (mesh.Hidden || !_meshes.TryGetValue(mesh.Id, out var gpu) || gpu.Batches.Count == 0) continue;
             _gl.BindVertexArray(gpu.Vao);
-            foreach (var (mat, first, count) in gpu.Batches)
+            foreach (var (mat, first, count, _) in gpu.Batches)
             {
                 var surface = Surfaces.Of(mat);
-                bool see = translucentTools && surface is { IsTool: true };
-                if (see != translucentPass) continue;
-                if (!string.Equals(bound, mat, StringComparison.OrdinalIgnoreCase))
-                {
-                    var info = _lib.Get(mat);
-                    _gl.Uniform2(Loc(_meshProg, "uTexSize"), new Vector2(info.Width, info.Height));
-                    _gl.Uniform1(Loc(_meshProg, "uDensity"), info.TexelsPerMeter); // UV checker: the target this texture should hit
-                    _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
-                    var look = surface?.Look;
-                    _gl.Uniform1(Loc(_meshProg, "uSurface"), look is { Image: null } ? 1 : 0);
-                    _gl.Uniform1(Loc(_meshProg, "uPattern"), (int)(look?.Pattern ?? SurfacePattern.Solid));
-                    _gl.Uniform3(Loc(_meshProg, "uSurfColor"), look?.Color ?? Vector3.One);
-                    _gl.Uniform1(Loc(_meshProg, "uAlpha"), see ? look!.Opacity : 1f);
-                    bound = mat;
-                }
+                if (PassOf(mat, surface, s.Mode, s.TranslucentTools) != pass) continue;
+                if (!string.Equals(bound, mat, StringComparison.OrdinalIgnoreCase)) BindMaterial(mat, surface, pass);
+                bound = mat;
                 _gl.DrawArrays(PrimitiveType.Triangles, first, (uint)count);
             }
         }
+    }
+
+    readonly List<(float Distance, uint Vao, string Material, Surface? Surface, int First, int Count)> _translucent = new();
+
+    /// <summary>See-through batches, farthest first so nearer ones blend over them (per material batch, not per face).</summary>
+    void DrawTranslucent(Document doc, RenderSettings s, Vector3 eye)
+    {
+        _translucent.Clear();
+        foreach (var mesh in _scene?.Meshes ?? doc.Meshes)
+        {
+            if (mesh.Hidden || !_meshes.TryGetValue(mesh.Id, out var gpu)) continue;
+            foreach (var (mat, first, count, center) in gpu.Batches)
+            {
+                var surface = Surfaces.Of(mat);
+                if (PassOf(mat, surface, s.Mode, s.TranslucentTools) == MeshPass.Translucent)
+                    _translucent.Add((Vector3.DistanceSquared(center, eye), gpu.Vao, mat, surface, first, count));
+            }
+        }
+        if (_translucent.Count == 0) return;
+        _translucent.Sort((a, b) => b.Distance.CompareTo(a.Distance));
+        _gl.Enable(EnableCap.Blend);
+        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        _gl.DepthMask(false); // depth-tested, not depth-written, so they never hide what's behind them
+        foreach (var (_, vao, mat, surface, first, count) in _translucent)
+        {
+            _gl.BindVertexArray(vao);
+            BindMaterial(mat, surface, MeshPass.Translucent);
+            _gl.DrawArrays(PrimitiveType.Triangles, first, (uint)count);
+        }
+        _gl.DepthMask(true);
+        _gl.Disable(EnableCap.Blend);
+    }
+
+    void BindMaterial(string mat, Surface? surface, MeshPass pass)
+    {
+        var info = _lib.Get(mat);
+        _gl.Uniform2(Loc(_meshProg, "uTexSize"), new Vector2(info.Width, info.Height));
+        _gl.Uniform1(Loc(_meshProg, "uDensity"), info.TexelsPerMeter); // UV checker: the target this texture should hit
+        _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
+        var look = surface?.Look;
+        bool tool = surface is { IsTool: true } && pass == MeshPass.Translucent;
+        _gl.Uniform1(Loc(_meshProg, "uSurface"), look is { Image: null } ? 1 : 0);
+        _gl.Uniform1(Loc(_meshProg, "uPattern"), (int)(look?.Pattern ?? SurfacePattern.Solid));
+        _gl.Uniform3(Loc(_meshProg, "uSurfColor"), look?.Color ?? Vector3.One);
+        _gl.Uniform1(Loc(_meshProg, "uAlpha"), tool ? look!.Opacity : 1f);
+        // Translucent tools fade as a whole; a see-through texture also multiplies in its own alpha.
+        int alphaMode = pass switch { MeshPass.Cutout => 1, MeshPass.Translucent when !tool => 2, _ => 0 };
+        _gl.Uniform1(Loc(_meshProg, "uAlphaMode"), alphaMode);
     }
 
     /// <summary>A 64 px tile of a surface's pattern, for the material browser.</summary>
@@ -274,18 +336,16 @@ public sealed unsafe class Renderer : IDisposable
             _gl.Uniform1(Loc(_meshProg, "uTex"), 0);
             _gl.Uniform1(Loc(_meshProg, "uMode"), (int)s.Mode);
             _gl.ActiveTexture(TextureUnit.Texture0);
-            // Opaque faces first; then, with View > Translucent tool surfaces, the tool surfaces see-through on top
-            // (depth-tested, not depth-written, so they never hide what's behind them).
-            DrawMeshes(doc, translucentPass: false, s.TranslucentTools);
-            if (s.TranslucentTools)
-            {
-                _gl.Enable(EnableCap.Blend);
-                _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-                _gl.DepthMask(false);
-                DrawMeshes(doc, translucentPass: true, translucentTools: true);
-                _gl.DepthMask(true);
-                _gl.Disable(EnableCap.Blend);
-            }
+            // The pane's alpha must stay 1 (the UI composites it with blending), whatever the faces write.
+            _gl.ColorMask(true, true, true, false);
+            // Opaque faces first; then cut-outs, whose alpha becomes MSAA coverage for smooth edges without sorting;
+            // then see-through faces (textures with soft alpha, and tool surfaces with View > Translucent tool surfaces).
+            DrawMeshes(doc, MeshPass.Opaque, s);
+            _gl.Enable(EnableCap.SampleAlphaToCoverage);
+            DrawMeshes(doc, MeshPass.Cutout, s);
+            _gl.Disable(EnableCap.SampleAlphaToCoverage);
+            DrawTranslucent(doc, s, view.Eye);
+            _gl.ColorMask(true, true, true, true);
             if (_refTriVerts > 0)
             {
                 // Imported files don't promise consistent winding; reference models draw from both sides.
@@ -556,6 +616,7 @@ public sealed unsafe class Renderer : IDisposable
     void BuildMesh(PolyMesh mesh, MeshGpu gpu)
     {
         var byMaterial = new Dictionary<string, List<float>>(StringComparer.OrdinalIgnoreCase);
+        var sums = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
         var tri = new List<int>();
         var normals = Topology.CornerNormals(mesh);
         for (int f = 0; f < mesh.Faces.Count; f++)
@@ -572,13 +633,15 @@ public sealed unsafe class Renderer : IDisposable
                 var uv = face.UV(i, p, info.Width, info.Height);
                 list.Add(p.X); list.Add(p.Y); list.Add(p.Z);
                 list.Add(n.X); list.Add(n.Y); list.Add(n.Z); list.Add(uv.X); list.Add(uv.Y);
+                sums[face.Material] = sums.GetValueOrDefault(face.Material) + p;
             }
         }
         gpu.Batches.Clear();
         var all = new List<float>();
         foreach (var (mat, data) in byMaterial)
         {
-            gpu.Batches.Add((mat, all.Count / 8, data.Count / 8));
+            int verts = data.Count / 8;
+            gpu.Batches.Add((mat, all.Count / 8, verts, verts > 0 ? sums[mat] / verts : Vector3.Zero));
             all.AddRange(data);
         }
         gpu.Vertices = all.ToArray();
@@ -747,11 +810,13 @@ public sealed unsafe class Renderer : IDisposable
         d.Add(c.X); d.Add(c.Y); d.Add(c.Z); d.Add(c.W);
     }
 
-    uint LoadTexture(string path)
+    (uint Tex, AlphaMode Alpha) LoadTexture(string path)
     {
-        using var stream = File.OpenRead(path);
-        var img = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-        return CreateTexture(img.Width, img.Height, img.Data);
+        ImageResult img;
+        using (var stream = File.OpenRead(path)) img = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+        var alpha = _lib.DetectAlpha(path, img.Data, img.Width, img.Height);
+        if (alpha != AlphaMode.Opaque) MaterialAlpha.Bleed(img.Data, img.Width, img.Height); // no halo from colour hidden under alpha 0
+        return (CreateTexture(img.Width, img.Height, img.Data), alpha);
     }
 
     uint Checker()

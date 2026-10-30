@@ -7,6 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Decodes material images where export needs their pixels (alpha mode). -->
+    <PackageReference Include="StbImageSharp" Version="2.30.16" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The Godot addon's built-in entity classes; regenerate with scripts/godot-test.ps1 -UpdateBuiltins. -->
     <EmbeddedResource Include="Scene\BuiltinEntities.json" LogicalName="Chip.Core.BuiltinEntities.json" />
   </ItemGroup>

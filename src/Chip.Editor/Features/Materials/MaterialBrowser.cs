@@ -239,6 +239,7 @@ public sealed class MaterialBrowser : IDockPanel
         ImGui.EndGroup();
 
         DrawOwnDensity(ctx, active);
+        DrawAlpha(ctx, active);
 
         ImGui.Dummy(Theme.Px(0, 2));
         ImGui.TextColored(Theme.TextDim, "Slots");
@@ -287,6 +288,33 @@ public sealed class MaterialBrowser : IDockPanel
             if (ImGui.Button("Reset", new Vector2(Theme.Px(60), 0))) SetDensity(ctx, active, null);
             Tip($"Follow the level again: 1 m is {ctx.Materials.DefaultTexelsPerMeter:0.##} px");
         }
+    }
+
+    static string AlphaLabel(AlphaMode m) => m switch { AlphaMode.Mask => "Cutout", AlphaMode.Blend => "Blend", _ => "Opaque" };
+
+    /// <summary>How the texture's alpha draws and exports: read from the image (Auto), or set by hand (saved next to the texture).</summary>
+    static void DrawAlpha(EditorContext ctx, MaterialInfo active)
+    {
+        if (active.Path == null) return; // surfaces drawn from their look, and the missing material, have no image alpha
+        var detected = ctx.Materials.DetectAlpha(active.Path);
+        RowLabel("Alpha", "How the texture's alpha draws in the viewport and exports (glTF alphaMode). Cutout: holes where "
+            + "alpha is under 50 %, solid elsewhere (fences, foliage, grates). Blend: see-through by alpha, drawn after solid "
+            + "faces (glass, water). Auto reads the image.");
+        ImGui.SetNextItemWidth(-1);
+        string auto = $"Auto: {AlphaLabel(detected)}";
+        if (ImGui.BeginCombo("##alpha", active.Alpha is { } set ? AlphaLabel(set) : auto))
+        {
+            if (ImGui.Selectable(auto, active.Alpha == null)) SetAlpha(ctx, active, null);
+            foreach (var mode in Enum.GetValues<AlphaMode>())
+                if (ImGui.Selectable(AlphaLabel(mode), active.Alpha == mode)) SetAlpha(ctx, active, mode);
+            ImGui.EndCombo();
+        }
+    }
+
+    static void SetAlpha(EditorContext ctx, MaterialInfo m, AlphaMode? mode)
+    {
+        if (!ctx.Materials.SetAlphaMode(m.Name, mode))
+            ctx.Status($"Couldn't write {MaterialLibrary.SidecarName} in {m.Source}. The change applies until Chip closes; check the folder is writable.", error: true);
     }
 
     static void SetDensity(EditorContext ctx, MaterialInfo m, float? density)
