@@ -26,6 +26,10 @@ public sealed record SurfaceLook
     public float Opacity { get; init; } = 1;
     /// <summary>An image drawn through the faces' UVs instead of the pattern (absolute path), e.g. a placeholder frame.</summary>
     public string? Image { get; init; }
+    /// <summary>Unlit equirectangular image sampled by the camera ray, with a procedural sky when absent.</summary>
+    public bool Panorama { get; init; }
+    /// <summary>A world asset property whose kind resolves the image, before Image.</summary>
+    public string? ImageFrom { get; init; }
 }
 
 /// <summary>
@@ -66,6 +70,7 @@ public static class Surfaces
         new() { Name = "clip", Collide = SurfaceCollide.Always, Doc = "Collision only (player clip), whatever the mesh's setting", Look = Tool(0x9B5DE5) },
         new() { Name = "trigger", Collide = SurfaceCollide.None, Volume = true, Doc = "A trigger volume", Look = Tool(0x2BA89A) },
         new() { Name = "skip", Skip = true, Collide = SurfaceCollide.None, Doc = "Left out of the export", Look = Tool(0x4A7FE0) },
+        new() { Name = "sky", Render = true, Doc = "Shows the level's sky, as if infinitely far away. Paint the outside of windows, open roofs and the level's outer shell.", Look = new() { Panorama = true, Pattern = SurfacePattern.Solid } },
     ];
 
     /// <summary>Every surface the current project can use: its own first, then the built-ins it doesn't replace.</summary>
@@ -181,6 +186,8 @@ public static class Surfaces
                             : throw new InvalidDataException($"surface {surface}: \"opacity\" should be a number from 0 to 1"),
                     };
                     break;
+                case "panorama": look = look with { Panorama = Bool(surface, f) }; break;
+                case "imageFrom": look = look with { ImageFrom = f.Value.GetString() }; break;
                 case "image":
                     look = look with
                     {
@@ -189,7 +196,7 @@ public static class Surfaces
                     };
                     break;
                 default:
-                    throw new InvalidDataException($"surface {surface}: \"look\" has an unknown field \"{f.Name}\" (known: color, pattern, opacity, image)");
+                    throw new InvalidDataException($"surface {surface}: \"look\" has an unknown field \"{f.Name}\" (known: color, pattern, opacity, image, panorama, imageFrom)");
             }
         return look;
     }

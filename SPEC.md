@@ -278,3 +278,13 @@ Triangle-topology modes, the Fast Texture Tool, hotspots, bevel/cut/clip/connect
 - R5 (user: icons "wigged"): replaced the hand-drawn vector glyphs with the Tabler icon font (MIT, assets/fonts/tabler-icons.ttf; only the 13 glyphs used go into the atlas, at 18 logical px, pixel-aligned). The texture flip buttons use the flip-horizontal/vertical glyphs.
 - R6 UI foundation pass (frontend-design): each panel has one job. The tool strip is tools only. A new viewport header holds the selection-mode segmented control (icon + label, orange underline), the view name, and grid/snap/backfaces. The status bar only reports (selection, hints/messages, scene counts). The menu bar shows the document name and saved/unsaved state. The F1 keyboard-shortcuts sheet is grouped by task. The block tool shows a snapped construction cursor before the first click. A corner world-axis indicator. `UI/Widgets` is the shared vocabulary (ToolButton, Segment, Toggle, IconButton, TaggedFields, Heading, RowLabel, KeyHints), with three states: active = warm fill + orange bar/underline, setting on = neutral raised, hover = frame.
 - R7 Krita dark orange (user, with a Krita reference): neutral near-black chrome (#1e1e1e) and docks (#262626), dark hairlines, fields with a dark outline. The orange is now a solid fill with dark text for whatever is active or selected: the active tool tile, the active selection mode, selected outliner/palette/preferences rows, primary buttons, and value sliders (fill = value, label centred on it, dark text over the fill and light beyond it). Settings that are on stay neutral with an orange icon. Inspector sections read as Krita dockers, each with a chrome title bar. Brighter toolbox icons; recessed tracks darker than the chrome.
+
+## Level properties and sky
+
+A manifest class with `"world": true` declares per-level settings, edited under Level in the inspector
+(Edit > Level properties clears the selection to reach it). Values save in `.chip` `world.properties` and export
+in the glTF scene's `extras.chip_world`, beside `chip_flags`. World properties support asset kinds and `was` renames.
+The built-in `sky` surface renders an unlit panorama, or a procedural overcast sky. Projects can set
+`look.panorama` and `look.imageFrom` to preview a world asset property. See the
+[manifest](skills/chip/reference/manifest.md), [surfaces](skills/chip/reference/surfaces.md) and
+[export](skills/chip/reference/export.md) references.

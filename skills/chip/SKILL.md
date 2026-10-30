@@ -37,6 +37,8 @@ read its path from `CHIP_EXE`.
    beside its other class settings in the code: one colour per family (lights, logic, enemies), an icon per class.
    Without them every class is the same blue box.
 4. **Check it**: `Chip.exe --entities-check <game root>` exits 0.
+   Declare one `"world": true` class for per-level settings; configure a sky surface's `look.panorama` and `look.imageFrom`
+   when the game uses panorama skies (see `reference/surfaces.md`). Edit values under Level or Edit > Level properties.
 5. **Write the loader** against [`reference/export.md`](reference/export.md): entities by `chip_class` with their
    values over the game's defaults, references resolved by `chip_id`, colliders, triggers, clip.
 6. **Prove the round trip** with a test level ([`reference/levels.md`](reference/levels.md)) holding one entity of every

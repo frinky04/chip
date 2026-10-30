@@ -99,7 +99,7 @@ public static class GlbExporter
             if (materialIndex.TryGetValue(name, out var idx)) return idx;
             var info = materials.Get(name);
             var pbr = new JsonObject { ["metallicFactor"] = 0f, ["roughnessFactor"] = 1f };
-            if (ExportImages.Resolve(info, outputPath, opt.EmbedTextures) is { } image)
+            if (Surfaces.Of(name)?.Name != "sky" && ExportImages.Resolve(info, outputPath, opt.EmbedTextures) is { } image)
             {
                 var img = new JsonObject { ["mimeType"] = image.MimeType, ["name"] = info.Name };
                 if (image.Embedded != null) img["bufferView"] = View(image.Embedded, null);
@@ -375,6 +375,17 @@ public static class GlbExporter
             var flags = new JsonObject();
             foreach (var f in project.Flags.Values) flags[f.Name] = new JsonObject { ["type"] = f.Type.ToString().ToLowerInvariant(), ["default"] = JsonNode.Parse(f.Default.GetRawText()), ["scope"] = f.Scope.ToString().ToLowerInvariant() };
             root["scenes"]![0]!["extras"] = new JsonObject { ["chip_flags"] = flags };
+        }
+        if (EntityClasses.Current.World != null || doc.World.Count > 0)
+        {
+            var cls = EntityClasses.Current.World ?? EntityClasses.Generic("");
+            var scene = root["scenes"]![0]!;
+            scene["extras"] ??= new JsonObject();
+            scene["extras"]!["chip_world"] = new JsonObject
+            {
+                ["chip_class"] = cls.Name,
+                ["properties"] = EntityProperties(new Entity { Properties = doc.World }, cls, exportedIds, warnings),
+            };
         }
         if (images.Count > 0)
         {

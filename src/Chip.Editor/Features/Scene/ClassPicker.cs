@@ -10,10 +10,10 @@ namespace Chip.Editor.Features.Scene;
 public static class ClassPicker
 {
     /// <summary>Point classes: what the entity tool places (mesh classes are made by tying meshes).</summary>
-    public static bool Point(EntityClass c) => !c.IsMesh;
+    public static bool Point(EntityClass c) => !c.IsMesh && !c.IsWorld;
 
     /// <summary>Mesh classes, for Tie to entity (and a mesh entity's class field).</summary>
-    public static bool Mesh(EntityClass c) => c.IsMesh;
+    public static bool Mesh(EntityClass c) => c.IsMesh && !c.IsWorld;
 
     /// <summary>Draws the popup when it's open, listing the classes <paramref name="show"/> accepts (all by default). Returns the class clicked, if any.</summary>
     public static string? Popup(string id, string? current, ref string filter, Func<EntityClass, bool>? show = null)
@@ -30,7 +30,7 @@ public static class ClassPicker
         return picked;
     }
 
-    static int Rows(string filter, Func<EntityClass, bool>? show) => Math.Max(1, EntityClasses.All.Count(c => Matches(c, filter) && (show?.Invoke(c) ?? true)));
+    static int Rows(string filter, Func<EntityClass, bool>? show) => Math.Max(1, EntityClasses.All.Count(c => !c.IsWorld && Matches(c, filter) && (show?.Invoke(c) ?? true)));
 
     static bool Matches(EntityClass c, string filter) => filter.Trim() is not { Length: > 0 } f
         || c.Name.Contains(f, StringComparison.OrdinalIgnoreCase) || c.Label.Contains(f, StringComparison.OrdinalIgnoreCase);
@@ -44,7 +44,7 @@ public static class ClassPicker
     {
         string? picked = null;
         bool any = false;
-        foreach (var c in EntityClasses.All)
+        foreach (var c in EntityClasses.All.Where(c => !c.IsWorld))
         {
             if (!Matches(c, filter) || !references && c.Name == ReferenceModels.ClassName || show?.Invoke(c) == false) continue;
             any = true;

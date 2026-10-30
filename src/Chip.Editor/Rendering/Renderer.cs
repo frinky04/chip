@@ -104,17 +104,31 @@ public sealed unsafe class Renderer : IDisposable
 
     public nint TextureId(string material) => (nint)EnsureTexture(material);
 
+    Document? _worldDocument;
+
+    string? SurfaceImage(SurfaceLook? look)
+    {
+        if (look?.ImageFrom is { } name && EntityClasses.Current.World?.Prop(name) is { Type: PropType.Resource, Kind: { } kind }
+            && EntityClasses.Project?.Kinds.GetValueOrDefault(kind) is { } assets)
+        {
+            string value = _worldDocument?.World.TryGetValue(name, out var stored) == true ? EntityValues.Text(stored) : "";
+            if (assets.List().FirstOrDefault(e => e.Value.Equals(value, StringComparison.OrdinalIgnoreCase)) is { } entry && File.Exists(entry.FullPath)) return entry.FullPath;
+        }
+        return look?.Image is { } image && File.Exists(image) ? image : null;
+    }
+
     /// <summary>
     /// The material's GL texture, loaded on first use (large libraries never load unused textures) and reloaded when a
     /// rescan points the name at another file. Unreadable or unknown materials get the missing checker.
     /// </summary>
     public uint EnsureTexture(string material)
     {
-        var path = _lib.Get(material).Path;
+        var surfaceLook = Surfaces.Of(material)?.Look;
+        var path = SurfaceImage(surfaceLook) ?? (surfaceLook == null ? _lib.Get(material).Path : null);
         // A surface without an image file gets a tile drawn from its look (the browser shows it; the viewport draws the
         // pattern in world space instead).
         var look = path == null ? Surfaces.Of(material)?.Look : null;
-        string? key = path ?? (look != null ? $"look:{look}" : null);
+        string? key = path != null ? (surfaceLook != null ? $"{path}:{File.GetLastWriteTimeUtc(path).Ticks}" : path) : (look != null ? $"look:{look}" : null);
         if (_textures.TryGetValue(material, out var t) && t.Path == key) return t.Tex;
         if (t.Tex != 0 && t.Tex != _missingTex) _gl.DeleteTexture(t.Tex);
         uint tex = _missingTex;
@@ -143,7 +157,7 @@ public sealed unsafe class Renderer : IDisposable
     MeshPass PassOf(string mat, Surface? surface, ViewMode mode, bool translucentTools)
     {
         if (translucentTools && surface is { IsTool: true }) return MeshPass.Translucent;
-        if (mode == ViewMode.UvChecker || surface?.Look is { Image: null }) return MeshPass.Opaque;
+        if (surface?.Look.Panorama == true || mode == ViewMode.UvChecker || surface != null && SurfaceImage(surface.Look) == null) return MeshPass.Opaque;
         return AlphaOf(mat) switch
         {
             AlphaMode.Mask => MeshPass.Cutout,
@@ -222,8 +236,11 @@ public sealed unsafe class Renderer : IDisposable
         _gl.Uniform1(Loc(_meshProg, "uDensity"), info.TexelsPerMeter); // UV checker: the target this texture should hit
         _gl.BindTexture(TextureTarget.Texture2D, EnsureTexture(mat));
         var look = surface?.Look;
+        if (look?.Panorama == true)
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        _gl.Uniform1(Loc(_meshProg, "uPanorama"), look?.Panorama == true ? (SurfaceImage(look) != null ? 1 : 2) : 0);
         bool tool = surface is { IsTool: true } && pass == MeshPass.Translucent;
-        _gl.Uniform1(Loc(_meshProg, "uSurface"), look is { Image: null } ? 1 : 0);
+        _gl.Uniform1(Loc(_meshProg, "uSurface"), look != null && SurfaceImage(look) == null ? 1 : 0);
         _gl.Uniform1(Loc(_meshProg, "uPattern"), (int)(look?.Pattern ?? SurfacePattern.Solid));
         _gl.Uniform3(Loc(_meshProg, "uSurfColor"), look?.Color ?? Vector3.One);
         _gl.Uniform1(Loc(_meshProg, "uAlpha"), tool ? look!.Opacity : 1f);
@@ -281,6 +298,7 @@ public sealed unsafe class Renderer : IDisposable
     public void BeginFrame(Session session, ElementRef? hover, bool showNormals = false, IMeshSet? scene = null,
         IReadOnlyList<FaceTint>? tints = null)
     {
+        _worldDocument = session.Doc;
         LastRebuildCount = 0;
         _scene = scene;
         if (!ReferenceEquals(session, _builtSession) || session.Version != _builtVersion || !ReferenceEquals(session.Doc, _builtDoc)
@@ -344,6 +362,9 @@ public sealed unsafe class Renderer : IDisposable
         {
             _gl.UseProgram(_meshProg);
             SetMatrix(_meshProg, "uViewProj", vp);
+            _gl.Uniform3(Loc(_meshProg, "uEye"), view.Eye);
+            _gl.Uniform3(Loc(_meshProg, "uRay"), view.ScreenRay(view.Size * 0.5f).Dir);
+            _gl.Uniform1(Loc(_meshProg, "uOrtho"), view.IsOrthographic ? 1 : 0);
             _gl.Uniform1(Loc(_meshProg, "uTex"), 0);
             _gl.Uniform1(Loc(_meshProg, "uMode"), (int)s.Mode);
             _gl.ActiveTexture(TextureUnit.Texture0);

@@ -3,7 +3,7 @@
 ## Surfaces
 
 A surface is a material name that changes what faces do in the export: render, collide, form a volume, or disappear.
-Chip has four built in, Source's tool textures:
+Chip has five built in, Source's tool textures:
 
 | Surface | Renders | Collides | Volume |
 |---|---|---|---|
@@ -11,6 +11,7 @@ Chip has four built in, Source's tool textures:
 | `clip` | no | always | no |
 | `trigger` | no | no | yes |
 | `skip` | left out of the export entirely | | |
+| `sky` | yes | when its mesh collides | no |
 
 A game adds its own, or restyles the built-ins, under `"surfaces"` in `chip.project.json`:
 
@@ -36,6 +37,16 @@ and `image` (a path relative to the project file). A pattern is drawn in world s
 through the faces' UVs, so it can stand in for what the game will show (a video frame); fit it with the Texture tools.
 A surface that doesn't render starts striped and see-through; one that renders starts solid. Surfaces that don't
 render draw see-through while View > Translucent tool surfaces is on.
+
+`look.panorama` (bool, default false) draws an unlit equirectangular 2:1 image by camera ray rather than UVs.
+For normalized direction `d`, +Y up: `u = 0.5 + atan2(d.x, -d.z)/(2*pi)`, `v = 0.5 - asin(d.y)/pi`.
+The top row is up; u = 0.5 faces -Z. Sampling uses LOD 0 to avoid wrong mips at the wrap seam.
+`look.imageFrom` (string) names a world class asset property; its kind resolves the stored value to a file.
+Empty, unset or missing assets fall back to `look.image`, then the procedural sky for panorama looks.
+Images reload when the world value or file timestamp changes. The built-in `sky` uses panorama mode with no image:
+a pale grey-blue zenith, lighter horizon and darker grey below. Override its look like any built-in surface.
+Sky exports rendered faces with normal mesh collision and a material named `sky`, `extras.chip_surface = "sky"`,
+and no embedded or referenced image. Its viewport look is editor-only.
 
 Designers apply a surface like any material: it appears in the Materials tab. The game gives each surface its meaning
 from `chip_surface` in the export (see [`export.md`](export.md)).

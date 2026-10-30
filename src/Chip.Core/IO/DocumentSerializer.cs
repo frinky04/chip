@@ -11,6 +11,7 @@ namespace Chip.Core.IO;
 /// Versioned JSON for <c>.chip</c> files. Vectors are float arrays so files stay readable and diffable.
 /// v2 adds per-corner UVs, soft edges, per-mesh lock/collision and entities; every v2 field is optional, so v1 loads as is.
 /// Later additive v2 fields (also optional, omitted when default): per-face <c>dominant</c> (dominant normals).
+/// The optional world.properties object stores sparse level properties (additive v3 field).
 /// v3 stores entity properties as typed JSON values (numbers, bools, arrays) and only the ones an entity sets; v2 values
 /// were all strings, which still read through their class's types. v2's built-in lights are migrated to the Godot
 /// property names their classes now use (<c>range</c> → <c>omni_range</c>, see <see cref="MigrateV2Entity"/>).
@@ -32,7 +33,9 @@ public static partial class DocumentSerializer
         ExportDto? Export = null,
         List<GroupDto>? Groups = null, // stream H: outliner groups (optional, no version bump)
         float? TexelDensity = null,    // px per metre; files without it predate the setting and were built at 512
-        string? Dressing = null);      // dressing rules file, relative to the level (optional, no version bump)
+        string? Dressing = null, WorldDto? World = null);      // dressing rules file, relative to the level (optional, no version bump)
+
+    sealed record WorldDto(Dictionary<string, JsonElement>? Properties);
 
     sealed record MeshDto(int Id, string? Name, bool Hidden, List<float[]> Positions, List<FaceDto> Faces,
         bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null,
@@ -91,7 +94,7 @@ public static partial class DocumentSerializer
             : null,
         ExportToDto(doc.Export),
         doc.Groups.Count > 0 ? doc.Groups.Select(g => new GroupDto(g.Id, g.Name, g.Parent, g.Members.ToArray(), g.Hidden, g.Locked, g.Folder)).ToList() : null,
-        doc.TexelDensity, doc.DressingPath), Options);
+        doc.TexelDensity, doc.DressingPath, doc.World.Count == 0 ? null : new WorldDto(doc.World)), Options);
 
     /// <summary>Density of levels saved before <see cref="Document.TexelDensity"/> existed (the old fixed 512 px/m).</summary>
     public const float LegacyTexelDensity = 512f;
@@ -105,6 +108,7 @@ public static partial class DocumentSerializer
             ExportScale = dto.ExportScale <= 0 ? 1 : dto.ExportScale, ExportPath = dto.ExportPath, ExportCollision = dto.ExportCollision, NextId = dto.NextId,
             TexelDensity = dto.TexelDensity is float t && t > 0 ? t : LegacyTexelDensity,
             DressingPath = dto.Dressing,
+            World = dto.World?.Properties?.ToDictionary(kv => kv.Key, kv => kv.Value.Clone()) ?? new(),
         };
         doc.Export = ExportFromDto(dto.Export);
         foreach (var m in dto.Meshes)

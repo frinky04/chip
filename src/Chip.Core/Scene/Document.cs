@@ -8,6 +8,8 @@ public sealed class Document
 {
     public List<PolyMesh> Meshes = new();
     public List<Entity> Entities = new();
+    /// <summary>Values set on the manifest's world class; absent properties use the game's defaults.</summary>
+    public Dictionary<string, System.Text.Json.JsonElement> World = new();
     /// <summary>Outliner groups (stream H). Optional in files; ids share <see cref="NextId"/> with meshes and entities.</summary>
     public List<Group> Groups = new();
     public int NextId = 1;
@@ -65,6 +67,7 @@ public sealed class Document
     {
         Meshes = Meshes.Select(m => meshIds == null || meshIds.Contains(m.Id) ? m.Clone() : m).ToList(),
         Entities = Entities.Select(e => e.Clone()).ToList(),
+        World = World.ToDictionary(kv => kv.Key, kv => kv.Value.Clone()),
         Groups = Groups.Select(g => g.Clone()).ToList(),
         NextId = NextId,
         TexelDensity = TexelDensity,

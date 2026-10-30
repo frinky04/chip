@@ -14,7 +14,7 @@ public static class EntityManifestCheck
 {
     static readonly HashSet<string> Types =
         ["bool", "int", "float", "string", "enum", "color", "vector2", "vector3", "node", "entity", "resource", "asset", "array", "unsupported"];
-    static readonly HashSet<string> ClassKeys = ["scene", "uid", "label", "base", "doc", "props", "bounds", "preview", "icon", "color", "mesh", "traits", "was", "logic", "inputs", "outputs"];
+    static readonly HashSet<string> ClassKeys = ["scene", "uid", "label", "base", "doc", "props", "bounds", "preview", "icon", "color", "mesh", "world", "traits", "was", "logic", "inputs", "outputs"];
     static readonly HashSet<string> PropKeys =
         ["name", "type", "of", "default", "doc", "group", "options", "range", "or_greater", "or_less", "suffix", "class", "integer",
          "engine", "godot", "file", "multiline", "kind", "trait", "was"];
@@ -52,6 +52,11 @@ public static class EntityManifestCheck
         }
         Lint(text, manifest, problems);
         LogicLint(catalog, project, problems);
+        if (catalog.Classes.Count(c => c.IsWorld) > 1) problems.Add((true, "manifest may declare at most one world class"));
+        foreach (var c in catalog.Classes.Where(c => c.IsWorld))
+        {
+            if (c.IsMesh) problems.Add((true, $"{c.Name}: a world class cannot be mesh"));
+        }
         return Finish(output, json, project, manifest, catalog, problems, 0);
     }
 
@@ -66,6 +71,15 @@ public static class EntityManifestCheck
         foreach (var c in doc.RootElement.GetProperty("classes").EnumerateObject())
         {
             string cls = c.Name;
+            if (c.Value.TryGetProperty("world", out var world))
+            {
+                if (world.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) problems.Add((true, $"{cls}: world should be true or false"));
+                // Empty port lists are fine: a generator writes them for every class.
+                static bool Declares(JsonElement cls, string key) =>
+                    cls.TryGetProperty(key, out var ports) && !(ports.ValueKind == JsonValueKind.Array && ports.GetArrayLength() == 0);
+                if (world.ValueKind == JsonValueKind.True && (Declares(c.Value, "inputs") || Declares(c.Value, "outputs")))
+                    problems.Add((true, $"{cls}: a world class cannot declare inputs or outputs"));
+            }
             foreach (var k in c.Value.EnumerateObject())
                 if (!ClassKeys.Contains(k.Name)) Warn($"{cls}: unknown key \"{k.Name}\" (known: {string.Join(", ", ClassKeys)})");
             if (c.Value.TryGetProperty("bounds", out var b) && !(b.ValueKind == JsonValueKind.Array && b.GetArrayLength() == 2

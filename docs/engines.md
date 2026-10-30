@@ -77,3 +77,13 @@ different manifest path.
 | Collider names | `-col`, `-colonly`, `-convcolonly` suffixes plus extras | extras only (`collisionSuffixes` turns suffixes on) |
 | Material remap paths | `res://materials/brick.tres` | anything, written to `extras.chip_path` |
 | Units | metres (export scale 1) | set the export scale (100 for centimetres) |
+
+## Level properties and sky
+
+A manifest class with `"world": true` declares per-level settings, edited under Level in the inspector
+(Edit > Level properties clears the selection to reach it). Values save in `.chip` `world.properties` and export
+in the glTF scene's `extras.chip_world`, beside `chip_flags`. World properties support asset kinds and `was` renames.
+The built-in `sky` surface renders an unlit panorama, or a procedural overcast sky. Projects can set
+`look.panorama` and `look.imageFrom` to preview a world asset property. See the
+[manifest](../skills/chip/reference/manifest.md), [surfaces](../skills/chip/reference/surfaces.md) and
+[export](../skills/chip/reference/export.md) references.

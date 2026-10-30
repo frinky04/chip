@@ -18,7 +18,9 @@ public sealed class SurfaceMaterials
         if (EntityClasses.Revision == _revision) return;
         _revision = EntityClasses.Revision;
         var lib = ctx.Materials;
-        var surfaces = EntityClasses.Project?.Surfaces ?? [];
+        var surfaces = (EntityClasses.Project?.Surfaces ?? []).ToList();
+        if (!surfaces.Any(s => string.Equals(s.Name, "sky", StringComparison.OrdinalIgnoreCase)))
+            surfaces.Add(Surfaces.BuiltIn.Single(s => s.Name == "sky"));
         foreach (var name in _added.Where(n => !surfaces.Any(s => string.Equals(s.Name, n, StringComparison.OrdinalIgnoreCase))).ToList())
         {
             lib.Remove(name);

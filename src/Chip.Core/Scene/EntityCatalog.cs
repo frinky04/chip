@@ -79,6 +79,8 @@ public sealed class EntityClass
     /// as a point. Godot: a scene whose root is a <c>CollisionObject3D</c>.
     /// </summary>
     public bool IsMesh { get; init; }
+    /// <summary>The level properties class, never placed as an entity.</summary>
+    public bool IsWorld { get; init; }
     public bool IsLogic { get; init; }
     public IReadOnlyList<string> Traits { get; init; } = [];
     public IReadOnlyList<string> Was { get; init; } = [];
@@ -141,6 +143,8 @@ public sealed class EntityCatalog
         _byName = Classes.ToDictionary(c => c.Name, StringComparer.Ordinal);
         Source = source;
     }
+
+    public EntityClass? World => Classes.FirstOrDefault(c => c.IsWorld);
 
     public EntityClass? Find(string name) => _byName.GetValueOrDefault(name);
 
@@ -210,7 +214,7 @@ public sealed class EntityCatalog
                 Name = Str(o, "name") ?? throw new InvalidDataException("Output needs a name"), Doc = Str(o, "doc") ?? "", Was = Strings(o, "was"),
                 Required = Flag(o, "required"), Timeline = Flag(o, "timeline"),
                 Payload = o.TryGetProperty("payload", out var pay) ? ParseProp(name, pay, "payload") : null }).ToArray() : [],
-            BoxMin = min, BoxMax = max, Preview = preview, Icon = Str(c, "icon"), Color = color, Props = props, IsMesh = Flag(c, "mesh"),
+            BoxMin = min, BoxMax = max, Preview = preview, Icon = Str(c, "icon"), Color = color, Props = props, IsMesh = Flag(c, "mesh"), IsWorld = Flag(c, "world"),
         };
     }
 

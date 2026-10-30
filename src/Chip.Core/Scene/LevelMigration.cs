@@ -14,6 +14,8 @@ public static class LevelMigration
     public static int Apply(Document doc, EntityCatalog catalog)
     {
         int count = 0;
+        if (catalog.World is { } world)
+            foreach (var p in world.Props) Rename(doc.World, p.Name, p.Was);
         // Classes first, so the properties and ports below are looked up on the current class.
         foreach (var e in doc.Entities)
             if (catalog.Find(e.ClassName) == null && catalog.Classes.FirstOrDefault(c => c.Was.Contains(e.ClassName)) is { } renamed)

@@ -13,6 +13,7 @@ namespace Chip.Editor.Inspector;
 /// </summary>
 public sealed class LevelSection : IInspectorSection
 {
+    readonly Features.Scene.WorldPropertiesFields _world = new();
     readonly Rendering.FrameCache<string> _counts = new(selection: false);
 
     public string Id => "level";
@@ -30,6 +31,7 @@ public sealed class LevelSection : IInspectorSection
         if (!_counts.IsCurrent(ctx.Session))
             _counts.Store(ctx.Session, $"{Count(doc.Meshes.Count, "mesh", "meshes")}, {Count(doc.Meshes.Sum(m => m.Faces.Count), "face", "faces")}, {Count(doc.Entities.Count, "entity", "entities")}");
         ImGui.TextColored(Theme.TextDisabled, _counts.Value);
+        _world.Draw(ctx);
         SectionDivider();
 
         RowLabel("Density", "Texel density of this level: how many texture pixels cover a metre. Textures without their own density follow it; changing it rescales their faces.");

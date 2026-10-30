@@ -190,7 +190,7 @@ public class SurfaceTests : IDisposable
         // The built-in keeps its behaviour and takes the new colour, and "playerclip" still finds it.
         var clip = Surfaces.Of("playerclip")!;
         Assert.Equal((SurfaceCollide.Always, new Vector3(1, 0, 0)), (clip.Collide, clip.Look.Color));
-        Assert.Equal(["monster_clip", "water", "screen", "clip", "nodraw", "trigger", "skip"], Surfaces.All.Select(s => s.Name));
+        Assert.Equal(["monster_clip", "water", "screen", "clip", "nodraw", "trigger", "skip", "sky"], Surfaces.All.Select(s => s.Name));
     }
 
     [Fact]

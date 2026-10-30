@@ -16,6 +16,7 @@ editing the file, or the next save overwrites your edit.
 }
 ```
 
+- `world` (optional) stores level values as `"world": { "properties": { "sky": "overcast", "brightness": 0.7 } }`. Only changed values are stored, using the manifest world class's types. Missing `world` means no values. This is an additive version 3 field. `--migrate` applies world property `was` renames; `--check-levels` checks types, unused properties and values without a world class.
 - `exportPath` is relative to the level. `--export` writes there when no output path is given.
 - Ids are unique across meshes, entities and outliner groups (`groups`, optional). Give a new entity `nextId` and raise
   `nextId` past it; Chip repairs a `nextId` that is too low when it loads.

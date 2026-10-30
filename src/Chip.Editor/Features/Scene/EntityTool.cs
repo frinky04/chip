@@ -139,6 +139,7 @@ public sealed class EntityTool : IViewportTool
     public void Place(EditorContext ctx, Vector3 position, float? yaw = null, string? fit = null)
     {
         var className = ClassName.Trim();
+        if (EntityClasses.Get(className).IsWorld) { ctx.Status("World classes are edited under Level", error: true); return; }
         if (className.Length == 0) { ctx.Status("Type a class name for the entity first", error: true); return; }
         Entity? placed = null;
         var probe = Probe(position, yaw ?? Yaw);

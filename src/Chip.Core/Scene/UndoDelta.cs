@@ -23,7 +23,7 @@ sealed class UndoDelta
         // before is either a pending clone or the outgoing document during undo/redo.
         _settings = new Document
         {
-            NextId = before.NextId, TexelDensity = before.TexelDensity, ExportScale = before.ExportScale, ExportPath = before.ExportPath,
+            World = before.World, NextId = before.NextId, TexelDensity = before.TexelDensity, ExportScale = before.ExportScale, ExportPath = before.ExportPath,
             ExportCollision = before.ExportCollision, Export = before.Export, DressingPath = before.DressingPath,
         };
     }

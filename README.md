@@ -260,3 +260,13 @@ F1 lists every shortcut and lets you search it. You can rebind keys under Edit >
 
 [SPEC.md](SPEC.md) has the full feature map against Scythe and Source 2 Hammer. If you want to work on Chip itself,
 start with [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Level properties and sky
+
+A manifest class with `"world": true` declares per-level settings, edited under Level in the inspector
+(Edit > Level properties clears the selection to reach it). Values save in `.chip` `world.properties` and export
+in the glTF scene's `extras.chip_world`, beside `chip_flags`. World properties support asset kinds and `was` renames.
+The built-in `sky` surface renders an unlit panorama, or a procedural overcast sky. Projects can set
+`look.panorama` and `look.imageFrom` to preview a world asset property. See the
+[manifest](skills/chip/reference/manifest.md), [surfaces](skills/chip/reference/surfaces.md) and
+[export](skills/chip/reference/export.md) references.

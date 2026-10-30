@@ -80,6 +80,18 @@ world collision. Entities can carry tags through a manifest property (`type: "ar
   They move with it and never join the baked world collision. Under a mesh entity, collider names carry no Godot
   suffixes.
 
+## Level properties
+
+The selected glTF scene carries `extras.chip_world` beside `chip_flags`:
+
+```json
+{ "chip_world": { "chip_class": "level", "properties": { "sky": "overcast", "brightness": 0.7 } } }
+```
+
+Properties use the entity export's typing and reference handling; only explicitly set values are exported.
+Apply the game's defaults for absent properties. The object is omitted when there is no world class and no world values.
+If values remain without a class, they export with an empty `chip_class` and `--check-levels` reports an error.
+
 ## Materials
 
 Each glTF material is named after its Chip material, with the base colour texture embedded or referenced

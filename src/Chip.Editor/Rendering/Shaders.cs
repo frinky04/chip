@@ -30,6 +30,10 @@ static class Shaders
         uniform vec2 uTexSize;
         uniform float uDensity;
         uniform int uSurface;
+        uniform int uPanorama;
+        uniform vec3 uEye;
+        uniform vec3 uRay;
+        uniform int uOrtho;
         uniform int uPattern;
         uniform vec3 uSurfColor;
         uniform float uAlpha;
@@ -84,7 +88,15 @@ static class Shaders
             float d = dot(n, normalize(vec3(0.35, 1.0, 0.6))) * 0.5 + 0.5;
             vec4 t = texture(uTex, vUv);
             vec3 c;
-            if (uSurface == 1) c = uMode == 1 ? surface(n) : surface(n) * (0.48 + 0.52 * d);
+            if (uPanorama != 0) {
+                vec3 ray = normalize(uOrtho == 1 ? uRay : vWorld - uEye);
+                vec2 uv = vec2(0.5 + atan(ray.x, -ray.z) / 6.28318530718, 0.5 - asin(clamp(ray.y, -1.0, 1.0)) / 3.14159265359);
+                // LOD zero avoids derivatives across the longitude wrap selecting an unrelated mip.
+                c = uPanorama == 1 ? textureLod(uTex, uv, 0.0).rgb
+                    : ray.y >= 0.0 ? mix(vec3(0.83, 0.86, 0.88), vec3(0.52, 0.62, 0.70), ray.y)
+                    : mix(vec3(0.83, 0.86, 0.88), vec3(0.32, 0.36, 0.40), -ray.y);
+            }
+            else if (uSurface == 1) c = uMode == 1 ? surface(n) : surface(n) * (0.48 + 0.52 * d);
             else if (uMode == 3) c = checker() * (0.62 + 0.38 * d);
             else if (uMode == 1) c = t.rgb;
             else c = t.rgb * (0.48 + 0.52 * d);

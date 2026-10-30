@@ -94,7 +94,13 @@ public static class LogicOps
     public static IReadOnlyList<LevelProblem> Check(Document doc, EntityCatalog catalog, GameProject? project)
     {
         var check = new Checker(doc, catalog, project);
-        foreach (var e in doc.Entities) check.Entity(e);
+        if (catalog.World is { } world) check.Entity(new Entity { ClassName = world.Name, Name = "Level", Properties = doc.World });
+        else if (doc.World.Count > 0) check.Problems.Add(new(Severity.Error, 0, "Level has world values but the project has no world class"));
+        foreach (var e in doc.Entities)
+        {
+            check.Entity(e);
+            if (catalog.Find(e.ClassName)?.IsWorld == true) check.Add(e, "world class cannot be placed as an entity");
+        }
         foreach (var e in doc.Entities)
             if (LoopsBack(doc, e, e, new HashSet<int>())) check.Add(e, "cycle of connections with zero delay", Severity.Warning);
         return check.Problems;
