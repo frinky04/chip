@@ -8,6 +8,107 @@ namespace Chip.Core.Tests;
 public class PushPullTests
 {
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void Geometrically_matching_floor_edges_are_resolved_without_shared_vertex_ids(bool subdivided, bool inwardFacing)
+    {
+        var (m, top) = SplitBoxTop();
+        // A surface seam imported or assembled with separate corner ids, still within the same mesh.
+        var floor = m.Faces[0];
+        floor.Verts = floor.Verts.Select(v =>
+        {
+            m.Positions.Add(m.Positions[v]);
+            return m.Positions.Count - 1;
+        }).ToArray();
+        if (subdivided)
+        {
+            var edge = new Edge(floor.Verts[0], floor.Verts[1]);
+            MeshOps.ConnectEdges(m, [edge]);
+        }
+        if (inwardFacing) MeshOps.FlipFaces(m, Enumerable.Range(0, m.Faces.Count));
+        // Also exercise a plane that is not aligned to the world axes.
+        var turn = Matrix4x4.CreateRotationZ(0.37f) * Matrix4x4.CreateRotationY(0.19f);
+        for (int v = 0; v < m.Positions.Count; v++) m.Positions[v] = Vector3.Transform(m.Positions[v], turn);
+        var doc = new Document();
+        doc.Add(m);
+        var s = new Session();
+        s.Reset(doc, null);
+        s.Sel.ConvertTo(SelectMode.Face, doc);
+        s.Sel.Add(ElementRef.Face(m.Id, top));
+        var g = TransformGesture.Start(s, "Push/Pull", GestureKind.PushPull)!;
+        foreach (float distance in new[] { -0.25f, 0.5f, -0.5f })
+        {
+            g.Apply(Matrix4x4.CreateTranslation(Vector3.TransformNormal(Vector3.UnitY * distance, turn)), rigid: true);
+            Assert.True(IsClosedManifold(m));
+            Assert.Empty(MeshOps.Check(m));
+            Matrix4x4.Invert(turn, out var inverse);
+            float area = Enumerable.Range(0, m.Faces.Count)
+                .Where(f => m.FacePoints(f).All(p => MathF.Abs(Vector3.Transform(p, inverse).X) < 1e-4f))
+                .Sum(f => Topology.FaceArea(m, f));
+            Assert.Equal(1 + distance, area, 4);
+        }
+        g.Commit();
+        Assert.True(IsClosedManifold(m));
+    }
+
+    [Fact]
+    public void Wall_push_trims_floor_and_ceiling_across_different_surface_seams()
+    {
+        var m = UnitBox();
+        MeshOps.ConnectEdges(m, [new(0, 2), new(1, 3), new(4, 6), new(5, 7)]);
+        MeshOps.ConnectEdges(m, [new(2, 3), new(6, 7)]);
+        int selected = Enumerable.Range(0, m.Faces.Count).Single(f =>
+            m.FaceNormal(f).Y > 0.99f && m.FaceCenter(f).X < 0.5f);
+        // Turn the box so this is a wall and the side with mismatched surfaces is the floor.
+        for (int v = 0; v < m.Positions.Count; v++)
+        {
+            var p = m.Positions[v];
+            m.Positions[v] = new(p.Y, p.X, -p.Z);
+        }
+        for (int f = 0; f < m.Faces.Count; f++)
+        {
+            if (m.FacePoints(f).All(p => p.Y == 0))
+            {
+                m.Faces[f].Material = m.FaceCenter(f).X < 0.5f ? "floor near" : "floor far";
+                m.Faces[f].UVs = m.FacePoints(f).Select(p => new Vector2(p.X, p.Z)).ToArray();
+            }
+        }
+        Assert.True(IsClosedManifold(m));
+        var doc = new Document();
+        doc.Add(m);
+        var s = new Session();
+        s.Reset(doc, null);
+        s.Sel.ConvertTo(SelectMode.Face, doc);
+        s.Sel.Add(ElementRef.Face(m.Id, selected));
+        var g = TransformGesture.Start(s, "Push/Pull", GestureKind.PushPull)!;
+        g.Apply(Matrix4x4.CreateTranslation(-0.75f, 0, 0), rigid: true);
+        float AreaOn(int axis, float value) => Enumerable.Range(0, m.Faces.Count)
+            .Where(f => m.FacePoints(f).All(p => MathF.Abs(p[axis] - value) < 1e-5f))
+            .Sum(f => Topology.FaceArea(m, f));
+        Assert.Equal(0.25f, AreaOn(1, 0), 4);
+        Assert.Equal(1f, AreaOn(1, 1), 4);
+        Assert.True(IsClosedManifold(m));
+        Assert.Empty(MeshOps.Check(m));
+        Assert.DoesNotContain(m.Faces, f => f.Material == "floor far");
+        foreach (var floor in m.Faces.Where(f => f.Material == "floor near"))
+        {
+            Assert.NotNull(floor.UVs);
+            for (int i = 0; i < floor.Verts.Length; i++)
+            {
+                var p = m.Positions[floor.Verts[i]];
+                Assert.True(Vector2.Distance(new(p.X, p.Z), floor.UVs[i]) < 1e-4f);
+            }
+        }
+        g.Commit();
+        Assert.True(s.Undo());
+        Assert.True(IsClosedManifold(s.Doc.Meshes[0]));
+        Assert.True(s.Redo());
+        Assert.True(IsClosedManifold(s.Doc.Meshes[0]));
+    }
+
+    [Theory]
     [InlineData(0.5f)]
     [InlineData(-0.5f)]
     public void Absorbing_strips_preserves_existing_wall_material_seams(float distance)
