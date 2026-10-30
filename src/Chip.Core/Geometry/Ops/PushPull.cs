@@ -13,9 +13,9 @@ public static partial class MeshOps
     }
 
     /// <summary>
-    /// Push/pull setup (SketchUp-style extrude along <paramref name="dir"/>). An outline vertex whose surrounding faces
-    /// all contain the push direction just slides with the region, stretching those faces, because a side face there
-    /// would be coplanar with them. Every other outline vertex is duplicated and joined by side faces as in an extrude.
+    /// Push/pull setup (SketchUp-style extrude along <paramref name="dir"/>). A connected outline whose surrounding faces
+    /// all contain the push direction slides with the region, stretching those faces. Otherwise the whole outline is
+    /// duplicated and joined by quads: mixing sliding and fixed corners would cut diagonally across neighbouring faces.
     /// So pushing a box's top changes its height without adding faces, while pulling a patch out of a floor extrudes it.
     /// Face indices stay; returns the vertices to move and the new side faces (zero area until moved).
     /// </summary>
@@ -33,13 +33,28 @@ public static partial class MeshOps
 
         var normals = new Dictionary<int, Vector3>();
         Vector3 Normal(int f) => normals.TryGetValue(f, out var n) ? n : normals[f] = m.FaceNormal(f);
-        bool Slides(int v) => vertexFaces[v].All(f => region.Contains(f) || MathF.Abs(Vector3.Dot(Normal(f), dir)) < 1e-3f);
+        var outline = new Dictionary<int, HashSet<int>>();
+        foreach (var (a, b) in directed)
+        {
+            if (directed.Contains((b, a))) continue;
+            if (!outline.ContainsKey(a)) outline[a] = new();
+            if (!outline.ContainsKey(b)) outline[b] = new();
+            outline[a].Add(b);
+            outline[b].Add(a);
+        }
+        // A non-sliding corner pins the entire connected outline. Decide before changing any face loops or normals.
+        var pinned = outline.Keys.Where(v => vertexFaces[v].Any(f =>
+            !region.Contains(f) && MathF.Abs(Vector3.Dot(Normal(f), dir)) >= 1e-3f)).ToHashSet();
+        var pending = new Queue<int>(pinned);
+        while (pending.TryDequeue(out int v))
+            foreach (int neighbour in outline[v])
+                if (pinned.Add(neighbour)) pending.Enqueue(neighbour);
 
         var remap = new Dictionary<int, int>();
         int Moved(int v)
         {
             if (remap.TryGetValue(v, out int nv)) return nv;
-            if (Slides(v)) return remap[v] = v;
+            if (!pinned.Contains(v)) return remap[v] = v;
             nv = m.Positions.Count;
             m.Positions.Add(m.Positions[v]);
             return remap[v] = nv;
@@ -56,8 +71,7 @@ public static partial class MeshOps
                 if (directed.Contains((b, a))) continue;
                 int na = Moved(a), nb = Moved(b);
                 if (na == a && nb == b) continue;
-                int[] loop = na == a ? [a, b, nb] : nb == b ? [a, b, na] : [a, b, nb, na];
-                sides.Add(face.Derive(loop));
+                sides.Add(face.Derive([a, b, nb, na]));
             }
         }
         foreach (var f in region)
