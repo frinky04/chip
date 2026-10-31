@@ -169,6 +169,7 @@ public sealed class Outliner : IDockPanel
         if (!_tree.IsCurrent(ctx.Session) || _treeQuery != (_search, _show))
         {
             _tree.Store(ctx.Session, OutlinerTree.Build(doc, _search, _show));
+            FoldNewCopies(_tree.Value);
             _treeQuery = (_search, _show);
             _rows = null;
             _summary = OutlinerTree.Summary(doc);
@@ -352,6 +353,18 @@ public sealed class Outliner : IDockPanel
         return clicked;
     }
 
+    /// <summary>Linked copies seen so far: one of several meshes starts folded, so a placed prop takes one row.</summary>
+    readonly HashSet<int> _seenCopies = new();
+
+    void FoldNewCopies(IEnumerable<OutlinerNode> nodes)
+    {
+        foreach (var n in nodes)
+        {
+            if (n.IsCopy && n.Children.Count > 0 && _seenCopies.Add(n.Id)) _collapsed.Add(n.Id);
+            FoldNewCopies(n.Children);
+        }
+    }
+
     void Fold(int id, bool collapse)
     {
         if (collapse ? _collapsed.Add(id) : _collapsed.Remove(id)) _rows = null;
@@ -371,6 +384,7 @@ public sealed class Outliner : IDockPanel
     /// <summary>Unfolds the rows holding an object, group or folder and scrolls to it.</summary>
     public void Reveal(Document doc, int id)
     {
+        id = OutlinerTree.RowFor(doc, id); // a part of a linked copy shows as the copy, which stays folded
         foreach (int a in OutlinerTree.Ancestors(doc, id)) Fold(a, false);
         _scrollTo = id;
     }
@@ -605,6 +619,8 @@ public sealed class Outliner : IDockPanel
     public void RenameSelection(EditorContext ctx)
     {
         if (RenameTarget(ctx) is not { } id) return;
+        // A one-mesh linked copy's mesh has no row of its own: the copy is what gets the name.
+        if (InstanceOps.CopyOf(ctx.Doc, id) is { } copy && OutlinerTree.IsLeafCopy(ctx.Doc, copy)) id = copy.Id;
         ctx.ShowDock(PanelId);
         Reveal(ctx.Doc, id);
         BeginRename(ctx.Doc, id);

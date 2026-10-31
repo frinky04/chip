@@ -138,6 +138,31 @@ public class OutlinerTests
         Assert.Equal(["floor", "wall"], meshes[0].Children.Select(c => c.Name)); // the lights group held no meshes
         Assert.Empty(OutlinerTree.Build(doc, "crate", OutlinerShow.Entities));
     }
+
+    [Fact]
+    public void A_linked_copy_of_one_mesh_is_one_row_and_a_bigger_one_lists_its_parts()
+    {
+        var doc = new Document();
+        int crate = doc.Add(Mesh("crate")).Id;
+        var one = InstanceOps.Make(doc, [crate], "crate prop")!;
+        int body = doc.Add(Mesh("body")).Id, lid = doc.Add(Mesh("lid")).Id;
+        var two = InstanceOps.Make(doc, [body, lid], "chest prop")!;
+
+        var roots = OutlinerTree.Build(doc);
+        var crateRow = roots.Single(r => r.Id == one.Id);
+        Assert.True(crateRow.IsCopy);
+        Assert.Empty(crateRow.Children);
+        Assert.Equal("", crateRow.Detail);
+        var chestRow = roots.Single(r => r.Id == two.Id);
+        Assert.Equal(["body", "lid"], chestRow.Children.Select(c => c.Name));
+        Assert.Equal("2 parts", chestRow.Detail);
+
+        // The copy's row stands for its meshes; showing only meshes keeps copies as one row each.
+        Assert.Equal(one.Id, OutlinerTree.RowFor(doc, crate));
+        Assert.Equal(crate, OutlinerTree.RowFor(doc, crate) == one.Id ? OutlinerTree.Objects(doc, crateRow).Single() : -1);
+        Assert.Equal(2, OutlinerTree.Build(doc, show: OutlinerShow.Meshes).Count);
+        Assert.Empty(OutlinerTree.Build(doc, show: OutlinerShow.Entities));
+    }
 }
 
 static class TestExtensions

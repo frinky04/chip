@@ -19,13 +19,18 @@ public sealed class OutlinerNode
     public bool Locked { get; init; }
     public int Depth { get; init; }
     public List<OutlinerNode> Children { get; } = new();
+    /// <summary>
+    /// A linked copy (a group with an instance): one row for the whole prop. A one-mesh copy lists no children; a copy
+    /// of several meshes lists them, folded at first.
+    /// </summary>
+    public bool IsCopy { get; init; }
 
     /// <summary>A group or folder: a row that holds others and is not an object itself.</summary>
     public bool IsContainer => Kind is OutlinerKind.Group or OutlinerKind.Folder;
 
     public OutlinerNode CopyWith(IEnumerable<OutlinerNode> children)
     {
-        var copy = new OutlinerNode { Kind = Kind, Id = Id, Name = Name, Detail = Detail, Hidden = Hidden, Locked = Locked, Depth = Depth };
+        var copy = new OutlinerNode { Kind = Kind, Id = Id, Name = Name, Detail = Detail, Hidden = Hidden, Locked = Locked, Depth = Depth, IsCopy = IsCopy };
         copy.Children.AddRange(children);
         return copy;
     }
@@ -55,7 +60,7 @@ public static class OutlinerTree
         foreach (var e in doc.Entities)
             if (!grouped.Contains(e.Id)) roots.Add(ObjectNode(doc, e.Id, 0)!);
         if (show != OutlinerShow.All)
-            roots = Keep(roots, n => n.Kind == (show == OutlinerShow.Meshes ? OutlinerKind.Mesh : OutlinerKind.Entity));
+            roots = Keep(roots, n => show == OutlinerShow.Meshes ? n.Kind == OutlinerKind.Mesh || n.IsCopy : n.Kind == OutlinerKind.Entity);
         return filter.Length == 0 ? roots : Filter(roots, filter);
     }
 
@@ -63,11 +68,15 @@ public static class OutlinerTree
     {
         visited.Add(g);
         int count = GroupOps.AllMembers(doc, g).Count;
+        bool leafCopy = IsLeafCopy(doc, g);
         var node = new OutlinerNode
         {
             Kind = g.Folder ? OutlinerKind.Folder : OutlinerKind.Group, Id = g.Id, Name = g.Name, Hidden = g.Hidden, Locked = g.Locked,
-            Depth = depth, Detail = count == 0 && g.Folder ? "empty" : Objects(count),
+            Depth = depth, IsCopy = g.IsInstance,
+            // A copy reads as one object: its count only says how many meshes a multi-part prop has.
+            Detail = leafCopy ? "" : g.IsInstance ? Plural(count, "part") : count == 0 && g.Folder ? "empty" : Objects(count),
         };
+        if (leafCopy) return node;
         foreach (var child in GroupOps.Children(doc, g))
             if (!visited.Contains(child)) node.Children.Add(GroupNode(doc, child, depth + 1, visited, owned));
         foreach (var id in g.Members)
@@ -97,7 +106,7 @@ public static class OutlinerTree
         var result = new List<OutlinerNode>();
         foreach (var n in nodes)
         {
-            if (!n.IsContainer)
+            if (!n.IsContainer || n.IsCopy) // a copy is one object, kept or dropped whole
             {
                 if (keep(n)) result.Add(n);
                 continue;
@@ -137,6 +146,16 @@ public static class OutlinerTree
         foreach (var r in roots) Walk(r);
         return rows;
     }
+
+    /// <summary>A linked copy of one mesh and nothing nested: its row has no children.</summary>
+    public static bool IsLeafCopy(Document doc, Group g) =>
+        g.IsInstance && g.Members.Count == 1 && !doc.Groups.Any(c => c.Parent == g.Id);
+
+    /// <summary>
+    /// The row that stands for an object in the tree: a linked copy's row for any of its meshes (they are parts of the
+    /// prop), else the object's own row.
+    /// </summary>
+    public static int RowFor(Document doc, int id) => InstanceOps.CopyOf(doc, id)?.Id ?? id;
 
     /// <summary>The objects a row stands for: itself, or every member of a group or folder (nested included).</summary>
     public static List<int> Objects(Document doc, OutlinerNode n) =>
