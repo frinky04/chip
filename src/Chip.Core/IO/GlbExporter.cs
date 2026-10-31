@@ -19,7 +19,8 @@ public sealed record ExportResult(byte[] Data, IReadOnlyList<SideFile> SideFiles
 }
 
 /// <summary>
-/// Writes a glTF 2.0 binary. One node per mesh at the world origin (stable across re-exports), one primitive per material,
+/// Writes a glTF 2.0 binary. One node per mesh at the world origin (stable across re-exports), or, for a mesh with its own
+/// <see cref="ObjectOrigin"/>, at that origin (translation, rotation) with its vertices relative to it; one primitive per material,
 /// per-corner normals (flat, or smoothed across soft edges unless <see cref="ExportSettings.Smoothing"/> is off), explicit
 /// UVs where present else the face projection, and material images embedded as PNG (or referenced, see
 /// <see cref="ExportSettings.EmbedTextures"/>). Colliding nodes carry <c>extras.chip_collider</c> (<c>trimesh</c> or
@@ -137,12 +138,16 @@ public static class GlbExporter
         var children = new Dictionary<int, List<int>>();
         var place = Matrix4x4.Identity; // world to the space the current node's vertices are written in
         Entity? owner = null;
+        ObjectOrigin? nodeOrigin = null; // the current mesh's own origin, which its nodes are placed at
         foreach (var mesh in doc.Meshes)
         {
             if (mesh.Hidden && !opt.IncludeHidden) continue;
             owner = ownerOf.GetValueOrDefault(mesh.Id);
             place = Matrix4x4.Identity;
+            // A mesh entity's meshes are in its space; another mesh with an origin is written relative to that origin.
+            nodeOrigin = owner == null ? mesh.Origin : null;
             if (owner != null) Matrix4x4.Invert(EntityOps.World(owner), out place);
+            else if (nodeOrigin is { } o) place = o.Local;
             var cornerNormals = opt.Smoothing ? Topology.CornerNormals(mesh) : FlatNormals(mesh);
             bool collisionOnly = mesh.Collision is CollisionMode.Only or CollisionMode.ConvexOnly;
             bool collides = collisionOnly || (mesh.Collision == CollisionMode.Default && doc.ExportCollision);
@@ -234,6 +239,7 @@ public static class GlbExporter
             if (nodes.Count > before) meshCount++;
         }
         owner = null;
+        nodeOrigin = null;
         place = Matrix4x4.Identity;
 
         // Baked world collision (Source 2 style): one merged, simplified trimesh in chunks, plus convex hulls if asked.
@@ -286,7 +292,14 @@ public static class GlbExporter
             if (suffix.Length > 0 && !volume) extras["chip_collider"] = suffix.StartsWith("-conv", StringComparison.Ordinal) ? "convex" : "trimesh";
             if (suffix.EndsWith("only", StringComparison.Ordinal)) extras["chip_render"] = false;
             meshes.Add(new JsonObject { ["name"] = name, ["primitives"] = primitives });
-            nodes.Add(new JsonObject { ["name"] = suffixes && owner == null ? name + suffix : name, ["mesh"] = meshes.Count - 1, ["extras"] = extras });
+            var node = new JsonObject { ["name"] = suffixes && owner == null ? name + suffix : name, ["mesh"] = meshes.Count - 1, ["extras"] = extras };
+            if (nodeOrigin is { } o)
+            {
+                var t = o.Position * s;
+                if (t != Vector3.Zero) node["translation"] = new JsonArray(t.X, t.Y, t.Z);
+                if (o.Rotation != Quaternion.Identity) node["rotation"] = new JsonArray(o.Rotation.X, o.Rotation.Y, o.Rotation.Z, o.Rotation.W);
+            }
+            nodes.Add(node);
             if (owner != null)
             {
                 if (!children.TryGetValue(owner.Id, out var list)) children[owner.Id] = list = new List<int>();

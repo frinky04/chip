@@ -27,6 +27,8 @@ public sealed class TransformGesture
     readonly List<(PolyMesh Mesh, PolyMesh Start)> _pushStarts = new();
     readonly Selection? _pushSelection;
     readonly List<(Entity Entity, Vector3 Position, Vector3 Rotation)> _entities = new();
+    /// <summary>Origins of meshes and whole groups moving with the selection (object mode), with their start.</summary>
+    readonly List<(OriginTarget Target, ObjectOrigin Start)> _origins = new();
     /// <summary>Push/pull only moves along this direction (the selected faces' average normal).</summary>
     readonly Vector3? _constraint;
 
@@ -107,7 +109,17 @@ public sealed class TransformGesture
             max = Vector3.Max(max, e.Position);
         }
         StartBounds = _parts.Count + _entities.Count == 0 ? (Vector3.Zero, Vector3.Zero) : (min, max);
-        Pivot = (StartBounds.Min + StartBounds.Max) * 0.5f;
+        Pivot = OriginOps.UnitOrigin(doc, sel)?.Position ?? (StartBounds.Min + StartBounds.Max) * 0.5f;
+        if (sel.Mode == SelectMode.Object)
+        {
+            // An origin travels with its object: a mesh's with the mesh, a group's when all of the group moves.
+            foreach (var (mesh, _, _) in _parts)
+                if (mesh.Origin is { } o) _origins.Add((new OriginTarget(null, mesh), o));
+            var moved = sel.MeshIds();
+            foreach (var g in doc.Groups)
+                if (g.Origin is { } o && GroupOps.AllMembers(doc, g) is { Count: > 0 } all && all.All(moved.Contains))
+                    _origins.Add((new OriginTarget(g, null), o));
+        }
         if (_pushed.Count > 0)
         {
             _pushSelection = sel.Clone();
@@ -146,6 +158,7 @@ public sealed class TransformGesture
                 mesh.Positions[verts[i]] = Vector3.Transform(start[i], m);
         foreach (var (mesh, face, start) in _lockedFaces)
             mesh.Faces[face].Map = rigid ? start.MovedRigidly(m) : start;
+        foreach (var (target, start) in _origins) target.Origin = start.Transformed(m);
         if (_entities.Count > 0)
         {
             // Entities keep their size: only the rotation part of the transform turns them.

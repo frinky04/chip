@@ -327,7 +327,11 @@ public sealed class EditorContext
     /// <summary>Temporary pivot (Scythe: MMB-drag the gizmo). Cleared by the viewport when the selection changes.</summary>
     public Vector3? PivotOverride { get; set; }
 
-    public Vector3? SelectionPivot() => SelectionBounds() is { } b ? PivotOverride ?? (b.Min + b.Max) * 0.5f : null;
+    /// <summary>
+    /// Where the gizmo sits and transforms pivot: the temporary pivot, else the origin of the one object selected (a mesh
+    /// or group with an origin, or a mesh entity; <see cref="OriginOps.UnitOrigin"/>), else the selection's bounds centre.
+    /// </summary>
+    public Vector3? SelectionPivot() => SelectionBounds() is { } b ? PivotOverride ?? OriginOps.UnitOrigin(Doc, Sel)?.Position ?? (b.Min + b.Max) * 0.5f : null;
 
     public Ray MouseRay() => View.ScreenRay(Mouse);
 

@@ -9,7 +9,7 @@ public static class GizmoFrame
 {
     public static (Vector3 X, Vector3 Y, Vector3 Z) For(GizmoOrientation o, Document doc, Selection sel, Camera cam) => o switch
     {
-        GizmoOrientation.Local => Local(doc, sel) ?? World,
+        GizmoOrientation.Local => OriginOps.UnitOrigin(doc, sel)?.Axes ?? Local(doc, sel) ?? World,
         GizmoOrientation.View => (cam.Right, cam.Up, -cam.Forward),
         _ => World,
     };

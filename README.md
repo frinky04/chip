@@ -96,6 +96,11 @@ and entity; a group selects as one, a folder only sorts things (its button, or E
 renames, dragging moves things into folders and groups, and right-click has the rest. `Ctrl+T` tags faces (or whole
 meshes in object mode); dressing rules find their targets by tag.
 
+**Origins.** A mesh or group can have its own origin: Mesh > Origin to bottom centre (or centre, or the pivot, which
+in vertex, edge or face mode is the selected components), or the Origin section of the inspector. The selected object then
+turns and scales about its origin, the Local gizmo follows its axes, and export places the mesh's node there instead of
+at the world origin. Clear origin goes back to pivoting on the bounds centre.
+
 **Picking among overlapping things.** Click the same spot again to select the next object under the cursor (the entity
 behind a wall, the wall inside a trigger volume), or `Ctrl`+right-click (`Alt+S`) for a list of all of them. `5` makes
 object mode pick entities only, so walls and floors stay out of the way; the dropdown beside the modes switches back.

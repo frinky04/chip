@@ -277,6 +277,10 @@ public sealed class MeshOpsFeature : IEditorFeature
         var axis = Vector3.Abs(TextureMapping.DominantAxis(right with { Y = 0 }));
         if (axis.LengthSquared() < 0.5f) axis = Vector3.UnitX;
         foreach (var (mesh, verts) in Sel.VertexSets(Doc)) Ops.Mirror(mesh, verts, pivot, axis);
+        // Whole objects take their origins across with them (a mirror isn't a rotation, so the axes stay as they were).
+        if (Sel.Mode == SelectMode.Object)
+            foreach (var t in OriginOps.Targets(Doc, Sel))
+                if (t.Origin is { } o) t.Origin = o with { Position = o.Position - 2 * axis * Vector3.Dot(o.Position - pivot, axis) };
         _ctx.Status($"Mirrored along {(axis.X > 0 ? "X" : axis.Y > 0 ? "Y" : "Z")}");
         return null;
     });

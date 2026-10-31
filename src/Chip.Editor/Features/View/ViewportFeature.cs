@@ -113,7 +113,7 @@ public sealed class ViewportFeature : IEditorFeature
         (GizmoOrientation O, string Label, string Desc)[] axes =
         [
             (GizmoOrientation.World, "World axes", "Gizmo follows the world axes"),
-            (GizmoOrientation.Local, "Local axes", "Gizmo follows the selection's main face"),
+            (GizmoOrientation.Local, "Local axes", "Gizmo follows the selected object's origin, else the selection's main face"),
             (GizmoOrientation.View, "View axes", "Gizmo follows the camera"),
         ];
         for (int i = 0; i < axes.Length; i++)

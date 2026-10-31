@@ -40,7 +40,26 @@ public static partial class DocumentSerializer
     sealed record MeshDto(int Id, string? Name, bool Hidden, List<float[]> Positions, List<FaceDto> Faces,
         bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null,
         string[]? Tags = null,  // dressing tags (optional, no version bump)
-        DressingDto? Dressing = null);
+        DressingDto? Dressing = null,
+        OriginDto? Origin = null); // the mesh's own origin (optional, no version bump)
+
+    /// <summary>An object's origin: <c>{ "position": [x, y, z], "rotation": [x, y, z] }</c>, rotation in degrees like an entity's (omitted when none).</summary>
+    sealed record OriginDto(float[] Position, float[]? Rotation = null);
+
+    static OriginDto? OriginToDto(ObjectOrigin? o)
+    {
+        if (o is not { } v) return null;
+        var euler = EntityOps.ToEuler(v.Rotation);
+        return new OriginDto(Arr(v.Position), euler == Vector3.Zero ? null : Arr(euler));
+    }
+
+    static ObjectOrigin? OriginFromDto(OriginDto? d, string where)
+    {
+        if (d == null) return null;
+        if (d.Position is not { Length: 3 } || d.Rotation is { Length: not 3 })
+            throw new InvalidDataException($"{where}: origin position and rotation must be [x, y, z]");
+        return new ObjectOrigin(Vec(d.Position), d.Rotation is { } r ? EntityOps.Orientation(Vec(r)) : Quaternion.Identity);
+    }
 
     /// <summary>A mesh's dressing overrides: <c>{ "set": { "railing": { "balusterEvery": 0.1 } }, "skip": ["debris"] }</c>.</summary>
     sealed record DressingDto(Dictionary<string, JsonElement>? Set = null, string[]? Skip = null);
@@ -75,7 +94,8 @@ public static partial class DocumentSerializer
         int[]? Meshes = null, string[]? Tags = null, List<JsonElement>? Outputs = null); // a mesh entity's meshes (optional, no version bump)
 
     // stream H: a group's direct members are object ids; Parent 0 = top level.
-    sealed record GroupDto(int Id, string Name, int Parent, int[] Members, bool Hidden = false, bool Locked = false, bool Folder = false);
+    sealed record GroupDto(int Id, string Name, int Parent, int[] Members, bool Hidden = false, bool Locked = false, bool Folder = false,
+        OriginDto? Origin = null);
 
     public static string Serialize(Document doc) => JsonSerializer.Serialize(new FileDto(
         CurrentVersion, doc.ExportScale, doc.ExportPath, doc.ExportCollision, doc.NextId,
@@ -86,14 +106,14 @@ public static partial class DocumentSerializer
                 f.UVs?.Select(uv => new[] { uv.X, uv.Y }).ToList(), f.Dominant ? true : null, TagsDto(f.Tags))).ToList(),
             m.Locked, m.Collision,
             m.SoftEdges.Count > 0 ? m.SoftEdges.OrderBy(e => e.A).ThenBy(e => e.B).Select(e => new[] { e.A, e.B }).ToList() : null,
-            TagsDto(m.Tags), DressingToDto(m.Dressing))).ToList(),
+            TagsDto(m.Tags), DressingToDto(m.Dressing), OriginToDto(m.Origin))).ToList(),
         doc.Entities.Count > 0
             ? doc.Entities.Select(e => new EntityDto(e.Id, e.ClassName, e.Name, Arr(e.Position), Arr(e.Rotation), e.Hidden,
                 e.Properties.Count > 0 ? e.Properties : null,
                 e.Locked, e.Meshes.Count > 0 ? e.Meshes.ToArray() : null, TagsDto(e.Tags), e.Outputs.Count == 0 ? null : e.Outputs.Select(c => JsonSerializer.SerializeToElement(c.ToJson())).ToList())).ToList()
             : null,
         ExportToDto(doc.Export),
-        doc.Groups.Count > 0 ? doc.Groups.Select(g => new GroupDto(g.Id, g.Name, g.Parent, g.Members.ToArray(), g.Hidden, g.Locked, g.Folder)).ToList() : null,
+        doc.Groups.Count > 0 ? doc.Groups.Select(g => new GroupDto(g.Id, g.Name, g.Parent, g.Members.ToArray(), g.Hidden, g.Locked, g.Folder, OriginToDto(g.Origin))).ToList() : null,
         doc.TexelDensity, doc.DressingPath, doc.World.Count == 0 ? null : new WorldDto(doc.World)), Options);
 
     /// <summary>Density of levels saved before <see cref="Document.TexelDensity"/> existed (the old fixed 512 px/m).</summary>
@@ -117,7 +137,7 @@ public static partial class DocumentSerializer
             {
                 Id = m.Id, Name = m.Name ?? "mesh", Hidden = m.Hidden, Locked = m.Locked, Collision = m.Collision,
                 Positions = m.Positions.Select(Vec).ToList(), Tags = TagsFromDto(m.Tags, $"Mesh {m.Id}"),
-                Dressing = DressingFromDto(m.Dressing, m.Id),
+                Dressing = DressingFromDto(m.Dressing, m.Id), Origin = OriginFromDto(m.Origin, $"Mesh {m.Id}"),
             };
             foreach (var f in m.Faces)
             {
@@ -162,7 +182,7 @@ public static partial class DocumentSerializer
         if (dto.Groups != null) // stream H
             foreach (var g in dto.Groups)
             {
-                doc.Groups.Add(new Group { Id = g.Id, Name = g.Name ?? "Group", Parent = g.Parent, Members = (g.Members ?? []).ToList(), Hidden = g.Hidden, Locked = g.Locked, Folder = g.Folder });
+                doc.Groups.Add(new Group { Id = g.Id, Name = g.Name ?? "Group", Parent = g.Parent, Members = (g.Members ?? []).ToList(), Hidden = g.Hidden, Locked = g.Locked, Folder = g.Folder, Origin = OriginFromDto(g.Origin, $"Group {g.Id}") });
                 doc.NextId = Math.Max(doc.NextId, g.Id + 1);
             }
         return doc;

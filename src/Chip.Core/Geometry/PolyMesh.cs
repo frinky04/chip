@@ -86,10 +86,12 @@ public sealed class PolyMesh
     public TagSet Tags;
     /// <summary>This mesh's dressing overrides and rules switched off for it (immutable; replace to edit).</summary>
     public MeshDressing Dressing = MeshDressing.Empty;
+    /// <summary>This mesh's own origin (pivot, gizmo axes, export node transform), or null for none. See <see cref="ObjectOrigin"/>.</summary>
+    public ObjectOrigin? Origin;
 
     public PolyMesh Clone() => new()
     {
-        Id = Id, Name = Name, Hidden = Hidden, Locked = Locked, Collision = Collision, Tags = Tags, Dressing = Dressing,
+        Id = Id, Name = Name, Hidden = Hidden, Locked = Locked, Collision = Collision, Tags = Tags, Dressing = Dressing, Origin = Origin,
         Positions = new List<Vector3>(Positions),
         Faces = Faces.Select(f => f.Clone()).ToList(),
         SoftEdges = new HashSet<Edge>(SoftEdges),

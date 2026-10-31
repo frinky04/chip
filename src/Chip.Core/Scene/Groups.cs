@@ -18,10 +18,12 @@ public sealed class Group
     public bool Locked;
     /// <summary>Organises without binding: members select on their own, and an empty folder isn't pruned.</summary>
     public bool Folder;
+    /// <summary>The group's own origin, or null for none (<see cref="Geometry.ObjectOrigin"/>). It moves when the whole group does.</summary>
+    public Geometry.ObjectOrigin? Origin;
 
     public Group Clone() => new()
     {
-        Id = Id, Name = Name, Parent = Parent, Members = new List<int>(Members), Hidden = Hidden, Locked = Locked, Folder = Folder,
+        Id = Id, Name = Name, Parent = Parent, Members = new List<int>(Members), Hidden = Hidden, Locked = Locked, Folder = Folder, Origin = Origin,
     };
 }
 
