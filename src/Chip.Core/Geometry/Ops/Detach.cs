@@ -4,7 +4,7 @@ public static partial class MeshOps
 {
     /// <summary>
     /// A new mesh holding copies of <paramref name="faces"/> (compact vertices, same surfaces and UVs, soft edges between
-    /// copied faces, same flags). The source is unchanged; Detach deletes the faces afterwards, Extract doesn't.
+    /// copied faces, same flags). The source is unchanged; Detach and Extract delete the faces afterwards.
     /// The copy has no id yet: add it to the document.
     /// </summary>
     public static PolyMesh CopyFaces(PolyMesh m, IEnumerable<int> faces)

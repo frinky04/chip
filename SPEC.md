@@ -119,7 +119,7 @@ Commands act on the current selection and mode. Each command is one undo step.
 | Flip / invert normals | `Shift+N` | v1 | |
 | Merge Meshes | `M` | v1 shipped | Object mode, ≥2 meshes → one mesh (the active one, else the first). Vertices are not welded. |
 | Detach faces → new mesh | `N` | v1 shipped | The new mesh's faces stay selected. |
-| Extract (detach a copy) | `Alt+N` | v1 shipped | |
+| Extract (move selected faces to a new mesh) | `Alt+N` | v1 shipped | |
 | Soft / Hard / Dominant normals | `J` / `Ctrl+J` / `K` | v2 shipped | Per-edge smoothing flags (`H` stays hide, so Hard is `Ctrl+J`). Edges act on themselves, vertices on the edges between them, faces on all their edges, objects on the whole mesh. Soft/Hard on faces or objects also clear dominance. Dominant (face mode): the faces stay flat and neighbours meeting them at under 60° (bevels, chamfers) take their normal at shared corners; saved as an optional per-face `dominant` flag. Hard edges split smoothing per vertex, so one hard seam creases a soft surface. Viewport and glTF export use the same per-corner normals. Edge mode draws soft edges dotted; elsewhere they are faint. Smoothing section in the inspector. |
 | Auto-smooth by angle / Clear smoothing | | v2 shipped | Mesh menu. Auto-smooth: soft where the two faces meet at less than the angle (Smoothing section, 45° default, 30/45/60 presets), hard elsewhere, over the selection's edges. Clear smoothing: every edge of the selected meshes hard, no dominant faces. |
 | Show normals | | v2 shipped | View menu. Short lavender strokes along each corner normal of the selection's faces. |

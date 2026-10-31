@@ -216,19 +216,65 @@ public class MeshOpsCommandTests
         SelectFaces(ctx, 3);
         Assert.True(ctx.Commands.Execute("mesh.extract"));
         Assert.Equal(2, ctx.Doc.Meshes.Count);
-        Assert.Equal(12, ctx.Doc.Meshes[0].Faces.Count);
+        Assert.Equal(11, ctx.Doc.Meshes[0].Faces.Count);
         Assert.All(ctx.Sel.Items, i => Assert.Equal(ctx.Doc.Meshes[1].Id, i.Mesh));
 
         ctx.Sel.Clear();
         ctx.Sel.Add(ElementRef.Face(ctx.Doc.Meshes[0].Id, 3));
         Assert.True(ctx.Commands.Execute("mesh.detach"));
         Assert.Equal(3, ctx.Doc.Meshes.Count);
-        Assert.Equal(11, ctx.Doc.Meshes[0].Faces.Count);
+        Assert.Equal(10, ctx.Doc.Meshes[0].Faces.Count);
 
         ctx.Commands.Execute("edit.undo");
         ctx.Commands.Execute("edit.undo");
         ctx.Commands.Execute("edit.undo");
         Assert.Equal(2, ctx.Doc.Meshes.Count);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(6)]
+    public void Extract_moves_faces_from_each_source_and_undo_redo_restores_selection(int faceCount)
+    {
+        var ctx = WithBoxes(2);
+        var sourceIds = ctx.Doc.Meshes.Select(m => m.Id).ToArray();
+        var positions = ctx.Doc.Meshes.Select(m => m.Faces.Take(faceCount)
+            .Select(f => f.Verts.Select(v => m.Positions[v]).ToArray()).ToArray()).ToArray();
+        ctx.Commands.Execute("select.modeFace");
+        foreach (var id in sourceIds)
+            for (int f = 0; f < faceCount; f++) ctx.Sel.Add(ElementRef.Face(id, f));
+        var selection = ctx.Sel.Items.ToArray();
+
+        Assert.True(ctx.Commands.Execute("mesh.extract"));
+        Assert.Equal("Extract Faces", ctx.Session.UndoLabel);
+        Assert.Equal(12, ctx.Doc.Meshes.Sum(m => m.Faces.Count));
+        for (int i = 0; i < sourceIds.Length; i++)
+        {
+            var source = ctx.Doc.Find(sourceIds[i]);
+            if (faceCount == 6) Assert.Null(source);
+            else Assert.Equal(6 - faceCount, source!.Faces.Count);
+        }
+        var extracted = ctx.Doc.Meshes.Where(m => !sourceIds.Contains(m.Id)).ToArray();
+        Assert.Equal(2, extracted.Length);
+        for (int i = 0; i < extracted.Length; i++)
+        {
+            Assert.Equal(faceCount, extracted[i].Faces.Count);
+            for (int f = 0; f < faceCount; f++)
+                Assert.Equal(positions[i][f], extracted[i].Faces[f].Verts.Select(v => extracted[i].Positions[v]));
+        }
+        Assert.Equal(2 * faceCount, ctx.Sel.Count);
+        Assert.All(ctx.Sel.Items, item => Assert.Contains(extracted, m => m.Id == item.Mesh));
+        var extractedSelection = ctx.Sel.Items.ToArray();
+
+        Assert.True(ctx.Commands.Execute("edit.undo"));
+        Assert.Equal(sourceIds, ctx.Doc.Meshes.Select(m => m.Id));
+        Assert.All(ctx.Doc.Meshes, m => Assert.Equal(6, m.Faces.Count));
+        Assert.Equal(selection, ctx.Sel.Items);
+
+        Assert.True(ctx.Commands.Execute("edit.redo"));
+        Assert.Equal(12, ctx.Doc.Meshes.Sum(m => m.Faces.Count));
+        Assert.Equal(extractedSelection, ctx.Sel.Items);
+        Assert.All(sourceIds, id => Assert.Equal(faceCount == 6 ? null : 6 - faceCount, ctx.Doc.Find(id)?.Faces.Count));
     }
 
     [Fact]

@@ -49,8 +49,8 @@ public sealed class MeshOpsFeature : IEditorFeature
 
         c.Add("mesh.mergeMeshes", "Merge meshes", MergeMeshes, "Mesh", "M",
             () => Sel.Mode == SelectMode.Object && Sel.MeshIds().Count(id => Doc.Find(id) != null) >= 2, "4-meshes", 0);
-        c.Add("mesh.detach", "Detach faces", () => Detach(keepSource: false), "Mesh", "N", () => Mode(SelectMode.Face), "4-meshes", 1);
-        c.Add("mesh.extract", "Extract faces", () => Detach(keepSource: true), "Mesh", "Alt+N", () => Mode(SelectMode.Face), "4-meshes", 2);
+        c.Add("mesh.detach", "Detach faces", () => Detach(extract: false), "Mesh", "N", () => Mode(SelectMode.Face), "4-meshes", 1);
+        c.Add("mesh.extract", "Extract faces", () => Detach(extract: true), "Mesh", "Alt+N", () => Mode(SelectMode.Face), "4-meshes", 2);
         c.Add("mesh.mirror", "Mirror", Mirror, "Mesh", "Shift+Z", () => !Sel.IsEmpty, "4-meshes", 3);
 
         c.AddReference("Mesh", "Ctrl+Shift + drag", "push/pull faces");
@@ -254,18 +254,18 @@ public sealed class MeshOpsFeature : IEditorFeature
         return null;
     });
 
-    void Detach(bool keepSource) => Edit(keepSource ? "Extract Faces" : "Detach Faces", () =>
+    void Detach(bool extract) => Edit(extract ? "Extract Faces" : "Detach Faces", () =>
     {
         var copies = new List<ElementRef>();
         foreach (var (mesh, faces) in Sel.FaceSets(Doc))
         {
             var copy = Doc.Add(Ops.CopyFaces(mesh, faces));
             copies.AddRange(Enumerable.Range(0, copy.Faces.Count).Select(f => ElementRef.Face(copy.Id, f)));
-            if (!keepSource) Ops.DeleteFaces(mesh, faces);
+            Ops.DeleteFaces(mesh, faces);
         }
         Doc.Meshes.RemoveAll(m => m.Faces.Count == 0);
         Select(copies);
-        _ctx.Status($"{(keepSource ? "Extracted" : "Detached")} {Plural(copies.Count, "face")} into a new mesh");
+        _ctx.Status($"{(extract ? "Extracted" : "Detached")} {Plural(copies.Count, "face")} into a new mesh");
         return null;
     });
 
