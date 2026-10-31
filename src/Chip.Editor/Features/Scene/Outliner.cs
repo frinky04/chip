@@ -30,8 +30,8 @@ public sealed class Outliner : IDockPanel
     readonly HashSet<int> _collapsed = new();
     string _search = "";
     OutlinerShow _show;
-    int? _anchor;          // last clicked row id, for Shift ranges, F2 and the empty-folder target
-    int? _cursor;          // the row the arrows move from (the far end of a Shift range)
+    int? _anchor;          // last clicked row id, for Shift ranges and the empty-folder target
+    int? _cursor;          // the row the arrows move from (the far end of a Shift range); F2 renames it
     int? _renaming;
     bool _focusRename;
     string _renameText = "";
@@ -174,6 +174,12 @@ public sealed class Outliner : IDockPanel
             _summary = OutlinerTree.Summary(doc);
         }
         var rows = _rows ??= OutlinerTree.Flatten(_tree.Value, _collapsed, expandAll: searching);
+        // Renaming a row the search or kind filter hides (F2 on the selection): drop the filter so its field can show.
+        if (_renaming is { } renaming && rows.All(r => r.Id != renaming) && (searching || _show != OutlinerShow.All))
+        {
+            _search = "";
+            Show = OutlinerShow.All;
+        }
 
         float footerH = ImGui.GetFrameHeightWithSpacing() + reserve;
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Bg);
@@ -214,7 +220,13 @@ public sealed class Outliner : IDockPanel
                 DrawSpaceMenu(ctx);
                 ImGui.EndPopup();
             }
-            if (ImGui.IsWindowFocused() && _renaming == null) Keys(ctx, rows);
+            if (ImGui.IsWindowFocused() && _renaming == null)
+            {
+                Keys(ctx, rows);
+                // F2 with the tree focused renames the row the arrows are on (a hovered row still wins).
+                if ((_cursor ?? _anchor) is { } current && rows.Any(r => r.Id == current))
+                    ctx.OfferRename(() => BeginRename(ctx.Doc, current), hovered: false);
+            }
         }
         ImGui.EndChild();
         ImGui.PopStyleColor();
@@ -244,10 +256,12 @@ public sealed class Outliner : IDockPanel
         ImGui.SetNextItemAllowOverlap();
         if (ImGui.Selectable("##row", false, ImGuiSelectableFlags.AllowDoubleClick, new Vector2(rowW - buttonsW, h)))
         {
-            if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) BeginRename(doc, node);
+            if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) BeginRename(doc, node.Id);
             else Click(ctx, rows, index, ImGui.GetIO().KeyShift, ImGui.GetIO().KeyCtrl);
         }
         bool hovered = ImGui.IsItemHovered();
+        if (_renaming == null && ImGui.IsWindowHovered() && ImGui.IsMouseHoveringRect(start, start + new Vector2(rowW, h)))
+            ctx.OfferRename(() => BeginRename(ctx.Doc, node.Id), hovered: true); // F2 renames the row under the mouse
         if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
         {
             // Like a file browser: right-clicking outside the selection selects that row first.
@@ -456,7 +470,7 @@ public sealed class Outliner : IDockPanel
         var group = node.IsContainer ? doc.FindGroup(node.Id) : null;
         bool objects = ctx.Sel.Mode == SelectMode.Object && !ctx.Sel.IsEmpty;
         MenuCommand(ctx, "view.focus", "Focus");
-        if (ImGui.MenuItem("Rename", "F2")) BeginRename(doc, node);
+        if (ImGui.MenuItem("Rename", ctx.Commands.Find("edit.rename")?.HotkeyText)) BeginRename(doc, node.Id);
         ImGui.Separator();
         MenuCommand(ctx, "edit.duplicate", "Duplicate");
         MenuCommand(ctx, "edit.delete", group != null ? "Delete with contents" : "Delete");
@@ -530,10 +544,7 @@ public sealed class Outliner : IDockPanel
         if (made is not { } id || ctx.Doc.FindGroup(id) is not { } folder) return;
         ctx.ShowDock(PanelId);
         Reveal(ctx.Doc, id);
-        _anchor = id;
-        _renaming = id;
-        _renameText = folder.Name;
-        _focusRename = true;
+        BeginRename(ctx.Doc, id);
         ctx.Status(ids.Count == 0 ? $"Made {folder.Name}. Type a name, then drag rows onto it" : $"Moved {Count(ids.Count)} into {folder.Name}. Type a name for it");
     }
 
@@ -561,12 +572,34 @@ public sealed class Outliner : IDockPanel
 
     // ---- Rename ----
 
-    void BeginRename(Document doc, OutlinerNode node)
+    /// <summary>Opens a row's name for typing. An entity shows its own name, which may be empty (it then uses its class).</summary>
+    void BeginRename(Document doc, int id)
     {
-        _renaming = node.Id;
-        _renameText = node.Kind == OutlinerKind.Entity && doc.FindEntity(node.Id) is { } e ? e.Name : node.Name;
+        _renaming = id;
+        _renameText = doc.FindEntity(id) is { } e ? e.Name : SceneOps.NameOf(doc, id) ?? "";
         _focusRename = true;
-        _anchor = node.Id;
+        _anchor = _cursor = id;
+    }
+
+    /// <summary>
+    /// What Rename (F2) renames when no panel offers a row: the active object, else a selected one (entities first, so a
+    /// mesh entity rather than one of its meshes). In face, edge and vertex modes, the mesh holding the selection.
+    /// </summary>
+    public static int? RenameTarget(EditorContext ctx)
+    {
+        var doc = ctx.Doc;
+        if (ctx.Sel.Active is { } a && SceneOps.IsObject(doc, a.Mesh)) return a.Mesh;
+        return ctx.Sel.MeshIds().Where(id => SceneOps.IsObject(doc, id)).OrderBy(id => doc.FindEntity(id) == null).ThenBy(id => id)
+            .Select(id => (int?)id).FirstOrDefault();
+    }
+
+    /// <summary>Shows the Scene tab, unfolds the tree to <see cref="RenameTarget"/> and opens its name for typing.</summary>
+    public void RenameSelection(EditorContext ctx)
+    {
+        if (RenameTarget(ctx) is not { } id) return;
+        ctx.ShowDock(PanelId);
+        Reveal(ctx.Doc, id);
+        BeginRename(ctx.Doc, id);
     }
 
     void DrawRename(EditorContext ctx, OutlinerNode node, Vector2 pos, float width)
@@ -654,7 +687,7 @@ public sealed class Outliner : IDockPanel
         if (ImGui.IsItemClicked() && !ImGui.GetIO().KeyCtrl && !ImGui.GetIO().KeyShift)
         {
             ctx.Sel.Clear();
-            _anchor = null;
+            _anchor = _cursor = null;
         }
         if (ImGui.IsItemClicked(ImGuiMouseButton.Right)) ImGui.OpenPopup(SpaceMenu);
         if (!ImGui.BeginDragDropTarget()) return;

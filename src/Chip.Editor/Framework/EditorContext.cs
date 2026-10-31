@@ -239,6 +239,36 @@ public sealed class EditorContext
     /// <summary>Mouse wheel steps this frame, for a tool with <see cref="IViewportTool.CapturesWheel"/> (the camera doesn't see them).</summary>
     public float ToolWheel { get; set; }
 
+    // ---- Rename (F2) ----
+
+    Action? _renameOffer;
+    bool _renameOfferHovered;
+
+    /// <summary>
+    /// Panels call this while drawing to say what Rename (F2) renames this frame: the row under the mouse
+    /// (<paramref name="hovered"/>) wins over the item a focused panel has picked. With no offer, Rename falls back to the
+    /// selected object. The host clears offers at the start of each frame.
+    /// </summary>
+    public void OfferRename(Action rename, bool hovered)
+    {
+        if (_renameOffer != null && (_renameOfferHovered || !hovered)) return;
+        _renameOffer = rename;
+        _renameOfferHovered = hovered;
+    }
+
+    public bool HasRenameOffer => _renameOffer != null;
+
+    /// <summary>Runs this frame's rename offer, if a panel made one. Returns whether it ran.</summary>
+    public bool TakeRenameOffer()
+    {
+        if (_renameOffer is not { } rename) return false;
+        ClearRenameOffer();
+        rename();
+        return true;
+    }
+
+    public void ClearRenameOffer() => (_renameOffer, _renameOfferHovered) = (null, false);
+
     // ---- Status and host requests ----
 
     public string StatusMessage { get; private set; } = "";

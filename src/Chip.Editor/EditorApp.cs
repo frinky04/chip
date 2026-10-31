@@ -102,6 +102,7 @@ public sealed partial class EditorApp : IDisposable
         _gl.Clear(ClearBufferMask.ColorBufferBit);
 
         _bench?.Mark("backend");
+        Ctx.ClearRenameOffer(); // panels offer what F2 renames as they draw
         DrawMenuBar();
         var vp = ImGui.GetMainViewport();
         float statusH = Theme.Px(30);

@@ -40,6 +40,14 @@ public sealed class SceneFeature : IEditorFeature
             Description = "Puts the selected objects in a new outliner folder, or makes an empty one. Folder members select one by one",
             DisplayLabel = () => ObjectsSelected() ? "Move to new folder" : "New folder",
         });
+        c.Add(new Command
+        {
+            Id = "edit.rename", Label = "Rename", Menu = "Edit", Group = "2-edit", Order = 2, Hotkeys = [Hotkey.Parse("F2")],
+            Description = "Renames what's under the mouse in a list (outliner rows, dressing rules, selection sets), else the "
+                + "focused list's current item, else the selected object in the Scene tab",
+            CanExecute = () => ctx.HasRenameOffer || Outliner.RenameTarget(ctx) != null,
+            Execute = () => { if (!ctx.TakeRenameOffer()) outliner.RenameSelection(ctx); },
+        });
         var tie = new TieToEntity();
         ctx.AddPanel(tie.Draw);
         c.Add("scene.tie", "Tie to entity…", tie.Open, "Edit", "Ctrl+Alt+T", () => TieToEntity.CanTie(ctx), "4-organize", 3);
@@ -52,7 +60,7 @@ public sealed class SceneFeature : IEditorFeature
             ctx.Status(groups.Enabled ? "Clicking a grouped object now selects its whole group" : "Clicking a grouped object now selects just that object");
         }, "Select", group: "4-options", order: 1, isChecked: () => groups.Enabled);
 
-        c.AddReference("Outliner", "Double-click / F2", "rename");
+        c.AddReference("Outliner", "Double-click", "rename");
         c.AddReference("Outliner", "Drag rows onto a group", "move into the group");
     }
 

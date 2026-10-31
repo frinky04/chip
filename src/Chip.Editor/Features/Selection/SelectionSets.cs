@@ -54,6 +54,19 @@ public sealed class SelectionSets
         ctx.Status($"Updated {set.Name} ({ctx.Sel.Mode.Count(ctx.Sel.Count)})");
     }
 
+    /// <summary>Renames a set. Refused (with a status message) if the name is empty or another set has it.</summary>
+    public bool Rename(EditorContext ctx, SelectionSet set, string name)
+    {
+        name = name.Trim();
+        int i = _sets.IndexOf(set);
+        if (i < 0 || name == set.Name) return false;
+        if (name.Length == 0) { ctx.Status("A set's name can't be empty; kept the old one"); return false; }
+        if (_sets.Any(s => s.Name == name)) { ctx.Status($"There is already a set called {name}", error: true); return false; }
+        _sets[i] = set with { Name = name };
+        if (Last == set) Last = _sets[i];
+        return true;
+    }
+
     public void Delete(SelectionSet set)
     {
         _sets.Remove(set);
@@ -62,15 +75,26 @@ public sealed class SelectionSets
 }
 
 /// <summary>
-/// Under the outliner in the Scene tab: name and save the selection, click a set to restore it, right-click to update
-/// or delete.
+/// Under the outliner in the Scene tab: name and save the selection, click a set to restore it, F2 on one to rename it,
+/// right-click to rename, update or delete.
 /// </summary>
 public static class SelectionSetsView
 {
     static string _name = "";
+    static SelectionSet? _renaming;
+    static string _renameText = "";
+    static bool _focusRename;
+
+    static void BeginRename(SelectionSet set)
+    {
+        _renaming = set;
+        _renameText = set.Name;
+        _focusRename = true;
+    }
 
     public static void Draw(EditorContext ctx, SelectionSets sets)
     {
+        if (_renaming != null && !sets.All.Contains(_renaming)) _renaming = null; // updated or deleted meanwhile
         Heading("Selection sets", sets.All.Count > 0 ? sets.All.Count.ToString() : null);
         if (ctx.Sel.IsEmpty && sets.All.Count == 0)
         {
@@ -98,20 +122,40 @@ public static class SelectionSetsView
         {
             var set = sets.All[i];
             ImGui.PushID(i);
+            if (_renaming == set)
+            {
+                DrawRename(ctx, sets, set);
+                ImGui.PopID();
+                continue;
+            }
             if (ImGui.Selectable(set.Name)) sets.Restore(ctx, set);
+            if (_renaming == null && ImGui.IsItemHovered()) ctx.OfferRename(() => BeginRename(set), hovered: true);
             var min = ImGui.GetItemRectMin();
             var max = ImGui.GetItemRectMax();
             string count = set.Mode.Count(set.Items.Length);
             float w = ImGui.CalcTextSize(count).X;
             ImGui.GetWindowDrawList().AddText(new Vector2(max.X - w, min.Y), dim, count);
-            Tip("Click to restore. Right-click to update or delete.");
+            Tip("Click to restore. Right-click to rename, update or delete.");
             if (ImGui.BeginPopupContextItem("##setMenu"))
             {
+                if (ImGui.MenuItem("Rename", ctx.Commands.Find("edit.rename")?.HotkeyText)) BeginRename(set);
                 if (ImGui.MenuItem("Update from selection", null, false, !ctx.Sel.IsEmpty)) sets.Update(ctx, set);
                 if (ImGui.MenuItem("Delete")) sets.Delete(set);
                 ImGui.EndPopup();
             }
             ImGui.PopID();
         }
+    }
+
+    /// <summary>The set's name as a field: Enter or clicking away keeps it, Esc puts the old name back.</summary>
+    static void DrawRename(EditorContext ctx, SelectionSets sets, SelectionSet set)
+    {
+        ImGui.SetNextItemWidth(-1);
+        if (_focusRename) { ImGui.SetKeyboardFocusHere(); _focusRename = false; }
+        ImGui.InputText("##rename", ref _renameText, 64, ImGuiInputTextFlags.AutoSelectAll);
+        if (ImGui.IsKeyPressed(ImGuiKey.Escape)) { _renaming = null; return; }
+        if (!ImGui.IsItemDeactivated()) return;
+        _renaming = null;
+        sets.Rename(ctx, set, _renameText);
     }
 }

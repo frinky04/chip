@@ -27,6 +27,7 @@ public sealed class DressingPanel(DressingFeature feature, EditorContext context
     const string VarsRow = "\0vars";
     string _renameDraft = "", _filter = "";
     string? _renameFor, _noteDraft;
+    bool _focusName;
     float _listH;
     readonly RuleFields _fields = new(feature);
 
@@ -374,6 +375,10 @@ public sealed class DressingPanel(DressingFeature feature, EditorContext context
                 }
                 if (RuleRow(rule, level, broken.Contains(rule.Id))) hovered = rule.Id;
             }
+            // F2 renames the hovered rule, else (with the list focused) the selected one.
+            if (hovered is { } under) ctx.OfferRename(() => BeginRename(ctx, ws, under), hovered: true);
+            else if (ImGui.IsWindowFocused() && _selected is { } current && current != VarsRow)
+                ctx.OfferRename(() => BeginRename(ctx, ws, current), hovered: false);
         }
         ImGui.EndChild();
         ImGui.PopStyleColor();
@@ -522,6 +527,8 @@ public sealed class DressingPanel(DressingFeature feature, EditorContext context
         AfterLabel();
         if (!canRename) ImGui.BeginDisabled();
         ImGui.SetNextItemWidth(-Theme.Px(24) - ImGui.GetStyle().ItemSpacing.X);
+        if (_focusName && canRename) ImGui.SetKeyboardFocusHere();
+        _focusName = false;
         ImGui.InputText("##name", ref _renameDraft, Core.Geometry.TagSet.MaxLength + 8);
         if (ImGui.IsItemDeactivatedAfterEdit()) Rename(ctx, rule, style);
         if (!canRename) ImGui.EndDisabled();
@@ -585,6 +592,15 @@ public sealed class DressingPanel(DressingFeature feature, EditorContext context
         float w = ImGui.CalcTextSize(label).X + ImGui.GetStyle().FramePadding.X * 2;
         float right = ImGui.GetItemRectMax().X + ImGui.GetStyle().ItemSpacing.X + w;
         if (right <= ImGui.GetWindowPos().X + ImGui.GetWindowContentRegionMax().X) ImGui.SameLine();
+    }
+
+    /// <summary>Selects a rule and puts the cursor in its Name field (F2), or says why a style's rule can't be renamed here.</summary>
+    void BeginRename(EditorContext ctx, RulesWorkspace ws, string id)
+    {
+        if (ws.Find(id) is not { } rule) return;
+        _selected = id;
+        if (rule.Local || _editStyle) _focusName = true;
+        else ctx.Status($"{id} comes from the style {StyleName(rule.DefinedIn)}: choose \"Shared style\" in its settings to rename it");
     }
 
     void Rename(EditorContext ctx, RuleEntry rule, bool style)

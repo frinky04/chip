@@ -40,6 +40,7 @@ public sealed class HotspotEditor
     bool _frameNext = true, _wasOpen;
     int _grid = 3;
     bool _lit, _hideTexture, _hidePatches;
+    bool _focusName; // F2: put the cursor in the asset's name
 
     // Gesture
     Drag _drag;
@@ -125,6 +126,7 @@ public sealed class HotspotEditor
             ImGui.PopStyleColor();
             KeyHints([("Drag", "draw patch"), ("Handles", "resize"), ("RMB", "pan"), ("Wheel", "zoom"), ("[ ]", "grid"), ("Del", "delete")]);
             if (focused) HandleKeys(ctx, state);
+            if (focused && state.Editing != null) ctx.OfferRename(() => _focusName = true, hovered: false);
         }
         ImGui.End();
         if (!open) { Open = false; CancelDrag(state); }
@@ -569,6 +571,7 @@ public sealed class HotspotEditor
         RowLabel("Name");
         string name = asset.Name;
         ImGui.SetNextItemWidth(-1);
+        if (_focusName) { ImGui.SetKeyboardFocusHere(); _focusName = false; }
         if (ImGui.InputText("##hsname", ref name, 64) && name.Trim().Length > 0) { asset.Name = name; state.Dirty = true; }
         RowLabel("Targets", "Materials painted with this pattern. Apply uses the active one when it is listed");
         ImGui.BeginGroup();
