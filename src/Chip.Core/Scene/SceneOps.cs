@@ -75,7 +75,7 @@ public static class SceneOps
 
     static void CopyGroup(Document doc, Group src, int parent, List<int> copies, Dictionary<int, int> map)
     {
-        var dst = doc.Add(new Group { Name = src.Name, Parent = parent, Origin = src.Origin });
+        var dst = doc.Add(new Group { Name = src.Name, Parent = parent, Origin = src.Origin, Instance = src.Instance });
         foreach (var id in src.Members)
             if (CopyObject(doc, id, map) is { } copy) { dst.Members.Add(copy); copies.Add(copy); }
         foreach (var child in doc.Groups.Where(c => c.Parent == src.Id && c != dst).ToList()) CopyGroup(doc, child, dst.Id, copies, map);

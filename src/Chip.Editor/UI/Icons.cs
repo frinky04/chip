@@ -10,7 +10,9 @@ public enum Icon { Select, Block, Vertex, Edge, Face, Object, Move, Rotate, Scal
     // stream H: outliner and entities
     Folder, EyeOff, LockOpen, MapPin, Bulb, Lamp, User, Target, Flag, Box, Plus, Trash, ListTree, ChevronRight, ChevronDown,
     // the side dock and menu bar
-    Palette, Brush, Search, Dots, SidebarCollapse, SidebarExpand, FileExport }
+    Palette, Brush, Search, Dots, SidebarCollapse, SidebarExpand, FileExport,
+    // linked copies
+    Link, Unlink }
 
 /// <summary>
 /// Tool glyphs from the Tabler icon font (MIT), drawn on whole pixels so they stay crisp at small sizes. Besides the
@@ -107,6 +109,8 @@ public static class Icons
         [Icon.SidebarCollapse] = '', // layout-sidebar-left-collapse
         [Icon.SidebarExpand] = '',   // layout-sidebar-left-expand
         [Icon.FileExport] = '',      // file-export
+        [Icon.Link] = '',      // link
+        [Icon.Unlink] = '',    // unlink
     };
 
     /// <summary>Codepoints to bake into the icon atlas, counted as baked from here on (call once per atlas build).</summary>

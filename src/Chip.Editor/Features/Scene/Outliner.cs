@@ -300,13 +300,16 @@ public sealed class Outliner : IDockPanel
         var (icon, iconCol) = node.Kind switch
         {
             OutlinerKind.Folder => (Icon.Folder, dim),
-            OutlinerKind.Group => (Icon.TreatAsOne, dim),
+            OutlinerKind.Group => (doc.FindGroup(node.Id) is { IsInstance: true } ? Icon.Link : Icon.TreatAsOne, dim),
             OutlinerKind.Mesh => (Icon.Object, dim),
             _ => EntityStyle(doc, node.Id),
         };
         Icons.Draw(dl, icon, new Vector2(x + Fonts.IconSize * 0.5f, cy), selected ? text : node.Hidden ? ImGui.ColorConvertFloat4ToU32(Theme.TextDisabled) : iconCol);
         if (hovered && node.Kind is OutlinerKind.Folder or OutlinerKind.Group)
-            Tip(node.Kind == OutlinerKind.Folder ? "Folder: its members select one by one" : "Group: clicking any member in the viewport selects all of it");
+            Tip(node.Kind == OutlinerKind.Folder ? "Folder: its members select one by one"
+                : doc.FindGroup(node.Id) is { IsInstance: true } copy
+                    ? $"Linked copy of {doc.FindDefinition(copy.Instance)?.Name}, one of {InstanceOps.Copies(doc, copy.Instance).Count}: editing any copy changes all of them"
+                    : "Group: clicking any member in the viewport selects all of it");
         x += Fonts.IconSize + Theme.Px(6);
         float textY = MathF.Round(start.Y + (h - ImGui.GetTextLineHeight()) * 0.5f);
         if (_renaming == node.Id) DrawRename(ctx, node, new Vector2(x, start.Y), start.X + rowW - buttonsW - x - Theme.Px(4));
@@ -485,7 +488,12 @@ public sealed class Outliner : IDockPanel
             if (ImGui.MenuItem(group.Folder ? "Turn into a group" : "Turn into a folder"))
             {
                 bool folder = !group.Folder;
-                ctx.Session.Do(folder ? "Make Folder" : "Make Group", () => { if (ctx.Doc.FindGroup(node.Id) is { } g) g.Folder = folder; });
+                ctx.Session.Do(folder ? "Make Folder" : "Make Group", () =>
+                {
+                    if (ctx.Doc.FindGroup(node.Id) is not { } g) return;
+                    if (folder) InstanceOps.MakeUnique(ctx.Doc, [g]); // a folder only sorts things, so it can't be a linked copy
+                    g.Folder = folder;
+                });
                 ctx.Status(folder ? $"{group.Name} is a folder: its members now select one by one"
                     : $"{group.Name} is a group: clicking any member in the viewport selects all of it");
             }

@@ -139,13 +139,20 @@ public static class GlbExporter
         var place = Matrix4x4.Identity; // world to the space the current node's vertices are written in
         Entity? owner = null;
         ObjectOrigin? nodeOrigin = null; // the current mesh's own origin, which its nodes are placed at
+        string? share = null;            // for a linked copy's part: "definition:part", the key its glTF meshes are shared under
+        string shareName = "";           // the mesh's node name, which the share key's node part is relative to
+        var sharedMeshes = new Dictionary<string, int>();
         foreach (var mesh in doc.Meshes)
         {
             if (mesh.Hidden && !opt.IncludeHidden) continue;
             owner = ownerOf.GetValueOrDefault(mesh.Id);
             place = Matrix4x4.Identity;
-            // A mesh entity's meshes are in its space; another mesh with an origin is written relative to that origin.
-            nodeOrigin = owner == null ? mesh.Origin : null;
+            // A mesh entity's meshes are in its space; a linked copy's are in the copy's; another mesh with an origin is
+            // written relative to that origin.
+            var copy = owner == null && mesh.Part != 0 ? InstanceOps.CopyOf(doc, mesh.Id) : null;
+            nodeOrigin = owner == null ? copy?.Origin ?? mesh.Origin : null;
+            // Tessellation cuts on a world grid, so copies differ there and keep their own meshes.
+            share = copy != null && !opt.Tessellate ? $"{copy.Instance}:{mesh.Part}" : null;
             if (owner != null) Matrix4x4.Invert(EntityOps.World(owner), out place);
             else if (nodeOrigin is { } o) place = o.Local;
             var cornerNormals = opt.Smoothing ? Topology.CornerNormals(mesh) : FlatNormals(mesh);
@@ -187,6 +194,7 @@ public static class GlbExporter
             if (baked) bakeSources.Add(new CollisionSource(mesh, [.. faces, .. nodrawFaces], AllowConvex: opt.CollisionHulls));
 
             string name = $"{mesh.Name}_{mesh.Id}";
+            shareName = name;
             string suffix = mesh.Collision switch
             {
                 CollisionMode.Only => "-colonly",
@@ -199,6 +207,12 @@ public static class GlbExporter
             if (!mesh.Tags.IsEmpty) meshExtras["chip_tags"] = MeshTags(mesh);
             // The suffix can't tell None from Default when the document doesn't collide; the extra can.
             if (mesh.Collision != CollisionMode.Default) meshExtras["chip_collision"] = mesh.Collision.ToString();
+            if (copy != null && doc.FindDefinition(copy.Instance) is { } def)
+            {
+                meshExtras["chip_instance"] = def.Name;
+                meshExtras["chip_instance_id"] = copy.Id;
+                meshExtras["chip_part"] = mesh.Part;
+            }
             if (!collisionOnly)
             {
                 // The same remaps per node, keyed by material name: a fallback for importers that drop material extras.
@@ -217,7 +231,7 @@ public static class GlbExporter
                 if (collides && !baked)
                     AddNode(name + "_col", "-colonly", Primitives(mesh, cornerNormals, faces, withMaterial: false), new JsonObject { ["chip_baked"] = true });
             }
-            else AddNode(name, suffix, Primitives(mesh, cornerNormals, faces, withMaterial: !collisionOnly), meshExtras);
+            else MeshNode(name, suffix, () => Primitives(mesh, cornerNormals, faces, withMaterial: !collisionOnly), meshExtras);
             // Surface nodes: chip_surface names the surface; the built-in clip and trigger also keep chip_tool.
             JsonObject SurfaceExtras(Surface sf)
             {
@@ -227,19 +241,20 @@ public static class GlbExporter
                 return x;
             }
             foreach (var (sf, list) in passFaces)
-                AddNode($"{name}_{sf.Name}", "", Primitives(mesh, cornerNormals, list, withMaterial: true), SurfaceExtras(sf));
+                MeshNode($"{name}_{sf.Name}", "", () => Primitives(mesh, cornerNormals, list, withMaterial: true), SurfaceExtras(sf));
             foreach (var (sf, list) in solidFaces)
-                AddNode($"{name}_{sf.Name}", "-colonly", Primitives(mesh, cornerNormals, list, withMaterial: false), SurfaceExtras(sf));
+                MeshNode($"{name}_{sf.Name}", "-colonly", () => Primitives(mesh, cornerNormals, list, withMaterial: false), SurfaceExtras(sf));
             foreach (var (sf, list) in volumeFaces)
             {
                 var x = SurfaceExtras(sf);
                 x["chip_volume"] = true;
-                AddNode($"{name}_{sf.Name}", "-colonly", Primitives(mesh, cornerNormals, list, withMaterial: false), x);
+                MeshNode($"{name}_{sf.Name}", "-colonly", () => Primitives(mesh, cornerNormals, list, withMaterial: false), x);
             }
             if (nodes.Count > before) meshCount++;
         }
         owner = null;
         nodeOrigin = null;
+        share = null;
         place = Matrix4x4.Identity;
 
         // Baked world collision (Source 2 style): one merged, simplified trimesh in chunks, plus convex hulls if asked.
@@ -287,12 +302,29 @@ public static class GlbExporter
         void AddNode(string name, string suffix, JsonArray primitives, JsonObject extras)
         {
             if (primitives.Count == 0) return;
+            meshes.Add(new JsonObject { ["name"] = name, ["primitives"] = primitives });
+            Emit(name, suffix, meshes.Count - 1, extras);
+        }
+
+        // A linked copy's part: every copy's node uses the glTF mesh the first copy wrote (keyed by definition, part and node).
+        void MeshNode(string name, string suffix, Func<JsonArray> build, JsonObject extras)
+        {
+            string? key = share != null && name.StartsWith(shareName, StringComparison.Ordinal) ? share + name[shareName.Length..] + suffix : null;
+            if (key != null && sharedMeshes.TryGetValue(key, out int index)) { Emit(name, suffix, index, extras); return; }
+            var primitives = build();
+            if (primitives.Count == 0) return;
+            meshes.Add(new JsonObject { ["name"] = name, ["primitives"] = primitives });
+            if (key != null) sharedMeshes[key] = meshes.Count - 1;
+            Emit(name, suffix, meshes.Count - 1, extras);
+        }
+
+        void Emit(string name, string suffix, int mesh, JsonObject extras)
+        {
             // A volume (a trigger) is not a wall: it says what it is, so it never claims to collide.
             bool volume = extras["chip_volume"]?.GetValue<bool>() == true;
             if (suffix.Length > 0 && !volume) extras["chip_collider"] = suffix.StartsWith("-conv", StringComparison.Ordinal) ? "convex" : "trimesh";
             if (suffix.EndsWith("only", StringComparison.Ordinal)) extras["chip_render"] = false;
-            meshes.Add(new JsonObject { ["name"] = name, ["primitives"] = primitives });
-            var node = new JsonObject { ["name"] = suffixes && owner == null ? name + suffix : name, ["mesh"] = meshes.Count - 1, ["extras"] = extras };
+            var node = new JsonObject { ["name"] = suffixes && owner == null ? name + suffix : name, ["mesh"] = mesh, ["extras"] = extras };
             if (nodeOrigin is { } o)
             {
                 var t = o.Position * s;

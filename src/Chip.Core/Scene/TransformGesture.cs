@@ -99,7 +99,8 @@ public sealed class TransformGesture
             var start = arr.Select(v => mesh.Positions[v]).ToArray();
             foreach (var p in start) { min = Vector3.Min(min, p); max = Vector3.Max(max, p); }
             _parts.Add((mesh, arr, start));
-            if (sel.Mode == SelectMode.Object && session.TextureLock)
+            // A linked copy's textures always move with it: sliding them would be an edit of every copy.
+            if (sel.Mode == SelectMode.Object && (session.TextureLock || mesh.Part != 0))
                 for (int f = 0; f < mesh.Faces.Count; f++) _lockedFaces.Add((mesh, f, mesh.Faces[f].Map));
         }
         foreach (var e in sel.Entities(doc))

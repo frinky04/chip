@@ -20,10 +20,17 @@ public sealed class Group
     public bool Folder;
     /// <summary>The group's own origin, or null for none (<see cref="Geometry.ObjectOrigin"/>). It moves when the whole group does.</summary>
     public Geometry.ObjectOrigin? Origin;
+    /// <summary>
+    /// The <see cref="InstanceDefinition"/> this group is a linked copy of (its id), or 0. A copy's origin places it, and
+    /// its member meshes are the definition's parts.
+    /// </summary>
+    public int Instance;
+
+    public bool IsInstance => Instance != 0;
 
     public Group Clone() => new()
     {
-        Id = Id, Name = Name, Parent = Parent, Members = new List<int>(Members), Hidden = Hidden, Locked = Locked, Folder = Folder, Origin = Origin,
+        Id = Id, Name = Name, Parent = Parent, Members = new List<int>(Members), Hidden = Hidden, Locked = Locked, Folder = Folder, Origin = Origin, Instance = Instance,
     };
 }
 

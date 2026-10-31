@@ -25,6 +25,7 @@ sealed class UndoDelta
         {
             World = before.World, NextId = before.NextId, TexelDensity = before.TexelDensity, ExportScale = before.ExportScale, ExportPath = before.ExportPath,
             ExportCollision = before.ExportCollision, Export = before.Export, DressingPath = before.DressingPath,
+            Definitions = before.Definitions, // immutable: kept by reference
         };
     }
 
@@ -95,7 +96,7 @@ sealed class UndoDelta
 
     internal static bool MeshEquals(PolyMesh a, PolyMesh b)
     {
-        if (a.Id != b.Id || a.Name != b.Name || a.Hidden != b.Hidden || a.Locked != b.Locked || a.Collision != b.Collision || a.Tags != b.Tags || !a.Dressing.Equals(b.Dressing) || a.Origin != b.Origin ||
+        if (a.Id != b.Id || a.Name != b.Name || a.Hidden != b.Hidden || a.Locked != b.Locked || a.Collision != b.Collision || a.Tags != b.Tags || !a.Dressing.Equals(b.Dressing) || a.Origin != b.Origin || a.Part != b.Part ||
             !Bits<System.Numerics.Vector3>(CollectionsMarshal.AsSpan(a.Positions), CollectionsMarshal.AsSpan(b.Positions)) ||
             a.Faces.Count != b.Faces.Count || !a.SoftEdges.SetEquals(b.SoftEdges)) return false;
         for (int i = 0; i < a.Faces.Count; i++)
@@ -114,5 +115,5 @@ sealed class UndoDelta
         a.Hidden == b.Hidden && a.Locked == b.Locked && a.Meshes.SequenceEqual(b.Meshes) && EntityValues.SameProperties(a.Properties, b.Properties);
 
     static bool GroupEquals(Group a, Group b) => a.Id == b.Id && a.Name == b.Name && a.Parent == b.Parent &&
-        a.Hidden == b.Hidden && a.Locked == b.Locked && a.Folder == b.Folder && a.Origin == b.Origin && a.Members.SequenceEqual(b.Members);
+        a.Hidden == b.Hidden && a.Locked == b.Locked && a.Folder == b.Folder && a.Origin == b.Origin && a.Instance == b.Instance && a.Members.SequenceEqual(b.Members);
 }

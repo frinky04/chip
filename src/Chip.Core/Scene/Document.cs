@@ -12,6 +12,17 @@ public sealed class Document
     public Dictionary<string, System.Text.Json.JsonElement> World = new();
     /// <summary>Outliner groups (stream H). Optional in files; ids share <see cref="NextId"/> with meshes and entities.</summary>
     public List<Group> Groups = new();
+    /// <summary>
+    /// What linked copies share (<see cref="InstanceDefinition"/>). Never changed in place: an edit assigns a new list, so
+    /// undo snapshots keep the old one. Ids share <see cref="NextId"/>.
+    /// </summary>
+    public IReadOnlyList<InstanceDefinition> Definitions = [];
+
+    public InstanceDefinition? FindDefinition(int id)
+    {
+        foreach (var d in Definitions) if (d.Id == id) return d;
+        return null;
+    }
     public int NextId = 1;
     /// <summary>
     /// Texel density in pixels per metre ("1 m is 256 px", as in Scythe) for every material without its own override.
@@ -69,6 +80,7 @@ public sealed class Document
         Entities = Entities.Select(e => e.Clone()).ToList(),
         World = World.ToDictionary(kv => kv.Key, kv => kv.Value.Clone()),
         Groups = Groups.Select(g => g.Clone()).ToList(),
+        Definitions = Definitions,
         NextId = NextId,
         TexelDensity = TexelDensity,
         ExportScale = ExportScale,

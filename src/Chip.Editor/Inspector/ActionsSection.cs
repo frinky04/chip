@@ -39,6 +39,7 @@ public sealed class ActionsSection : IInspectorSection
             ("edit.duplicate", "Duplicate"), ("mesh.mirror", "Mirror"), ("mesh.mergeMeshes", "Merge"),
             ("scene.group", "Group"), ("scene.ungroup", "Ungroup"), ("mesh.flip", "Flip"),
             ("mesh.weld", "Weld"), ("mesh.cleanUp", "Clean up"), ("mesh.check", "Check"),
+            ("instance.make", "Link"), ("instance.duplicateLinked", "Dup linked"), ("instance.makeUnique", "Unlink"),
         ],
     };
 

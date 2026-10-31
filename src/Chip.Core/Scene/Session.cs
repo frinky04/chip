@@ -72,6 +72,7 @@ public sealed class Session
         _pendingFiles = null;
         _scopeChecks = null;
         Version++;
+        RefreshInstances();
     }
 
     /// <summary>Raised by <see cref="MarkSaved"/>, i.e. after every successful save, with the saved path (watch mode hooks this).</summary>
@@ -127,11 +128,41 @@ public sealed class Session
         FilesChanged?.Invoke(files.Select(f => f.Path).ToList());
     }
 
-    public void Touch() => Version++;
+    /// <summary>Marks a live change (a drag frame). Linked copies follow the one being edited as it moves.</summary>
+    public void Touch()
+    {
+        Version++;
+        SyncInstances(); // bumps Version again when there are copies, which only means "maybe changed"
+    }
+
+    readonly InstanceSync _instances = new();
+
+    /// <summary>
+    /// Carries an edit of one linked copy to the others (<see cref="InstanceSync"/>). The meshes it rebuilds are new
+    /// objects, so the pending snapshot keeps the old ones; they are exempt from the scope check.
+    /// </summary>
+    void SyncInstances()
+    {
+        if (Doc.Definitions.Count == 0) return;
+        Version++; // the edit may not have touched yet, and mesh revisions are recomputed per version
+        var touched = _instances.Run(Doc, MeshRevision);
+        if (touched.Count == 0) return;
+        var set = touched.ToHashSet();
+        _scopeChecks?.RemoveAll(c => set.Contains(c.Mesh.Id));
+        Version++;
+        _instances.Refresh(Doc, MeshRevision);
+    }
+
+    void RefreshInstances()
+    {
+        if (Doc.Definitions.Count > 0) _instances.Refresh(Doc, MeshRevision);
+    }
 
     public void End()
     {
         if (_pending == null) return;
+        SyncInstances();
+        InstanceOps.PruneDefinitions(Doc);
         CheckScope();
         PruneGroupMembers(); // before the delta, so the cleanup undoes with the step that caused it
         var files = _pendingFiles?.Where(f => f.Before != f.After).ToList();
@@ -169,6 +200,7 @@ public sealed class Session
         _pendingFiles = null;
         _scopeChecks = null;
         Version++;
+        RefreshInstances();
         if (files != null) Restore(files);
     }
 
@@ -212,6 +244,7 @@ public sealed class Session
         Sel = s.Sel;
         Dirty = true;
         Version++;
+        RefreshInstances();
         return true;
     }
 

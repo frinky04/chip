@@ -33,7 +33,8 @@ public static partial class DocumentSerializer
         ExportDto? Export = null,
         List<GroupDto>? Groups = null, // stream H: outliner groups (optional, no version bump)
         float? TexelDensity = null,    // px per metre; files without it predate the setting and were built at 512
-        string? Dressing = null, WorldDto? World = null);      // dressing rules file, relative to the level (optional, no version bump)
+        string? Dressing = null, WorldDto? World = null,       // dressing rules file, relative to the level (optional, no version bump)
+        List<DefinitionDto>? Definitions = null);              // what linked copies share (optional, no version bump)
 
     sealed record WorldDto(Dictionary<string, JsonElement>? Properties);
 
@@ -41,7 +42,8 @@ public static partial class DocumentSerializer
         bool Locked = false, CollisionMode Collision = CollisionMode.Default, List<int[]>? SoftEdges = null,
         string[]? Tags = null,  // dressing tags (optional, no version bump)
         DressingDto? Dressing = null,
-        OriginDto? Origin = null); // the mesh's own origin (optional, no version bump)
+        OriginDto? Origin = null, // the mesh's own origin (optional, no version bump)
+        int? Part = null);        // in a linked copy, which part of the definition it is
 
     /// <summary>An object's origin: <c>{ "position": [x, y, z], "rotation": [x, y, z] }</c>, rotation in degrees like an entity's (omitted when none).</summary>
     sealed record OriginDto(float[] Position, float[]? Rotation = null);
@@ -95,26 +97,66 @@ public static partial class DocumentSerializer
 
     // stream H: a group's direct members are object ids; Parent 0 = top level.
     sealed record GroupDto(int Id, string Name, int Parent, int[] Members, bool Hidden = false, bool Locked = false, bool Folder = false,
-        OriginDto? Origin = null);
+        OriginDto? Origin = null, int? Instance = null); // a linked copy names its definition
+
+    /// <summary>A linked-copy definition: its parts are meshes in its own space, each with the key copies tag their meshes with.</summary>
+    sealed record DefinitionDto(int Id, string? Name, List<PartDto> Parts);
+    sealed record PartDto(int Key, MeshDto Mesh);
+
+    static MeshDto MeshToDto(PolyMesh m) => new(m.Id, m.Name, m.Hidden,
+        m.Positions.Select(Arr).ToList(),
+        m.Faces.Select(f => new FaceDto(f.Verts, f.Material, Arr(f.Map.UAxis), Arr(f.Map.VAxis),
+            [f.Map.ShiftU, f.Map.ShiftV], [f.Map.ScaleU, f.Map.ScaleV], f.Map.Rotation,
+            f.UVs?.Select(uv => new[] { uv.X, uv.Y }).ToList(), f.Dominant ? true : null, TagsDto(f.Tags))).ToList(),
+        m.Locked, m.Collision,
+        m.SoftEdges.Count > 0 ? m.SoftEdges.OrderBy(e => e.A).ThenBy(e => e.B).Select(e => new[] { e.A, e.B }).ToList() : null,
+        TagsDto(m.Tags), DressingToDto(m.Dressing), OriginToDto(m.Origin), m.Part == 0 ? null : m.Part);
+
+    static PolyMesh MeshFromDto(MeshDto m, string where)
+    {
+        var mesh = new PolyMesh
+        {
+            Id = m.Id, Name = m.Name ?? "mesh", Hidden = m.Hidden, Locked = m.Locked, Collision = m.Collision,
+            Positions = m.Positions.Select(Vec).ToList(), Tags = TagsFromDto(m.Tags, where),
+            Dressing = DressingFromDto(m.Dressing, m.Id), Origin = OriginFromDto(m.Origin, where), Part = m.Part ?? 0,
+        };
+        foreach (var f in m.Faces)
+        {
+            if (f.Verts.Length < 3 || f.Verts.Any(v => v < 0 || v >= mesh.Positions.Count))
+                throw new InvalidDataException($"{where} has an invalid face");
+            if (f.Uvs != null && f.Uvs.Count != f.Verts.Length)
+                throw new InvalidDataException($"{where} has a face whose UV count doesn't match its corners");
+            mesh.Faces.Add(new Face(f.Verts, f.Material, new TextureMapping
+            {
+                UAxis = Vec(f.U), VAxis = Vec(f.V), ShiftU = f.Shift[0], ShiftV = f.Shift[1],
+                ScaleU = f.Scale[0], ScaleV = f.Scale[1], Rotation = f.Rotation,
+            })
+            {
+                UVs = f.Uvs?.Select(uv => new Vector2(uv[0], uv[1])).ToArray(), Dominant = f.Dominant == true,
+                Tags = TagsFromDto(f.Tags, where),
+            });
+        }
+        if (m.SoftEdges != null)
+            foreach (var e in m.SoftEdges)
+                if (e.Length == 2 && e[0] >= 0 && e[1] >= 0 && e[0] < mesh.Positions.Count && e[1] < mesh.Positions.Count)
+                    mesh.SoftEdges.Add(new Edge(e[0], e[1]));
+        return mesh;
+    }
 
     public static string Serialize(Document doc) => JsonSerializer.Serialize(new FileDto(
         CurrentVersion, doc.ExportScale, doc.ExportPath, doc.ExportCollision, doc.NextId,
-        doc.Meshes.Select(m => new MeshDto(m.Id, m.Name, m.Hidden,
-            m.Positions.Select(Arr).ToList(),
-            m.Faces.Select(f => new FaceDto(f.Verts, f.Material, Arr(f.Map.UAxis), Arr(f.Map.VAxis),
-                [f.Map.ShiftU, f.Map.ShiftV], [f.Map.ScaleU, f.Map.ScaleV], f.Map.Rotation,
-                f.UVs?.Select(uv => new[] { uv.X, uv.Y }).ToList(), f.Dominant ? true : null, TagsDto(f.Tags))).ToList(),
-            m.Locked, m.Collision,
-            m.SoftEdges.Count > 0 ? m.SoftEdges.OrderBy(e => e.A).ThenBy(e => e.B).Select(e => new[] { e.A, e.B }).ToList() : null,
-            TagsDto(m.Tags), DressingToDto(m.Dressing), OriginToDto(m.Origin))).ToList(),
+        doc.Meshes.Select(MeshToDto).ToList(),
         doc.Entities.Count > 0
             ? doc.Entities.Select(e => new EntityDto(e.Id, e.ClassName, e.Name, Arr(e.Position), Arr(e.Rotation), e.Hidden,
                 e.Properties.Count > 0 ? e.Properties : null,
                 e.Locked, e.Meshes.Count > 0 ? e.Meshes.ToArray() : null, TagsDto(e.Tags), e.Outputs.Count == 0 ? null : e.Outputs.Select(c => JsonSerializer.SerializeToElement(c.ToJson())).ToList())).ToList()
             : null,
         ExportToDto(doc.Export),
-        doc.Groups.Count > 0 ? doc.Groups.Select(g => new GroupDto(g.Id, g.Name, g.Parent, g.Members.ToArray(), g.Hidden, g.Locked, g.Folder, OriginToDto(g.Origin))).ToList() : null,
-        doc.TexelDensity, doc.DressingPath, doc.World.Count == 0 ? null : new WorldDto(doc.World)), Options);
+        doc.Groups.Count > 0 ? doc.Groups.Select(g => new GroupDto(g.Id, g.Name, g.Parent, g.Members.ToArray(), g.Hidden, g.Locked, g.Folder, OriginToDto(g.Origin),
+            g.Instance == 0 ? null : g.Instance)).ToList() : null,
+        doc.TexelDensity, doc.DressingPath, doc.World.Count == 0 ? null : new WorldDto(doc.World),
+        doc.Definitions.Count == 0 ? null : doc.Definitions.Select(d => new DefinitionDto(d.Id, d.Name,
+            d.Parts.Select(p => new PartDto(p.Key, MeshToDto(p.Mesh))).ToList())).ToList()), Options);
 
     /// <summary>Density of levels saved before <see cref="Document.TexelDensity"/> existed (the old fixed 512 px/m).</summary>
     public const float LegacyTexelDensity = 512f;
@@ -133,32 +175,7 @@ public static partial class DocumentSerializer
         doc.Export = ExportFromDto(dto.Export);
         foreach (var m in dto.Meshes)
         {
-            var mesh = new PolyMesh
-            {
-                Id = m.Id, Name = m.Name ?? "mesh", Hidden = m.Hidden, Locked = m.Locked, Collision = m.Collision,
-                Positions = m.Positions.Select(Vec).ToList(), Tags = TagsFromDto(m.Tags, $"Mesh {m.Id}"),
-                Dressing = DressingFromDto(m.Dressing, m.Id), Origin = OriginFromDto(m.Origin, $"Mesh {m.Id}"),
-            };
-            foreach (var f in m.Faces)
-            {
-                if (f.Verts.Length < 3 || f.Verts.Any(v => v < 0 || v >= mesh.Positions.Count))
-                    throw new InvalidDataException($"Mesh {m.Id} has an invalid face");
-                if (f.Uvs != null && f.Uvs.Count != f.Verts.Length)
-                    throw new InvalidDataException($"Mesh {m.Id} has a face whose UV count doesn't match its corners");
-                mesh.Faces.Add(new Face(f.Verts, f.Material, new TextureMapping
-                {
-                    UAxis = Vec(f.U), VAxis = Vec(f.V), ShiftU = f.Shift[0], ShiftV = f.Shift[1],
-                    ScaleU = f.Scale[0], ScaleV = f.Scale[1], Rotation = f.Rotation,
-                })
-                {
-                    UVs = f.Uvs?.Select(uv => new Vector2(uv[0], uv[1])).ToArray(), Dominant = f.Dominant == true,
-                    Tags = TagsFromDto(f.Tags, $"Mesh {m.Id}"),
-                });
-            }
-            if (m.SoftEdges != null)
-                foreach (var e in m.SoftEdges)
-                    if (e.Length == 2 && e[0] >= 0 && e[1] >= 0 && e[0] < mesh.Positions.Count && e[1] < mesh.Positions.Count)
-                        mesh.SoftEdges.Add(new Edge(e[0], e[1]));
+            var mesh = MeshFromDto(m, $"Mesh {m.Id}");
             doc.Meshes.Add(mesh);
             doc.NextId = Math.Max(doc.NextId, mesh.Id + 1);
         }
@@ -182,9 +199,22 @@ public static partial class DocumentSerializer
         if (dto.Groups != null) // stream H
             foreach (var g in dto.Groups)
             {
-                doc.Groups.Add(new Group { Id = g.Id, Name = g.Name ?? "Group", Parent = g.Parent, Members = (g.Members ?? []).ToList(), Hidden = g.Hidden, Locked = g.Locked, Folder = g.Folder, Origin = OriginFromDto(g.Origin, $"Group {g.Id}") });
+                doc.Groups.Add(new Group
+                {
+                    Id = g.Id, Name = g.Name ?? "Group", Parent = g.Parent, Members = (g.Members ?? []).ToList(), Hidden = g.Hidden,
+                    Locked = g.Locked, Folder = g.Folder, Origin = OriginFromDto(g.Origin, $"Group {g.Id}"), Instance = g.Instance ?? 0,
+                });
                 doc.NextId = Math.Max(doc.NextId, g.Id + 1);
             }
+        if (dto.Definitions != null)
+        {
+            doc.Definitions = dto.Definitions.Select(d => new InstanceDefinition(d.Id, d.Name ?? "Prop",
+                (d.Parts ?? []).Select(p => new DefinitionPart(p.Key, MeshFromDto(p.Mesh, $"Definition {d.Id} part {p.Key}"))).ToList())).ToList();
+            foreach (var d in doc.Definitions) doc.NextId = Math.Max(doc.NextId, d.Id + 1);
+        }
+        // A copy whose definition is missing (a hand edit) is a plain group.
+        foreach (var g in doc.Groups)
+            if (g.Instance != 0 && (doc.FindDefinition(g.Instance) == null || g.Origin == null)) g.Instance = 0;
         return doc;
     }
 

@@ -88,10 +88,15 @@ public sealed class PolyMesh
     public MeshDressing Dressing = MeshDressing.Empty;
     /// <summary>This mesh's own origin (pivot, gizmo axes, export node transform), or null for none. See <see cref="ObjectOrigin"/>.</summary>
     public ObjectOrigin? Origin;
+    /// <summary>
+    /// In a linked copy (a group with an <c>Instance</c>), which part of the definition this mesh is; 0 otherwise.
+    /// See <c>Scene.InstanceDefinition</c>.
+    /// </summary>
+    public int Part;
 
     public PolyMesh Clone() => new()
     {
-        Id = Id, Name = Name, Hidden = Hidden, Locked = Locked, Collision = Collision, Tags = Tags, Dressing = Dressing, Origin = Origin,
+        Id = Id, Name = Name, Hidden = Hidden, Locked = Locked, Collision = Collision, Tags = Tags, Dressing = Dressing, Origin = Origin, Part = Part,
         Positions = new List<Vector3>(Positions),
         Faces = Faces.Select(f => f.Clone()).ToList(),
         SoftEdges = new HashSet<Edge>(SoftEdges),
