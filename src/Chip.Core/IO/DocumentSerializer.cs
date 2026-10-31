@@ -34,7 +34,11 @@ public static partial class DocumentSerializer
         List<GroupDto>? Groups = null, // stream H: outliner groups (optional, no version bump)
         float? TexelDensity = null,    // px per metre; files without it predate the setting and were built at 512
         string? Dressing = null, WorldDto? World = null,       // dressing rules file, relative to the level (optional, no version bump)
-        List<DefinitionDto>? Definitions = null);              // what linked copies share (optional, no version bump)
+        List<DefinitionDto>? Definitions = null,               // what linked copies share (optional, no version bump)
+        PrefabHeaderDto? Prefab = null);                       // set in a prefab file (*.prefab.chip)
+
+    sealed record PrefabHeaderDto(string Guid, string? Name);
+    sealed record PrefabRefDto(string Path, string Guid);
 
     sealed record WorldDto(Dictionary<string, JsonElement>? Properties);
 
@@ -100,7 +104,7 @@ public static partial class DocumentSerializer
         OriginDto? Origin = null, int? Instance = null); // a linked copy names its definition
 
     /// <summary>A linked-copy definition: its parts are meshes in its own space, each with the key copies tag their meshes with.</summary>
-    sealed record DefinitionDto(int Id, string? Name, List<PartDto> Parts);
+    sealed record DefinitionDto(int Id, string? Name, List<PartDto> Parts, PrefabRefDto? Prefab = null);
     sealed record PartDto(int Key, MeshDto Mesh);
 
     static MeshDto MeshToDto(PolyMesh m) => new(m.Id, m.Name, m.Hidden,
@@ -156,7 +160,9 @@ public static partial class DocumentSerializer
             g.Instance == 0 ? null : g.Instance)).ToList() : null,
         doc.TexelDensity, doc.DressingPath, doc.World.Count == 0 ? null : new WorldDto(doc.World),
         doc.Definitions.Count == 0 ? null : doc.Definitions.Select(d => new DefinitionDto(d.Id, d.Name,
-            d.Parts.Select(p => new PartDto(p.Key, MeshToDto(p.Mesh))).ToList())).ToList()), Options);
+            d.Parts.Select(p => new PartDto(p.Key, MeshToDto(p.Mesh))).ToList(),
+            d.Source is { } src ? new PrefabRefDto(src.Path, src.Guid) : null)).ToList(),
+        doc.Prefab is { } header ? new PrefabHeaderDto(header.Guid, header.Name) : null), Options);
 
     /// <summary>Density of levels saved before <see cref="Document.TexelDensity"/> existed (the old fixed 512 px/m).</summary>
     public const float LegacyTexelDensity = 512f;
@@ -209,9 +215,13 @@ public static partial class DocumentSerializer
         if (dto.Definitions != null)
         {
             doc.Definitions = dto.Definitions.Select(d => new InstanceDefinition(d.Id, d.Name ?? "Prop",
-                (d.Parts ?? []).Select(p => new DefinitionPart(p.Key, MeshFromDto(p.Mesh, $"Definition {d.Id} part {p.Key}"))).ToList())).ToList();
+                (d.Parts ?? []).Select(p => new DefinitionPart(p.Key, MeshFromDto(p.Mesh, $"Definition {d.Id} part {p.Key}"))).ToList())
+            {
+                Source = d.Prefab is { Path.Length: > 0, Guid.Length: > 0 } src ? new PrefabRef(src.Path, src.Guid) : null,
+            }).ToList();
             foreach (var d in doc.Definitions) doc.NextId = Math.Max(doc.NextId, d.Id + 1);
         }
+        if (dto.Prefab is { Guid.Length: > 0 } ph) doc.Prefab = new PrefabHeader(ph.Guid, ph.Name ?? "Prefab");
         // A copy whose definition is missing (a hand edit) is a plain group.
         foreach (var g in doc.Groups)
             if (g.Instance != 0 && (doc.FindDefinition(g.Instance) == null || g.Origin == null)) g.Instance = 0;

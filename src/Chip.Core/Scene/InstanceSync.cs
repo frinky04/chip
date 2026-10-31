@@ -106,7 +106,8 @@ public sealed class InstanceSync
 
     const float Tolerance = 1e-4f;
 
-    static bool Same(IReadOnlyList<DefinitionPart> a, IReadOnlyList<DefinitionPart> b)
+    /// <summary>Whether two sets of parts are the same prop, up to float noise.</summary>
+    internal static bool Same(IReadOnlyList<DefinitionPart> a, IReadOnlyList<DefinitionPart> b)
     {
         if (a.Count != b.Count) return false;
         for (int i = 0; i < a.Count; i++)

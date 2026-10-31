@@ -31,6 +31,10 @@ public sealed record GameProject : IDisposable
     public bool IsGodot { get; init; }
     /// <summary>The game's surfaces (<c>"surfaces"</c>), new ones and changed built-ins (see <see cref="Scene.Surfaces"/>).</summary>
     public IReadOnlyList<Surface> Surfaces { get; init; } = [];
+    /// <summary>Folders (relative to <see cref="Root"/>) searched for prefab files (<c>"prefabs": { "roots" }</c>); empty searches the whole project.</summary>
+    public IReadOnlyList<string> PrefabRoots { get; init; } = [];
+    /// <summary>Where new prefab files are saved, relative to <see cref="Root"/> (<c>"prefabs": { "default" }</c>), or null for <c>prefabs</c>.</summary>
+    public string? PrefabDefault { get; init; }
 
     /// <summary>The manifest when the project file doesn't name one (where the Godot addon writes it), relative to the project folder.</summary>
     public static readonly string DefaultManifest = Path.Combine(".chip", "entities.json");
@@ -113,7 +117,26 @@ public sealed record GameProject : IDisposable
                     case "kinds": p = p with { Kinds = AssetKind.Parse(prop.Value, root) }; break;
                     case "flags": p = p with { Flags = FlagSpec.Parse(prop.Value) }; break;
                     case "surfaces": p = p with { Surfaces = Scene.Surfaces.Parse(prop.Value, root) }; break;
-                    default: throw new InvalidDataException($"has an unknown field \"{prop.Name}\" (known: version, engine, entities, collisionSuffixes, assetPrefix, surfaces, kinds, flags)");
+                    case "prefabs": p = ParsePrefabs(p, prop); break;
+                    default: throw new InvalidDataException($"has an unknown field \"{prop.Name}\" (known: version, engine, entities, collisionSuffixes, assetPrefix, surfaces, kinds, flags, prefabs)");
+                }
+            return p;
+        }
+
+        // "prefabs": { "roots": ["props"], "default": "props" }: where prefab files are looked for, and where new ones go.
+        static GameProject ParsePrefabs(GameProject p, JsonProperty prop)
+        {
+            if (prop.Value.ValueKind != JsonValueKind.Object) throw Bad(prop, "an object with \"roots\" and \"default\"");
+            foreach (var f in prop.Value.EnumerateObject())
+                switch (f.Name)
+                {
+                    case "roots":
+                        if (f.Value.ValueKind != JsonValueKind.Array || f.Value.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.String))
+                            throw new InvalidDataException("\"prefabs.roots\" should be a list of folders");
+                        p = p with { PrefabRoots = f.Value.EnumerateArray().Select(e => e.GetString()!).ToList() };
+                        break;
+                    case "default": p = p with { PrefabDefault = Text(f) }; break;
+                    default: throw new InvalidDataException($"\"prefabs\" has an unknown field \"{f.Name}\" (known: roots, default)");
                 }
             return p;
         }

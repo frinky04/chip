@@ -20,7 +20,7 @@ Tell nodes apart by their `extras`. Check `chip_class` and `chip_volume` before 
 | Node | Has a mesh | `extras` |
 |---|---|---|
 | Entity | no | `chip_class`, `chip_id`, `properties`; `chip_name` when named; `chip_scene` / `chip_uid` when the manifest gives them; `chip_tags` when tagged; `chip_io` when it has connections; a mesh entity has its meshes as `children` |
-| Render mesh | yes | `chip_mesh` (the mesh's name), `chip_id`; `chip_collider: "trimesh"` when it is its own collider; `chip_collision` when it isn't Default (`None`, `Only`, `ConvexOnly`); `chip_remap` (material name → engine path) |
+| Render mesh | yes | `chip_mesh` (the mesh's name), `chip_id`; `chip_collider: "trimesh"` when it is its own collider; `chip_collision` when it isn't Default (`None`, `Only`, `ConvexOnly`); `chip_remap` (material name → engine path). A mesh with its own origin has the node's `translation`/`rotation` at it, vertices relative to it. A linked copy's part also has `chip_instance` (the prop's name), `chip_instance_id` (the copy), `chip_part`, and `chip_prefab` (the prefab file, project-relative) when it comes from one; its node sits at the copy's origin and every copy of a part shares one glTF mesh (unless tessellating) |
 | Collider only | yes | `chip_collider: "trimesh"` or `"convex"`, `chip_render: false`; no material |
 | Surface collider | yes | `chip_surface` (`clip`, `nodraw`, or the game's `monster_clip`), `chip_collider: "trimesh"`, `chip_render: false`; `chip_tool: "clip"` for Chip's clip |
 | Volume | yes | `chip_surface` (`trigger`, or the game's `water`), `chip_volume: true`, `chip_render: false`; `chip_tool: "trigger"` for Chip's trigger |

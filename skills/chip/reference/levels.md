@@ -31,6 +31,21 @@ editing the file, or the next save overwrites your edit.
   shape [`logic.md`](logic.md) gives, leaving out defaults.
 - `export` (optional) holds the export settings: `bakeCollision`, `collisionHulls`, `tessellate`, `smoothing`,
   `embedTextures`, `materialRemap` and the rest.
+- A mesh or group may have its own `origin`: `{ "position": [x, y, z], "rotation": [x, y, z] }` (degrees, as an
+  entity's; rotation left out when zero). It is the pivot and where export places the mesh's node. Vertices stay in
+  world space.
+- Linked copies: `definitions` (optional) lists what copies share, `{ "id", "name", "parts": [{ "key", "mesh" }],
+  "prefab"? }`, each part a mesh in the prop's own space. A copy is a group with an `origin` and `"instance": <definition
+  id>`; its meshes are ordinary meshes in world space with `"part": <key>`. Chip keeps copies the same, so a script
+  editing one copy's meshes should edit the definition's parts and every copy alike, or leave linked props alone.
+
+### Prefabs
+
+A prefab is an ordinary level file named `name.prefab.chip` with `"prefab": { "guid": "…", "name": "crate" }`. Its
+meshes are the prop's parts, around the file's origin (put the prop's base at 0, 0, 0). A level's definition that comes
+from one has `"prefab": { "path": "props/crate.prefab.chip", "guid": "…" }`, the path relative to the project root (the
+folder of `chip.project.json` or `project.godot`, else the level's folder). The level keeps the parts as well; when
+the level opens, and on `--export`, Chip reads the file again, finding it by `guid` if it moved.
 
 ### Meshes
 

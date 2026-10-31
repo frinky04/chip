@@ -17,6 +17,8 @@ public interface IViewportTool
     /// <summary>Hotkey that activates (or toggles back from) the tool, e.g. "Shift+B". Null for none.</summary>
     string? Hotkey { get; }
     int Order { get; }
+    /// <summary>False for a tool armed from elsewhere (the Place tab's prefabs): it has no tool strip button.</summary>
+    bool InToolStrip => true;
 
     /// <summary>True while mid-operation: the tool keeps receiving input even off-viewport, and most hotkeys wait.</summary>
     bool Busy { get; }

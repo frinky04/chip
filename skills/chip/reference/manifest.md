@@ -18,6 +18,7 @@ level's export path. Every field is optional:
 | `surfaces` | none | The game's own surfaces, such as a monster clip or a video screen ([`surfaces.md`](surfaces.md)). |
 | `kinds` | none | The kinds of file an asset property can name (Asset kinds, below). |
 | `flags` | none | Named level and game state that connections set and test ([`logic.md`](logic.md), Flags). |
+| `prefabs` | search the whole project; new ones in `prefabs/` | Where prefab files (`*.prefab.chip`) are: `{ "roots": ["props"], "default": "props" }`. `roots` limits the search; `default` is where Save as prefab puts new ones. Both are relative to the project file ([`levels.md`](levels.md), Prefabs). |
 
 An unknown field makes the whole file unreadable, and Chip then falls back to its built-in classes. Comments and trailing commas are allowed.
 

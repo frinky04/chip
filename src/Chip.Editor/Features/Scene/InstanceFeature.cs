@@ -1,6 +1,7 @@
 using Chip.Core.Scene;
 using Chip.Editor.Framework;
 using Chip.Editor.UI;
+using ImGuiNET;
 using static Chip.Editor.UI.Widgets;
 
 namespace Chip.Editor.Features.Scene;
@@ -149,5 +150,20 @@ public sealed class InstanceSection : IInspectorSection
         CommandRow(ctx.Commands, "linked", ("instance.selectCopies", "Select all", null), ("instance.duplicateLinked", "Duplicate", Icon.Link));
         FieldStart();
         CommandRow(ctx.Commands, "linked2", ("instance.makeUnique", "Make unique", Icon.Unlink));
+
+        // A prefab: where its file is, whether it's there, and opening it; otherwise saving it as one.
+        var source = defs.Count == 1 ? doc.FindDefinition(defs[0])?.Source : null;
+        RowLabel("Prefab", source == null ? "Lives only in this level. Save it as a prefab to place it in other levels" : source.Path);
+        if (source == null) CommandRow(ctx.Commands, "prefab", ("prefab.save", "Save as prefab…", null));
+        else
+        {
+            bool missing = ctx.Session.PrefabRoot is { } root && !File.Exists(Prefabs.FullPath(root, source));
+            ImGui.PushStyleColor(ImGuiCol.Text, missing ? Theme.Error : Theme.Text);
+            ImGui.TextUnformatted(Ellipsize(source.Path, ImGui.GetContentRegionAvail().X));
+            ImGui.PopStyleColor();
+            Tip(missing ? $"{source.Path} is missing: the copies keep their last shape. Editing one writes the file again" : source.Path);
+            FieldStart();
+            CommandRow(ctx.Commands, "prefab", ("prefab.open", "Open prefab", null));
+        }
     }
 }

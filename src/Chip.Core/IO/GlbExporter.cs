@@ -212,6 +212,7 @@ public static class GlbExporter
                 meshExtras["chip_instance"] = def.Name;
                 meshExtras["chip_instance_id"] = copy.Id;
                 meshExtras["chip_part"] = mesh.Part;
+                if (def.Source is { } src) meshExtras["chip_prefab"] = src.Path; // project-relative, forward slashes
             }
             if (!collisionOnly)
             {

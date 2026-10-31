@@ -26,6 +26,7 @@ sealed class UndoDelta
             World = before.World, NextId = before.NextId, TexelDensity = before.TexelDensity, ExportScale = before.ExportScale, ExportPath = before.ExportPath,
             ExportCollision = before.ExportCollision, Export = before.Export, DressingPath = before.DressingPath,
             Definitions = before.Definitions, // immutable: kept by reference
+            Prefab = before.Prefab,
         };
     }
 

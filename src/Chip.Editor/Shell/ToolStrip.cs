@@ -28,6 +28,7 @@ public sealed partial class EditorApp
         int? group = null;
         foreach (var tool in Ctx.Tools)
         {
+            if (!tool.InToolStrip) continue;
             if (group is { } g && g != tool.Order / 10) StripGap();
             group = tool.Order / 10;
             // The command's current binding (tooltip only), so a remapped tool shows its new key.

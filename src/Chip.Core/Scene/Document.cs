@@ -18,6 +18,9 @@ public sealed class Document
     /// </summary>
     public IReadOnlyList<InstanceDefinition> Definitions = [];
 
+    /// <summary>Set when this document is a prefab file (<c>*.prefab.chip</c>): its meshes are the prefab's parts.</summary>
+    public PrefabHeader? Prefab;
+
     public InstanceDefinition? FindDefinition(int id)
     {
         foreach (var d in Definitions) if (d.Id == id) return d;
@@ -81,6 +84,7 @@ public sealed class Document
         World = World.ToDictionary(kv => kv.Key, kv => kv.Value.Clone()),
         Groups = Groups.Select(g => g.Clone()).ToList(),
         Definitions = Definitions,
+        Prefab = Prefab,
         NextId = NextId,
         TexelDensity = TexelDensity,
         ExportScale = ExportScale,

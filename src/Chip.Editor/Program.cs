@@ -32,6 +32,10 @@ if (args.Length >= 2 && args[0] == "--export")
     {
         var levelPath = Path.GetFullPath(args[1]);
         var level = Chip.Core.IO.DocumentSerializer.Load(levelPath);
+        // Prefab copies as their files are now (a prefab edited since the level was saved).
+        if (Chip.Core.Scene.Prefabs.RootFor(levelPath) is { } prefabRoot)
+            foreach (var (_, _, message) in Chip.Core.Scene.Prefabs.Refresh(level, prefabRoot))
+                if (message != null) Console.Error.WriteLine(message);
         string? output = args.Length >= 3 ? Path.GetFullPath(args[2])
             : level.ExportPath is { Length: > 0 } p ? Path.GetFullPath(Path.Combine(Path.GetDirectoryName(levelPath)!, p)) : null;
         if (output == null)

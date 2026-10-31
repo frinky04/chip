@@ -106,6 +106,13 @@ Duplicate linked). Each copy can be moved and turned on its own, but an edit to 
 them as you make it. `Shift+D` on a copy makes another linked copy; Edit > Make unique breaks one off. Copies have a link
 icon in the Scene tab, and export writes each part's mesh once for all the copies.
 
+**Prefabs.** To use a prop in other levels, select it and choose Edit > Save as prefab…. It becomes a
+`name.prefab.chip` file in your project (the folder with `chip.project.json` or `project.godot`, in `prefabs/` unless
+the project's `"prefabs": { "default": "props" }` says otherwise). The Place tab lists every prefab in the project:
+click one, then click in the viewport. Editing any copy in any level saves the prefab file, and other levels pick the
+change up when they open (or straight away, if they're open). Edit > Open prefab edits the file on its own. Moving or
+renaming a prefab file is fine: levels find it again by the id inside it.
+
 **Picking among overlapping things.** Click the same spot again to select the next object under the cursor (the entity
 behind a wall, the wall inside a trigger volume), or `Ctrl`+right-click (`Alt+S`) for a list of all of them. `5` makes
 object mode pick entities only, so walls and floors stay out of the way; the dropdown beside the modes switches back.
@@ -263,7 +270,7 @@ F1 lists every shortcut and lets you search it. You can rebind keys under Edit >
 ## Not there yet
 
 - Windows only; there are no prebuilt downloads.
-- No boolean (CSG) operations, no prefab files (linked copies work within a level), no layers.
+- No boolean (CSG) operations, no nested prefabs, no layers.
 - No import of Source `.vmf` or Unreal `.t3d` maps.
 - Exported dressing props are copies, not instances.
 - Entity signal connections (Hammer's inputs and outputs) aren't built yet.

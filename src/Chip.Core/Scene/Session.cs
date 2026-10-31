@@ -60,8 +60,22 @@ public sealed class Session
     /// </summary>
     public bool TextureLock { get; set; } = true;
 
+    /// <summary>Prefabs the last <see cref="Reset"/> couldn't read or find (one message each), for the editor to report.</summary>
+    public IReadOnlyList<string> PrefabProblems { get; private set; } = [];
+
+    /// <summary>Counts <see cref="Reset"/>s, so watchers can tell a level being opened from an undo swapping documents.</summary>
+    public int Resets { get; private set; }
+
+    /// <summary>
+    /// Starts over with <paramref name="doc"/> (a level just opened, or a new one). Its prefab copies are first brought
+    /// up to date with their files (<see cref="Prefabs.Refresh"/>), so a prefab edited elsewhere shows as it is now.
+    /// </summary>
     public void Reset(Document doc, string? path)
     {
+        Resets++;
+        PrefabProblems = [];
+        if (doc.Definitions.Any(d => d.Source != null) && Prefabs.RootFor(path) is { } root)
+            PrefabProblems = Prefabs.Refresh(doc, root).Where(r => r.Message != null).Select(r => r.Message!).ToList();
         Doc = doc;
         Sel = new Selection();
         Path = path;
@@ -153,6 +167,36 @@ public sealed class Session
         _instances.Refresh(Doc, MeshRevision);
     }
 
+    /// <summary>The folder prefab references are relative to (<see cref="Prefabs.RootFor"/>); null for an unsaved level.</summary>
+    public string? PrefabRoot => Prefabs.RootFor(Path);
+
+    /// <summary>
+    /// A step that changed a prefab's parts (an edit of one of its copies) writes the prefab file, as part of the step,
+    /// so undo puts the file back too. A file that already holds those parts (it was just read) is left alone.
+    /// </summary>
+    void WritePrefabs()
+    {
+        if (_pending?.Doc is not { } before || ReferenceEquals(before.Definitions, Doc.Definitions) || PrefabRoot is not { } root) return;
+        foreach (var def in Doc.Definitions)
+        {
+            if (def.Source is not { } src || before.FindDefinition(def.Id) is not { Source: not null } old || ReferenceEquals(old.Parts, def.Parts)) continue;
+            var path = Prefabs.FullPath(root, src);
+            try
+            {
+                var text = Files.Read(path);
+                if (text != null && IsSameParts(text, def)) continue;
+                WriteFile(path, Prefabs.Write(def, text));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { FileError?.Invoke(path, e.Message); }
+        }
+
+        static bool IsSameParts(string text, InstanceDefinition def)
+        {
+            try { return InstanceSync.Same(Prefabs.Parts(IO.DocumentSerializer.Deserialize(text)), def.Parts); }
+            catch (Exception e) when (e is InvalidDataException or System.Text.Json.JsonException) { return false; }
+        }
+    }
+
     void RefreshInstances()
     {
         if (Doc.Definitions.Count > 0) _instances.Refresh(Doc, MeshRevision);
@@ -163,6 +207,7 @@ public sealed class Session
         if (_pending == null) return;
         SyncInstances();
         InstanceOps.PruneDefinitions(Doc);
+        WritePrefabs();
         CheckScope();
         PruneGroupMembers(); // before the delta, so the cleanup undoes with the step that caused it
         var files = _pendingFiles?.Where(f => f.Before != f.After).ToList();
