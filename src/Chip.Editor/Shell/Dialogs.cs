@@ -21,9 +21,10 @@ public sealed partial class EditorApp
 
     void OnClosing()
     {
-        if (_allowClose || !Ctx.Session.Dirty) return;
+        if (_allowClose || !Ctx.Session.AnyDirty) return;
         _window.IsClosing = false;
-        ConfirmDiscard(() => { _allowClose = true; _window.Close(); });
+        // Ctx's prompt, which also covers a level set aside while a prefab is open.
+        Ctx.ConfirmDiscard(() => { _allowClose = true; _window.Close(); });
     }
 
     void DrawConfirmModal()

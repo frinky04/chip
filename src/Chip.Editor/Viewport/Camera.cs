@@ -32,6 +32,15 @@ public sealed class Camera
 
     public Camera() => LookAt(Vector3.Zero);
 
+    /// <summary>A copy of where the camera is and how it looks (to put it back later with <see cref="CopyFrom"/>).</summary>
+    public Camera Clone() => (Camera)MemberwiseClone();
+
+    public void CopyFrom(Camera o)
+    {
+        Position = o.Position; Yaw = o.Yaw; Pitch = o.Pitch; FovY = o.FovY; FlySpeed = o.FlySpeed;
+        Projection = o.Projection; OrthoHeight = o.OrthoHeight; FocusTarget = o.FocusTarget;
+    }
+
     public bool IsOrtho => Projection != Projection.Perspective;
 
     /// <summary>View basis (forward, up) for each orthographic projection. Right = forward × up.</summary>

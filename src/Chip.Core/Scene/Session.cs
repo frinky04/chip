@@ -72,6 +72,61 @@ public sealed class Session
     /// </summary>
     public void Reset(Document doc, string? path)
     {
+        _frames.Clear();
+        StartOn(doc, path);
+    }
+
+    // ---- Documents set aside (editing a prefab from a level) ----
+
+    sealed record Frame(Document Doc, Selection Sel, string? Path, bool Dirty, List<Snapshot> Undo, List<Snapshot> Redo, IReadOnlyList<string> PrefabProblems);
+    readonly List<Frame> _frames = new();
+
+    /// <summary>Whether a document is set aside under this one (<see cref="Push"/>): a prefab opened from a level.</summary>
+    public bool IsNested => _frames.Count > 0;
+
+    /// <summary>The path of the document set aside under this one, or null.</summary>
+    public string? ParentPath => _frames.Count > 0 ? _frames[^1].Path : null;
+
+    /// <summary>Whether this document or one set aside under it has unsaved changes.</summary>
+    public bool AnyDirty => Dirty || _frames.Any(f => f.Dirty);
+
+    /// <summary>
+    /// Sets the current document aside, with its selection, undo history and unsaved changes, and starts on
+    /// <paramref name="doc"/> (a prefab file). <see cref="Pop"/> comes back to it as it was.
+    /// </summary>
+    public void Push(Document doc, string? path)
+    {
+        if (_pending != null) End();
+        _frames.Add(new Frame(Doc, Sel, Path, Dirty, [.. _undo], [.. _redo], PrefabProblems));
+        StartOn(doc, path);
+    }
+
+    /// <summary>Drops the current document (unsaved changes and all) and returns to the one set aside under it. False when there is none.</summary>
+    public bool Pop()
+    {
+        if (_frames.Count == 0) return false;
+        if (_pending != null) Cancel();
+        var f = _frames[^1];
+        _frames.RemoveAt(_frames.Count - 1);
+        Resets++;
+        Doc = f.Doc;
+        Sel = f.Sel;
+        Path = f.Path;
+        Dirty = f.Dirty;
+        PrefabProblems = f.PrefabProblems;
+        _undo.Clear();
+        _undo.AddRange(f.Undo);
+        _redo.Clear();
+        _redo.AddRange(f.Redo);
+        _pendingFiles = null;
+        _scopeChecks = null;
+        Version++;
+        RefreshInstances();
+        return true;
+    }
+
+    void StartOn(Document doc, string? path)
+    {
         Resets++;
         PrefabProblems = [];
         if (doc.Definitions.Any(d => d.Source != null) && Prefabs.RootFor(path) is { } root)

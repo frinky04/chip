@@ -90,18 +90,28 @@ public sealed class PlacePanel : IDockPanel
             return;
         }
         bool armed = ctx.ActiveTool == tool;
-        float rowH = ImGui.GetTextLineHeightWithSpacing();
+        float h = ImGui.GetFrameHeight();
+        float rowH = h + ImGui.GetStyle().ItemSpacing.Y;
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Theme.Bg);
         if (ImGui.BeginChild("##prefabs", new Vector2(0, rowH * Math.Min(shown.Count, 6) + Theme.Px(4))))
             foreach (var p in shown)
             {
-                if (ImGui.Selectable($"{p.Name}##{p.FullPath}", armed && tool.Prefab?.FullPath == p.FullPath))
+                // Drawn like the entity classes below: the icon, the name, and its folder when there is one.
+                var at = ImGui.GetCursorScreenPos();
+                if (ImGui.Selectable($"##{p.FullPath}", armed && tool.Prefab?.FullPath == p.FullPath, ImGuiSelectableFlags.None, new Vector2(0, h)))
                 {
                     tool.Prefab = p;
                     ctx.SetTool(tool);
                     ctx.Status($"Click to place {p.Name}");
                 }
                 Tip(p.RelativePath);
+                var dl = ImGui.GetWindowDrawList();
+                Icons.Draw(dl, Icon.Package, at + new Vector2(Theme.Px(4) + Fonts.IconSize * 0.5f, h * 0.5f), Theme.PrefabU32);
+                float textY = MathF.Round(at.Y + (h - ImGui.GetTextLineHeight()) * 0.5f);
+                float x = at.X + Theme.Px(10) + Fonts.IconSize;
+                dl.AddText(new Vector2(x, textY), ImGui.ColorConvertFloat4ToU32(Theme.Text), p.Name);
+                if (Path.GetDirectoryName(p.RelativePath) is { Length: > 0 } folder)
+                    dl.AddText(new Vector2(x + ImGui.CalcTextSize(p.Name).X + Theme.Px(8), textY), ImGui.ColorConvertFloat4ToU32(Theme.TextDim), folder.Replace('\\', '/'));
             }
         ImGui.EndChild();
         ImGui.PopStyleColor();

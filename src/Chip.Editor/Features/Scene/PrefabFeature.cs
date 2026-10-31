@@ -1,6 +1,7 @@
 using Chip.Core.IO;
 using Chip.Core.Scene;
 using Chip.Editor.Framework;
+using ImGuiNET;
 using NativeFileDialogSharp;
 
 namespace Chip.Editor.Features.Scene;
@@ -21,9 +22,12 @@ public sealed class PrefabFeature : IEditorFeature
     public void Register(EditorContext ctx)
     {
         _ctx = ctx;
+        _confirm = ctx.ConfirmDiscard;
+        ctx.ConfirmDiscard = ConfirmAll;
         var tool = new PrefabTool();
         ctx.AddTool(tool);
         ctx.AddPanel(_ => Poll());
+        ctx.AddPanel(_ => DrawPrefabBar());
         var c = ctx.Commands;
         c.Add(new Command
         {
@@ -35,8 +39,45 @@ public sealed class PrefabFeature : IEditorFeature
         {
             Id = "prefab.open", Label = "Open prefab", Execute = OpenPrefab, Menu = "Edit", Group = "2-linked", Order = 4,
             CanExecute = () => SelectedPrefab() != null,
-            Description = "Opens the selected copy's prefab file to edit it on its own; levels using it update when it's saved",
+            Description = "Edits the selected copy's prefab file on its own. The level waits, unsaved changes and all, until you go back",
         });
+        c.Add(new Command
+        {
+            Id = "prefab.back", Label = "Back to level", Execute = BackToLevel, Menu = "Edit", Group = "2-linked", Order = 5,
+            CanExecute = () => ctx.Session.IsNested,
+            Description = "Leaves the prefab you're editing and returns to the level it was opened from",
+        });
+    }
+
+    /// <summary>While a prefab is open from a level: a bar over the viewport saying so, with the way back.</summary>
+    void DrawPrefabBar()
+    {
+        var session = _ctx.Session;
+        if (!session.IsNested || session.Path == null) return;
+        var pane = Viewport.ViewportLayout.Of(_ctx).Panes[0];
+        string text = $"Editing prefab {Prefabs.NameFromPath(session.Path)}{(session.Dirty ? " (unsaved)" : "")}";
+        string level = session.ParentPath is { } p ? Path.GetFileName(p) : "the level";
+        ImGui.SetNextWindowPos(pane.Origin + new System.Numerics.Vector2(pane.Size.X * 0.5f, UI.Theme.Px(10)), ImGuiCond.Always, new System.Numerics.Vector2(0.5f, 0));
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, UI.Theme.Panel);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, UI.Theme.Px(10, 6));
+        if (ImGui.Begin("##prefabBar", ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoSavedSettings |
+                ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav))
+        {
+            UI.Icons.Draw(ImGui.GetWindowDrawList(), UI.Icon.Package,
+                ImGui.GetCursorScreenPos() + new System.Numerics.Vector2(UI.Fonts.IconSize * 0.5f, ImGui.GetFrameHeight() * 0.5f), UI.Theme.PrefabU32);
+            ImGui.Dummy(new System.Numerics.Vector2(UI.Fonts.IconSize, ImGui.GetFrameHeight()));
+            ImGui.SameLine();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(text);
+            ImGui.SameLine(0, UI.Theme.Px(12));
+            UI.Widgets.PushPrimary();
+            if (ImGui.Button($"Back to {level}")) BackToLevel();
+            UI.Widgets.PopPrimary();
+            UI.Widgets.Tip("Returns to the level as you left it. Unsaved prefab changes are asked about first");
+        }
+        ImGui.End();
+        ImGui.PopStyleVar();
+        ImGui.PopStyleColor();
     }
 
     /// <summary>The prefab file the selection is a copy of (one only), or null.</summary>
@@ -104,22 +145,75 @@ public sealed class PrefabFeature : IEditorFeature
         return name.Replace(' ', '_');
     }
 
+    /// <summary>
+    /// Edits the selected copy's prefab file on its own. The level is set aside, as it is (selection, undo, unsaved
+    /// changes), and comes back with <see cref="BackToLevel"/>; nothing needs saving first.
+    /// </summary>
     void OpenPrefab()
     {
         if (SelectedPrefab() is not { } path) return;
-        _ctx.ConfirmDiscard(() =>
+        Document prefab;
+        try { prefab = DocumentSerializer.Load(path); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
         {
-            try
-            {
-                _ctx.CancelInteraction();
-                _ctx.Session.Reset(DocumentSerializer.Load(path), path);
-                _ctx.FrameAll();
-                _ctx.Status($"Editing prefab {Path.GetFileName(path)}. Save it and levels using it update");
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
-            {
-                _ctx.Status($"Couldn't open {Path.GetFileName(path)}: {e.Message}", error: true);
-            }
+            _ctx.Status($"Couldn't open {Path.GetFileName(path)}: {e.Message}", error: true);
+            return;
+        }
+        _ctx.CancelInteraction();
+        _cameraBeforePrefab.Add(_ctx.Camera.Clone());
+        _ctx.Session.Push(prefab, path);
+        _ctx.FrameAll();
+        _ctx.Status($"Editing prefab {Prefabs.NameFromPath(path)}. Save it (Ctrl+S), then go back to the level to see it there");
+    }
+
+    /// <summary>Where the camera was in each level set aside, to put it back.</summary>
+    readonly List<Viewport.Camera> _cameraBeforePrefab = new();
+
+    /// <summary>
+    /// Leaves the prefab (asking first if it has unsaved changes) and returns to the level, whose copies are brought
+    /// up to date with the prefab file as one undo step.
+    /// </summary>
+    void BackToLevel() => _confirm(() => ReturnToLevel());
+
+    void ReturnToLevel()
+    {
+        var session = _ctx.Session;
+        var prefabPath = session.Path;
+        _ctx.CancelInteraction();
+        if (!session.Pop()) return;
+        if (_cameraBeforePrefab.Count > 0)
+        {
+            _ctx.Camera.CopyFrom(_cameraBeforePrefab[^1]);
+            _cameraBeforePrefab.RemoveAt(_cameraBeforePrefab.Count - 1);
+        }
+        if (prefabPath == null || session.PrefabRoot is not { } root) return;
+        var before = session.Doc.Definitions;
+        session.Begin("Update from Prefab");
+        Prefabs.Refresh(session.Doc, root, p => string.Equals(p, Path.GetFullPath(prefabPath), StringComparison.OrdinalIgnoreCase));
+        if (ReferenceEquals(before, session.Doc.Definitions)) session.Cancel();
+        else
+        {
+            session.End();
+            _ctx.Status($"Back in {Path.GetFileName(session.Path)}: copies of {Prefabs.NameFromPath(prefabPath)} updated");
+            return;
+        }
+        _ctx.Status($"Back in {Path.GetFileName(session.Path ?? "the level")}");
+    }
+
+    /// <summary>The host's unsaved-changes prompt, for the document showing now only.</summary>
+    Action<Action> _confirm = then => then();
+
+    /// <summary>
+    /// The unsaved-changes prompt, made to cover levels set aside: in a prefab, it asks about the prefab, goes back to
+    /// the level, then asks about the level. So New, Open and Quit never drop a level's changes unseen.
+    /// </summary>
+    void ConfirmAll(Action then)
+    {
+        if (!_ctx.Session.IsNested) { _confirm(then); return; }
+        _confirm(() =>
+        {
+            ReturnToLevel();
+            ConfirmAll(then);
         });
     }
 

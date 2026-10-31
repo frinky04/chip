@@ -301,7 +301,9 @@ public sealed class Outliner : IDockPanel
         var (icon, iconCol) = node.Kind switch
         {
             OutlinerKind.Folder => (Icon.Folder, dim),
-            OutlinerKind.Group => (doc.FindGroup(node.Id) is { IsInstance: true } ? Icon.Link : Icon.TreatAsOne, dim),
+            OutlinerKind.Group => doc.FindGroup(node.Id) is { IsInstance: true } copy
+                ? doc.FindDefinition(copy.Instance)?.Source != null ? (Icon.Package, Theme.PrefabU32) : (Icon.Link, dim)
+                : (Icon.TreatAsOne, dim),
             OutlinerKind.Mesh => (Icon.Object, dim),
             _ => EntityStyle(doc, node.Id),
         };
@@ -309,7 +311,8 @@ public sealed class Outliner : IDockPanel
         if (hovered && node.Kind is OutlinerKind.Folder or OutlinerKind.Group)
             Tip(node.Kind == OutlinerKind.Folder ? "Folder: its members select one by one"
                 : doc.FindGroup(node.Id) is { IsInstance: true } copy
-                    ? $"Linked copy of {doc.FindDefinition(copy.Instance)?.Name}, one of {InstanceOps.Copies(doc, copy.Instance).Count}: editing any copy changes all of them"
+                    ? (doc.FindDefinition(copy.Instance)?.Source is { } src ? $"Copy of the prefab {src.Path}" : $"Linked copy of {doc.FindDefinition(copy.Instance)?.Name}")
+                      + $", one of {InstanceOps.Copies(doc, copy.Instance).Count} here: editing any copy changes all of them"
                     : "Group: clicking any member in the viewport selects all of it");
         x += Fonts.IconSize + Theme.Px(6);
         float textY = MathF.Round(start.Y + (h - ImGui.GetTextLineHeight()) * 0.5f);

@@ -34,6 +34,8 @@ public static class Theme
     /// <summary>A setting that is on (snap, backfaces): neutral, the icon carries the orange.</summary>
     public static readonly Vector4 Raised = Rgb(0x404040);
     public static readonly Vector4 Error = Rgb(0xFF6B5E);
+    /// <summary>Marks prefabs (their icon in the Place tab, the outliner, the prefab bar), as entity classes have colours.</summary>
+    public static readonly Vector4 Prefab = Rgb(0xA98BEB);
 
     /// <summary>Monitor display scale; every hand-placed pixel size goes through <see cref="Px"/>.</summary>
     public static float Scale { get; private set; } = 1;
@@ -43,6 +45,7 @@ public static class Theme
     public static uint AccentU32 => ImGui.ColorConvertFloat4ToU32(Accent);
     public static uint OnAccentU32 => ImGui.ColorConvertFloat4ToU32(OnAccent);
     public static uint HoverU32 => ImGui.ColorConvertFloat4ToU32(Hover);
+    public static uint PrefabU32 => ImGui.ColorConvertFloat4ToU32(Prefab);
     public static readonly uint[] AxisU32 =
     [
         ImGui.ColorConvertFloat4ToU32(Rgb(0xE5484D)),

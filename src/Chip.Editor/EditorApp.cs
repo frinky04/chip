@@ -175,6 +175,7 @@ public sealed partial class EditorApp : IDisposable
     {
         string name = Ctx.Session.Path != null ? Path.GetFileName(Ctx.Session.Path) : "untitled";
         string title = $"Chip — {name}{(Ctx.Session.Dirty ? " *" : "")}";
+        if (Ctx.Session.ParentPath is { } parent) title += $" (prefab, from {Path.GetFileName(parent)}{(Ctx.Session.AnyDirty && !Ctx.Session.Dirty ? " *" : "")})";
         if (title != _title) _window.Title = _title = title;
     }
 

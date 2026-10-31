@@ -153,6 +153,39 @@ public sealed class PrefabTests : IDisposable
     }
 
     [Fact]
+    public void Opening_a_prefab_sets_the_level_aside_and_going_back_restores_it()
+    {
+        var (s, def, file) = LevelWithPrefab();
+        var copy = InstanceOps.Copies(s.Doc, def.Id)[0];
+        s.Sel.Add(ElementRef.Object(InstanceOps.MeshIds(s.Doc, copy)[0]));
+        var level = s.Doc;
+        Assert.True(s.Dirty);
+        Assert.Equal("Make prefab", s.UndoLabel);
+
+        s.Push(DocumentSerializer.Load(file), file);
+        Assert.True(s.IsNested);
+        Assert.Equal(Level("a"), s.ParentPath);
+        Assert.False(s.Dirty);
+        Assert.True(s.AnyDirty); // the level still has unsaved changes
+        Assert.Null(s.UndoLabel);
+        var mesh = s.Doc.Meshes[0];
+        s.Do("Raise", [mesh.Id], () => mesh.Positions[2] += new Vector3(0, 1, 0));
+        DocumentSerializer.Save(s.Doc, file);
+
+        Assert.True(s.Pop());
+        Assert.False(s.IsNested);
+        Assert.Same(level, s.Doc);
+        Assert.True(s.Dirty);
+        Assert.Equal("Make prefab", s.UndoLabel);
+        Assert.Single(s.Sel.Items);
+        Assert.False(s.Pop());
+
+        // The level then takes the prefab as saved.
+        s.Do("Update", () => Prefabs.Refresh(s.Doc, _root));
+        Assert.Equal(2, Part(s, InstanceOps.Copies(s.Doc, def.Id)[0]).Bounds().Max.Y, 3);
+    }
+
+    [Fact]
     public void Project_prefab_roots_limit_the_search()
     {
         LevelWithPrefab();

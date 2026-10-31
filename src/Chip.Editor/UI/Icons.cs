@@ -12,7 +12,7 @@ public enum Icon { Select, Block, Vertex, Edge, Face, Object, Move, Rotate, Scal
     // the side dock and menu bar
     Palette, Brush, Search, Dots, SidebarCollapse, SidebarExpand, FileExport,
     // linked copies
-    Link, Unlink }
+    Link, Unlink, Package }
 
 /// <summary>
 /// Tool glyphs from the Tabler icon font (MIT), drawn on whole pixels so they stay crisp at small sizes. Besides the
@@ -111,6 +111,7 @@ public static class Icons
         [Icon.FileExport] = '',      // file-export
         [Icon.Link] = '',      // link
         [Icon.Unlink] = '',    // unlink
+        [Icon.Package] = '',   // package (prefabs)
     };
 
     /// <summary>Codepoints to bake into the icon atlas, counted as baked from here on (call once per atlas build).</summary>

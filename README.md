@@ -110,7 +110,8 @@ icon in the Scene tab, and export writes each part's mesh once for all the copie
 `name.prefab.chip` file in your project (the folder with `chip.project.json` or `project.godot`, in `prefabs/` unless
 the project's `"prefabs": { "default": "props" }` says otherwise). The Place tab lists every prefab in the project:
 click one, then click in the viewport. Editing any copy in any level saves the prefab file, and other levels pick the
-change up when they open (or straight away, if they're open). Edit > Open prefab edits the file on its own. Moving or
+change up when they open (or straight away, if they're open). Edit > Open prefab edits the file on its own: your level
+waits, unsaved changes and all, and the Back button over the viewport returns to it with its copies updated. Moving or
 renaming a prefab file is fine: levels find it again by the id inside it.
 
 **Picking among overlapping things.** Click the same spot again to select the next object under the cursor (the entity
