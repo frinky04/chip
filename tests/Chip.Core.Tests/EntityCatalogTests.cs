@@ -256,7 +256,10 @@ public class EntityCatalogTests : IDisposable
         t.Track(level);
         int revision = t.Revision;
 
-        File.WriteAllText(Path.Combine(_dir, GameProject.DefaultManifest), Manifest.Replace("\"door\"", "\"gate\""));
+        var manifest = Path.Combine(_dir, GameProject.DefaultManifest);
+        var editedTime = File.GetLastWriteTimeUtc(manifest).AddSeconds(5);
+        File.WriteAllText(manifest, Manifest.Replace("\"door\"", "\"gate\""));
+        File.SetLastWriteTimeUtc(manifest, editedTime); // same-size edits need a distinct timestamp on coarse clocks
         Assert.True(t.Track(level));
         Assert.NotNull(t.Current.Find("gate"));
         Assert.True(t.Revision > revision);
