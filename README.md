@@ -2,7 +2,7 @@
 
 <h1 align="center">Chip</h1>
 
-<p align="center">A level blockout editor for game developers</p>
+<p align="center">A level editor for game developers</p>
 
 <p align="center">
   <a href="https://github.com/frinky04/chip/releases/latest">Download</a> ·
@@ -10,7 +10,7 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-Chip is a standalone level blockout editor for Windows, in the spirit of Scythe and Source 2 Hammer. Build rooms from
+Chip is a standalone level editor for Windows, in the spirit of Scythe and Source 2 Hammer. Build rooms from
 polygon meshes, texture them on a metre grid, place your game's entities, and export a `.glb` that Godot (or any glTF
 engine) imports as a playable level with collision.
 
