@@ -1,12 +1,16 @@
 # Builds the release: a single self-contained Chip.exe (win-x64) with assets/ beside it, then smoke-tests it
-# headlessly (a hidden-window capture, no user input). Usage: powershell -File scripts/publish.ps1 [-Out artifacts/publish/win-x64] [-NoSmoke]
-param([string]$Out = "artifacts/publish/win-x64", [switch]$NoSmoke)
+# headlessly (a hidden-window capture, no user input).
+# Usage: powershell -File scripts/publish.ps1 [-Out artifacts/publish/win-x64] [-Version 1.2.3] [-NoSmoke]
+# -Version stamps the exe (default: <Version> in Chip.Editor.csproj). -NoSmoke skips the capture, which needs OpenGL 3.3.
+param([string]$Out = "artifacts/publish/win-x64", [string]$Version = "", [switch]$NoSmoke)
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 $outFull = Join-Path $root $Out
 if (Test-Path $outFull) { Remove-Item -Recurse -Force $outFull }
-dotnet publish src/Chip.Editor -p:PublishProfile=win-x64 -o $outFull --nologo -v q
+$publishArgs = @("publish", "src/Chip.Editor", "-p:PublishProfile=win-x64", "-o", $outFull, "--nologo", "-v", "q")
+if ($Version) { $publishArgs += "-p:Version=$Version" }
+dotnet @publishArgs
 if ($LASTEXITCODE -ne 0) { throw "publish failed" }
 
 $exe = Join-Path $outFull "Chip.exe"

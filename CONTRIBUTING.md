@@ -11,13 +11,20 @@ dotnet run --project src/Chip.Editor          # editor
 dotnet test                                    # core + scenario tests
 Chip.exe --shot level.chip out.png faces      # headless UI capture (empty|objects|faces|block|backfaces)
 Chip.exe --rules-schema [out.json]            # JSON Schema for dressing rules files
-python scripts/make-banner.py                 # redraw docs/images/banner.png (needs Pillow)
+python scripts/make-logo.py                   # redraw docs/images/logo.png (needs Pillow)
 ```
 
 The README screenshots in `docs/images` are `--shot` captures at 1600×940: `editor.png` is the `dressing` state with
 `CHIP_SHOT_CAMERA=1,5.5,0.8,7,0,5`; `dressed.png`, `blockout.png`, `dressing-rules.png` and `dress-with.png` are the
 `dressing`, `dressing-blockout`, `dressing-rules` and `dressing-dresswith` states; `faces.png`, `hotspot-editor.png` and
 `palette.png` are those states on `tests/fixtures/level.chip`.
+
+### Releasing
+
+Run `powershell -File scripts/publish.ps1` first: CI has no OpenGL, so the smoke capture only runs locally. Then push a
+`vMAJOR.MINOR.PATCH` tag (`git tag v0.2.0 && git push origin v0.2.0`). `.github/workflows/release.yml` runs the tests,
+stamps the version into `Chip.exe`, and publishes `chip-v0.2.0-win-x64.zip` and its `.sha256` as a GitHub release.
+`scripts/fetch-chip.py`, which game repos use to pin a version, relies on those asset names.
 
 ### Frame benchmark
 

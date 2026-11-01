@@ -1,0 +1,81 @@
+# Builds and publishes a GitHub release when a vMAJOR.MINOR.PATCH tag is pushed:
+#   git tag v0.2.0 && git push origin v0.2.0
+# Assets: chip-vX.Y.Z-win-x64.zip (Chip.exe, assets/, the Godot addon, the agent skill) and its .sha256.
+# scripts/fetch-chip.py downloads these, so keep the asset names in step with it.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (for example, v0.2.0). It is created at the selected branch's head if it doesn't exist.
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate version
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v(\d+\.\d+\.\d+)$') { throw "Release tag must be vMAJOR.MINOR.PATCH, got '$env:RELEASE_TAG'" }
+          "VERSION=$($Matches[1])" >> $env:GITHUB_ENV
+
+      - name: Test
+        run: dotnet test Chip.slnx -c Release
+
+      # The runner has no OpenGL 3.3, so the smoke capture is skipped here; run publish.ps1 locally before tagging.
+      - name: Publish
+        shell: pwsh
+        run: ./scripts/publish.ps1 -Out artifacts/publish/win-x64 -Version $env:VERSION -NoSmoke
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "chip-$env:RELEASE_TAG-win-x64"
+          $stage = "artifacts/stage"
+          Copy-Item artifacts/publish/win-x64 $stage -Recurse
+          New-Item -ItemType Directory "$stage/godot-addon", "$stage/skill" | Out-Null
+          Copy-Item godot/addons/chip_import "$stage/godot-addon/chip_import" -Recurse
+          Copy-Item skills/chip "$stage/skill/chip" -Recurse
+          Copy-Item README.md $stage
+          if (Test-Path LICENSE) { Copy-Item LICENSE $stage }
+          $env:RELEASE_TAG | Set-Content "$stage/VERSION" -Encoding ascii -NoNewline
+          Compress-Archive -Path "$stage/*" -DestinationPath "$name.zip"
+          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *$name.zip" | Set-Content "$name.zip.sha256" -Encoding ascii
+          "PACKAGE_NAME=$name" >> $env:GITHUB_ENV
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: |
+            ${{ env.PACKAGE_NAME }}.zip
+            ${{ env.PACKAGE_NAME }}.zip.sha256
+
+      - name: Publish GitHub release
+        shell: pwsh
+        run: >-
+          gh release create "$env:RELEASE_TAG"
+          "$env:PACKAGE_NAME.zip"
+          "$env:PACKAGE_NAME.zip.sha256"
+          --title "Chip $env:RELEASE_TAG"
+          --generate-notes
+          --target "$env:GITHUB_SHA"
