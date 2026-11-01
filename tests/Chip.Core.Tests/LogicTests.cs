@@ -38,12 +38,23 @@ public sealed class LogicTests : IDisposable
         Assert.Empty(kind.List()); Directory.CreateDirectory(Path.Combine(_root, "sounds", "sub"));
         string file = Path.Combine(_root, "sounds", "sub", "a.json"); File.WriteAllText(file, "{\"name\":\"Alpha\"}");
         Assert.True(SpinWait.SpinUntil(() => kind.List().Count == 1, 3000));
-        var list = kind.List(); Assert.Same(list, kind.List()); Assert.Equal("Alpha", list[0].Label);
+        var list = kind.List(); Assert.Equal("Alpha", list[0].Label);
         Assert.Equal("sub/a", kind.ValueFor(file)); Assert.True(kind.Exists("sub/a")); Assert.Null(kind.ValueFor(Path.Combine(_root, "entities.json")));
         File.WriteAllText(file, "{\"name\":\"Beta\"}"); Assert.True(SpinWait.SpinUntil(() => kind.List()[0].Label == "Beta", 3000));
         File.Delete(file); Assert.True(SpinWait.SpinUntil(() => kind.List().Count == 0, 3000));
         using var folders = new AssetKind { Name = "folders", Root = Path.Combine(_root, "sounds"), ProjectRoot = _root, Folders = true };
         Assert.Equal("sounds/sub", Assert.Single(folders.List()).Value); Assert.True(folders.Exists("sounds/sub"));
+    }
+    [Fact]
+    public void Kinds_reuse_cached_entries_when_no_files_change()
+    {
+        var p = Project(); using var kind = p.Kinds["sound"];
+        Directory.CreateDirectory(kind.Root);
+        File.WriteAllText(Path.Combine(kind.Root, "a.json"), "{\"name\":\"Alpha\"}");
+        // Start watching after the writes, so pending change notifications cannot invalidate this cache check.
+        var list = kind.List();
+        Assert.Single(list);
+        Assert.Same(list, kind.List());
     }
     [Fact]
     public void Parses_restrictions_ports_and_payloads()
