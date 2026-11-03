@@ -168,7 +168,7 @@ public static class EntityManifestCheck
             var result = new JsonObject
             {
                 ["project"] = project?.Root, ["projectFile"] = project?.File, ["engine"] = project?.Engine,
-                ["collisionSuffixes"] = project?.CollisionSuffixes, ["assetPrefix"] = project?.AssetPrefix, ["manifest"] = manifest,
+                ["collisionSuffixes"] = project?.CollisionSuffixes, ["lightmapCharts"] = project?.LightmapCharts, ["assetPrefix"] = project?.AssetPrefix, ["manifest"] = manifest,
                 ["errors"] = problems.Count(p => p.Error), ["warnings"] = problems.Count(p => !p.Error),
                 ["diagnostics"] = new JsonArray(problems.Select(p => (JsonNode)new JsonObject
                 {
@@ -188,7 +188,7 @@ public static class EntityManifestCheck
         }
         if (project != null)
             o.WriteLine($"project: {project.Root} ({project.Engine}{(project.File == null ? ", from project.godot" : "")}; " +
-                $"collision suffixes {(project.CollisionSuffixes ? "on" : "off")}{(project.AssetPrefix.Length > 0 ? $"; assets {project.AssetPrefix}" : "")})");
+                $"collision suffixes {(project.CollisionSuffixes ? "on" : "off")}; lightmap charts {(project.LightmapCharts ? "on" : "off")}{(project.AssetPrefix.Length > 0 ? $"; assets {project.AssetPrefix}" : "")})");
         if (project is { Surfaces.Count: > 0 })
             o.WriteLine($"surfaces: {string.Join(", ", project.Surfaces.Select(s => $"{s.Name} ({(s.Skip ? "skipped" : s.Render ? "rendered" : "tool")}{(s.Volume ? ", volume" : "")})"))}");
         if (manifest != null) o.WriteLine($"manifest: {manifest}");

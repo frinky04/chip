@@ -40,6 +40,8 @@ public sealed record ExportResult(byte[] Data, IReadOnlyList<SideFile> SideFiles
 /// follow as empty nodes (translation, rotation) with <c>extras = { chip_class, chip_id, chip_uid?, chip_scene?,
 /// chip_name?, properties }</c>: the class's engine scene, and the values the entity sets, typed by its class. A mesh
 /// entity's meshes are its node's children, in its space, never baked into world collision and never suffixed.
+/// With <see cref="GameProject.LightmapCharts"/>, primitives with a material also carry <see cref="LightmapCharts"/>:
+/// <c>TEXCOORD_1</c> and <c>_LM_CHART</c>.
 /// </summary>
 public static class GlbExporter
 {
@@ -71,6 +73,7 @@ public static class GlbExporter
         var warnings = new List<string>();
         float s = doc.ExportScale;
         bool suffixes = EntityClasses.Project?.CollisionSuffixes ?? true;
+        bool lightmapCharts = EntityClasses.Project?.LightmapCharts ?? false;
         int meshCount = 0, entityCount = 0;
 
         int View(ReadOnlySpan<byte> data, int? target)
@@ -228,7 +231,7 @@ public static class GlbExporter
                 var t = Tessellator.Tessellate(mesh, faces, cornerNormals, new TessellateOptions(opt.TessellateSpacing));
                 tessBefore += faces.Sum(f => Math.Max(0, mesh.Faces[f].Verts.Length - 2));
                 tessAfter += t.TriangleCount;
-                AddNode(name, suffix, Primitives(t.Mesh, t.CornerNormals, Enumerable.Range(0, t.Mesh.Faces.Count).ToList(), withMaterial: true), meshExtras);
+                AddNode(name, suffix, Primitives(t.Mesh, t.CornerNormals, Enumerable.Range(0, t.Mesh.Faces.Count).ToList(), withMaterial: true, new TessellatedFrom(mesh, t.SourceFaces)), meshExtras);
                 if (collides && !baked)
                     AddNode(name + "_col", "-colonly", Primitives(mesh, cornerNormals, faces, withMaterial: false), new JsonObject { ["chip_baked"] = true });
             }
@@ -357,15 +360,18 @@ public static class GlbExporter
             });
         }
 
-        JsonArray Primitives(PolyMesh mesh, Vector3[][] cornerNormals, List<int> faces, bool withMaterial)
+        JsonArray Primitives(PolyMesh mesh, Vector3[][] cornerNormals, List<int> faces, bool withMaterial, TessellatedFrom? tessellated = null)
         {
             var primitives = new JsonArray();
+            var charts = lightmapCharts && withMaterial ? LightmapCharts.Build(mesh, faces, place, s, tessellated?.Source, tessellated?.SourceFaces) : null;
             foreach (var group in faces.GroupBy(f => mesh.Faces[f].Material))
             {
                 var info = materials.Get(group.Key);
                 var pos = new List<Vector3>();
                 var nrm = new List<Vector3>();
                 var uv = new List<Vector2>();
+                var chartUv = new List<Vector2>();
+                var chartId = new List<float>();
                 var idx = new List<uint>();
                 foreach (var f in group)
                 {
@@ -377,6 +383,12 @@ public static class GlbExporter
                         pos.Add(Vector3.Transform(p, place) * s);
                         nrm.Add(Vector3.Normalize(Vector3.TransformNormal(cornerNormals[f][i], place)));
                         uv.Add(face.UV(i, p, info.Width, info.Height));
+                        if (charts != null)
+                        {
+                            var (chart, at) = charts.At(f, i);
+                            chartUv.Add(at);
+                            chartId.Add(chart);
+                        }
                     }
                     tri.Clear();
                     Triangulator.Triangulate(mesh, f, tri);
@@ -385,14 +397,20 @@ public static class GlbExporter
                 if (idx.Count == 0) continue;
                 var min = pos.Aggregate(new Vector3(float.MaxValue), Vector3.Min);
                 var max = pos.Aggregate(new Vector3(float.MinValue), Vector3.Max);
+                var attributes = new JsonObject
+                {
+                    ["POSITION"] = Accessor(pos, 5126, "VEC3", 34962, new JsonObject { ["min"] = new JsonArray(min.X, min.Y, min.Z), ["max"] = new JsonArray(max.X, max.Y, max.Z) }),
+                    ["NORMAL"] = Accessor(nrm, 5126, "VEC3", 34962),
+                    ["TEXCOORD_0"] = Accessor(uv, 5126, "VEC2", 34962),
+                };
+                if (charts != null)
+                {
+                    attributes["TEXCOORD_1"] = Accessor(chartUv, 5126, "VEC2", 34962);
+                    attributes["_LM_CHART"] = Accessor(chartId, 5126, "SCALAR", 34962);
+                }
                 var primitive = new JsonObject
                 {
-                    ["attributes"] = new JsonObject
-                    {
-                        ["POSITION"] = Accessor(pos, 5126, "VEC3", 34962, new JsonObject { ["min"] = new JsonArray(min.X, min.Y, min.Z), ["max"] = new JsonArray(max.X, max.Y, max.Z) }),
-                        ["NORMAL"] = Accessor(nrm, 5126, "VEC3", 34962),
-                        ["TEXCOORD_0"] = Accessor(uv, 5126, "VEC2", 34962),
-                    },
+                    ["attributes"] = attributes,
                     ["indices"] = Accessor(idx, 5125, "SCALAR", 34963),
                 };
                 if (withMaterial) primitive["material"] = Material(group.Key);
@@ -473,6 +491,9 @@ public static class GlbExporter
             Tessellated = opt.Tessellate ? (tessBefore, tessAfter) : null,
         };
     }
+
+    /// <summary>The mesh a tessellated one was cut from, and each of its faces' source face.</summary>
+    sealed record TessellatedFrom(PolyMesh Source, int[] SourceFaces);
 
     static JsonArray MeshTags(PolyMesh mesh) => new(mesh.Tags.Select(t => (JsonNode)JsonValue.Create(t)!).ToArray());
 

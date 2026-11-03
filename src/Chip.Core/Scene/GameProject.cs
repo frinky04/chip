@@ -24,6 +24,8 @@ public sealed record GameProject : IDisposable
     public required string Manifest { get; init; }
     /// <summary>Collision nodes get Godot's import suffixes (<c>-col</c>, <c>-colonly</c>, <c>-convcolonly</c>) as well as extras.</summary>
     public bool CollisionSuffixes { get; init; }
+    /// <summary>Drawn primitives also carry each face's lightmap chart (<c>TEXCOORD_1</c>, <c>_LM_CHART</c>); see <see cref="IO.LightmapCharts"/>.</summary>
+    public bool LightmapCharts { get; init; }
     /// <summary>What engine asset paths start with (<c>res://</c>), shown as a hint and checked; empty for no rule.</summary>
     public string AssetPrefix { get; init; } = "";
     public IReadOnlyDictionary<string, AssetKind> Kinds { get; init; } = new Dictionary<string, AssetKind>();
@@ -114,11 +116,17 @@ public sealed record GameProject : IDisposable
                             JsonValueKind.True => true, JsonValueKind.False => false, _ => throw Bad(prop, "true or false"),
                         } };
                         break;
+                    case "lightmapCharts":
+                        p = p with { LightmapCharts = prop.Value.ValueKind switch
+                        {
+                            JsonValueKind.True => true, JsonValueKind.False => false, _ => throw Bad(prop, "true or false"),
+                        } };
+                        break;
                     case "kinds": p = p with { Kinds = AssetKind.Parse(prop.Value, root) }; break;
                     case "flags": p = p with { Flags = FlagSpec.Parse(prop.Value) }; break;
                     case "surfaces": p = p with { Surfaces = Scene.Surfaces.Parse(prop.Value, root) }; break;
                     case "prefabs": p = ParsePrefabs(p, prop); break;
-                    default: throw new InvalidDataException($"has an unknown field \"{prop.Name}\" (known: version, engine, entities, collisionSuffixes, assetPrefix, surfaces, kinds, flags, prefabs)");
+                    default: throw new InvalidDataException($"has an unknown field \"{prop.Name}\" (known: version, engine, entities, collisionSuffixes, lightmapCharts, assetPrefix, surfaces, kinds, flags, prefabs)");
                 }
             return p;
         }

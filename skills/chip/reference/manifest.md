@@ -14,6 +14,7 @@ level's export path. Every field is optional:
 | `engine` | `"the engine"` | The name in Chip's messages ("Set in Toy"). |
 | `entities` | `".chip/entities.json"` | The manifest, relative to the project file. |
 | `collisionSuffixes` | `false` (`true` beside `project.godot`) | Also append Godot's `-col`/`-colonly`/`-convcolonly` to collider node names. |
+| `lightmapCharts` | `false` | Also write each drawn face's lightmap chart, as `TEXCOORD_1` and `_LM_CHART` ([`export.md`](export.md), Lightmap charts). |
 | `assetPrefix` | `""` (`"res://"` for Godot) | What asset paths start with: the hint in asset fields and material remaps, and what Chip checks remap paths against. |
 | `surfaces` | none | The game's own surfaces, such as a monster clip or a video screen ([`surfaces.md`](surfaces.md)). |
 | `kinds` | none | The kinds of file an asset property can name (Asset kinds, below). |
