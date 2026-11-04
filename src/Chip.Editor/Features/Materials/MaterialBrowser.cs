@@ -331,6 +331,14 @@ public sealed class MaterialBrowser : IDockPanel
             ctx.Status($"Couldn't write {MaterialLibrary.SidecarName} in {m.Source}. The change applies until Chip closes; check the folder is writable.", error: true);
     }
 
+    static void UseActualSize(EditorContext ctx, MaterialInfo m)
+    {
+        bool saved = ctx.Materials.ResetSize(m.Name);
+        ctx.Session.Touch(); // sizes changed: rebuild the scene's UVs
+        if (!saved)
+            ctx.Status($"Couldn't write {MaterialLibrary.SidecarName} in {m.Source}. The change applies until Chip closes; check the folder is writable.", error: true);
+    }
+
     static void SetDensity(EditorContext ctx, MaterialInfo m, float? density)
     {
         bool saved = ctx.Materials.SetTexelDensity(m.Name, density);
@@ -378,7 +386,8 @@ public sealed class MaterialBrowser : IDockPanel
         {
             var subs = group.Select(m => m.Folder).Where(f => f.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)
                 .SelectMany(Ancestors).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
-            string label = Path.GetFileName(group.Key) is { Length: > 0 } n ? n : group.Key;
+            string label = string.Equals(group.Key, lib.ProjectFolder, StringComparison.OrdinalIgnoreCase) ? "Project"
+                : Path.GetFileName(group.Key) is { Length: > 0 } n ? n : group.Key;
             FolderNode(group.Key, "", label, subs, group.Key);
         }
     }
@@ -485,6 +494,11 @@ public sealed class MaterialBrowser : IDockPanel
             ImGui.Separator();
             if (ImGui.MenuItem("Replace in level with this…")) ReplaceMaterialDialog.For(ctx).Show(ctx, to: m.Name);
             if (ImGui.MenuItem("Copy name")) ImGui.SetClipboardText(m.Name);
+            if (m.Pixels is { } pixels)
+            {
+                if (ImGui.MenuItem($"Tile by actual size ({pixels.Width} × {pixels.Height})")) UseActualSize(ctx, m);
+                Tip($"The image was resized, so faces still tile it as {m.Width} × {m.Height}. This makes them use its real size, which changes how it sits on every face using it");
+            }
             ImGui.EndPopup();
         }
     }

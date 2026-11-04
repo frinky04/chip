@@ -127,6 +127,13 @@ Materials are image files (PNG, JPEG or TGA) in folders. Chip ships a few measur
 your own folders with Texture > Add texture folder, or list them in the `CHIP_TEXTURE_DIRS` environment variable.
 `Shift+Alt+1`…`0` apply the first ten slots in the Materials tab, and `Shift`+right-click lifts the material off a face.
 
+**Project textures** are the ones that belong to this game. Put them in `textures/` in your project (the folder with
+`chip.project.json` or `project.godot`; `"textures": "art/textures"` in the project file moves it), or beside a level
+that isn't in a project. They show as Project in the Materials tab and win over any other texture of the same name.
+Save an image in your editor and the level updates. Resize one and it keeps tiling as before, with more or less detail:
+Chip records each project texture's size the first time it sees it, in `chip-materials.json` beside the image. To make a
+resized texture tile by its real size instead, right-click it and choose Tile by actual size.
+
 Texel density is set per level, Scythe style, under Level in the inspector (with nothing selected). "1 m is 256 px" by
 default, so a 128 px texture tiles every 50 cm. A texture can have its own density, set in the Materials tab under the
 active material.

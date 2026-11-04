@@ -21,6 +21,13 @@ public sealed record MaterialInfo(string Name, string? Path, int Width, int Heig
     public AlphaMode? Alpha { get; init; }
     /// <summary>Faces draw from both sides (glTF <c>doubleSided</c>): single-plane fences, foliage cards. Off culls back faces.</summary>
     public bool DoubleSided { get; init; }
+    /// <summary>
+    /// The image's real size when it differs from <see cref="Width"/> × <see cref="Height"/>, else null. Those two are the
+    /// size UVs and tiling use, which stay pinned (the side-car's <c>"size"</c>) when the image is resized.
+    /// </summary>
+    public (int Width, int Height)? Pixels { get; init; }
+    /// <summary>The image file's last write time (UTC ticks) when it was scanned, so a texture on the GPU can tell it is stale; 0 for no file.</summary>
+    public long Modified { get; init; }
     /// <summary>Shared with every material of one library, so changing the level's density needs no republish.</summary>
     internal DensityDefault? Base { get; init; }
 
@@ -47,7 +54,8 @@ public readonly record struct ScanResult(int Materials, int Duplicates, int Unre
 /// Materials keyed by name (file stem, see <see cref="MaterialName"/>). Unknown names resolve to a "missing" material so
 /// documents always load. Sources are folders scanned recursively for PNG, JPG and TGA (sizes read from file headers,
 /// pixels are never decoded here), plus materials added in code. When two files share a name, the first wins:
-/// code-added materials, then folders in the order they were added, then files by relative path.
+/// code-added materials, then the project's folder (<see cref="ProjectFolder"/>), then folders in the order they were
+/// added, then files by relative path.
 /// </summary>
 public sealed partial class MaterialLibrary
 {
@@ -55,7 +63,7 @@ public sealed partial class MaterialLibrary
     public const string EnvVar = "CHIP_TEXTURE_DIRS";
     /// <summary>
     /// Per-folder side-car holding per-texture overrides:
-    /// <c>{ "texelDensity": { "brick": 256 }, "alpha": { "glass": "blend" }, "doubleSided": { "fence": true } }</c>.
+    /// <c>{ "texelDensity": { "brick": 256 }, "alpha": { "glass": "blend" }, "doubleSided": { "fence": true }, "size": { "brick": [2048, 2048] } }</c>.
     /// </summary>
     public const string SidecarName = "chip-materials.json";
     public static readonly string[] Extensions = [".png", ".jpg", ".jpeg", ".tga"];
@@ -86,15 +94,17 @@ public sealed partial class MaterialLibrary
     readonly Dictionary<string, MaterialInfo> _byName = new(StringComparer.OrdinalIgnoreCase);
     readonly List<MaterialInfo> _manual = new();
     readonly List<string> _folders = new();
-    readonly Dictionary<string, float> _density = new(StringComparer.OrdinalIgnoreCase);
-    readonly Dictionary<string, AlphaMode> _alpha = new(StringComparer.OrdinalIgnoreCase);
-    readonly HashSet<string> _doubleSided = new(StringComparer.OrdinalIgnoreCase);
+    List<string> _scanOrder = new();
+    /// <summary>Each folder's side-car, by library folder (<see cref="MaterialInfo.Source"/>); "" holds code-added materials' overrides.</summary>
+    readonly Dictionary<string, Overrides> _overrides = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>Alpha read from image pixels, by file path; the write time notices edits.</summary>
     readonly Dictionary<string, (DateTime Stamp, AlphaMode Mode)> _detected = new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyList<MaterialInfo> All { get; private set; } = [];
     /// <summary>Library folders (full paths) in scan order.</summary>
-    public IReadOnlyList<string> Folders => _folders;
+    public IReadOnlyList<string> Folders => _scanOrder;
+    /// <summary>The open project's texture folder (full path), scanned first; null without one. It needn't exist yet.</summary>
+    public string? ProjectFolder { get; private set; }
     /// <summary>Changes whenever the contents change (scan, add, density), so views can refresh caches.</summary>
     public int Version { get; private set; }
 
@@ -123,14 +133,34 @@ public sealed partial class MaterialLibrary
         var full = Normalize(folder);
         if (_folders.Contains(full, StringComparer.OrdinalIgnoreCase)) return false;
         _folders.Add(full);
+        OrderFolders();
         return true;
     }
 
     public bool RemoveFolder(string folder)
     {
         var full = Normalize(folder);
-        return _folders.RemoveAll(f => string.Equals(f, full, StringComparison.OrdinalIgnoreCase)) > 0;
+        if (_folders.RemoveAll(f => string.Equals(f, full, StringComparison.OrdinalIgnoreCase)) == 0) return false;
+        OrderFolders();
+        return true;
     }
+
+    /// <summary>
+    /// Makes <paramref name="folder"/> the project's texture folder (null for none), in place of the last one; call
+    /// <see cref="Rescan"/> afterwards. A folder also added with <see cref="AddFolder"/> stays in the library when the project
+    /// moves on. Returns false if nothing changed.
+    /// </summary>
+    public bool SetProjectFolder(string? folder)
+    {
+        var full = folder == null ? null : Normalize(folder);
+        if (string.Equals(full, ProjectFolder, StringComparison.OrdinalIgnoreCase)) return false;
+        ProjectFolder = full;
+        OrderFolders();
+        return true;
+    }
+
+    void OrderFolders() => _scanOrder = ProjectFolder == null ? [.. _folders]
+        : [ProjectFolder, .. _folders.Where(f => !string.Equals(f, ProjectFolder, StringComparison.OrdinalIgnoreCase))];
 
     static string Normalize(string folder) => System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(folder));
 
@@ -158,10 +188,16 @@ public sealed partial class MaterialLibrary
         foreach (var m in _manual)
             if (seen.Add(m.Name)) found.Add(m);
 
-        foreach (var folder in _folders)
+        foreach (var folder in _scanOrder)
         {
-            if (!Directory.Exists(folder)) { missing++; continue; }
+            if (!Directory.Exists(folder))
+            {
+                // A project's folder only appears once it has textures, which is no one's mistake.
+                if (!string.Equals(folder, ProjectFolder, StringComparison.OrdinalIgnoreCase)) missing++;
+                continue;
+            }
             ReadSidecar(folder);
+            var overrides = OverridesOf(folder);
             IEnumerable<string> files;
             try
             {
@@ -181,7 +217,11 @@ public sealed partial class MaterialLibrary
                 if (!TryReadImageSize(file, out int w, out int h)) { unreadable++; continue; }
                 seen.Add(name);
                 var sub = System.IO.Path.GetDirectoryName(rel)?.Replace('\\', '/') ?? "";
-                found.Add(new MaterialInfo(name, file, w, h) { Folder = sub, Source = folder });
+                var size = overrides.Size.TryGetValue(name, out var pinned) ? pinned : (w, h);
+                found.Add(new MaterialInfo(name, file, size.Item1, size.Item2)
+                {
+                    Folder = sub, Source = folder, Modified = Stamp(file).Ticks, Pixels = size == (w, h) ? null : (w, h),
+                });
             }
         }
         Publish(found);
@@ -192,9 +232,10 @@ public sealed partial class MaterialLibrary
     {
         for (int i = 0; i < list.Count; i++)
         {
-            float? d = _density.TryGetValue(list[i].Name, out var v) ? v : list[i].TexelDensity;
-            AlphaMode? a = _alpha.TryGetValue(list[i].Name, out var am) ? am : list[i].Alpha;
-            bool two = _doubleSided.Contains(list[i].Name) || list[i].DoubleSided;
+            var overrides = OverridesOf(list[i].Source);
+            float? d = overrides.Density.TryGetValue(list[i].Name, out var v) ? v : list[i].TexelDensity;
+            AlphaMode? a = overrides.Alpha.TryGetValue(list[i].Name, out var am) ? am : list[i].Alpha;
+            bool two = overrides.DoubleSided.Contains(list[i].Name) || list[i].DoubleSided;
             if (d != list[i].TexelDensity || a != list[i].Alpha || two != list[i].DoubleSided || !ReferenceEquals(list[i].Base, _base))
                 list[i] = list[i] with { TexelDensity = d, Alpha = a, DoubleSided = two, Base = _base };
         }
@@ -223,10 +264,41 @@ public sealed partial class MaterialLibrary
     public bool SetTexelDensity(string name, float? texelsPerMeter)
     {
         if (texelsPerMeter is float d && (d <= 0 || float.IsNaN(d))) throw new ArgumentOutOfRangeException(nameof(texelsPerMeter));
-        if (texelsPerMeter is float v) _density[name] = v; else _density.Remove(name);
-        Publish(All.Select(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase) ? m with { TexelDensity = texelsPerMeter } : m).ToList());
         var source = Get(name).Source;
-        return source.Length == 0 || WriteSidecar(source);
+        var overrides = OverridesOf(source);
+        if (texelsPerMeter is float v) overrides.Density[name] = v; else overrides.Density.Remove(name);
+        Publish(All.Select(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase) ? m with { TexelDensity = texelsPerMeter } : m).ToList());
+        return Save(source);
+    }
+
+    // ---- Pinned size ----
+
+    /// <summary>
+    /// Pins each project texture without a pinned size at its current one, and writes the side-car if any were new, so later
+    /// resizing the image changes its detail and not how it tiles. The editor calls this; a headless export writes nothing.
+    /// Returns false if the side-car could not be written (the pins still apply for this session).
+    /// </summary>
+    public bool PinProjectSizes()
+    {
+        if (ProjectFolder is not { } folder) return true;
+        var overrides = OverridesOf(folder);
+        bool added = false;
+        foreach (var m in All)
+            if (string.Equals(m.Source, folder, StringComparison.OrdinalIgnoreCase)) added |= overrides.Size.TryAdd(m.Name, (m.Width, m.Height));
+        return !added || Save(folder);
+    }
+
+    /// <summary>
+    /// Makes a resized material tile by its image's real size again, which changes how it sits on every face using it, and
+    /// writes its folder's side-car. Returns false if the side-car could not be written (the change still applies for this session).
+    /// </summary>
+    public bool ResetSize(string name)
+    {
+        var material = Get(name);
+        if (material.Pixels is not { } pixels) return true;
+        OverridesOf(material.Source).Size[material.Name] = pixels;
+        Publish(All.Select(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase) ? m with { Width = pixels.Width, Height = pixels.Height, Pixels = null } : m).ToList());
+        return Save(material.Source);
     }
 
     // ---- Alpha ----
@@ -279,10 +351,11 @@ public sealed partial class MaterialLibrary
     /// </summary>
     public bool SetAlphaMode(string name, AlphaMode? mode)
     {
-        if (mode is AlphaMode m) _alpha[name] = m; else _alpha.Remove(name);
-        Publish(All.Select(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase) ? x with { Alpha = mode } : x).ToList());
         var source = Get(name).Source;
-        return source.Length == 0 || WriteSidecar(source);
+        var overrides = OverridesOf(source);
+        if (mode is AlphaMode m) overrides.Alpha[name] = m; else overrides.Alpha.Remove(name);
+        Publish(All.Select(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase) ? x with { Alpha = mode } : x).ToList());
+        return Save(source);
     }
 
     // ---- Sides ----
@@ -293,49 +366,96 @@ public sealed partial class MaterialLibrary
     /// </summary>
     public bool SetDoubleSided(string name, bool doubleSided)
     {
-        if (doubleSided) _doubleSided.Add(name); else _doubleSided.Remove(name);
-        Publish(All.Select(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase) ? x with { DoubleSided = doubleSided } : x).ToList());
         var source = Get(name).Source;
-        return source.Length == 0 || WriteSidecar(source);
+        var overrides = OverridesOf(source);
+        if (doubleSided) overrides.DoubleSided.Add(name); else overrides.DoubleSided.Remove(name);
+        Publish(All.Select(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase) ? x with { DoubleSided = doubleSided } : x).ToList());
+        return Save(source);
     }
 
     // ---- Side-car ----
 
+    /// <summary>What one folder's side-car says, or (under "") what code-added materials were given. Unsaved: its last write failed, so the file is out of date.</summary>
+    sealed class Overrides
+    {
+        public readonly Dictionary<string, float> Density = new(StringComparer.OrdinalIgnoreCase);
+        public readonly Dictionary<string, AlphaMode> Alpha = new(StringComparer.OrdinalIgnoreCase);
+        public readonly HashSet<string> DoubleSided = new(StringComparer.OrdinalIgnoreCase);
+        public readonly Dictionary<string, (int Width, int Height)> Size = new(StringComparer.OrdinalIgnoreCase);
+        public bool Unsaved;
+    }
+
+    Overrides OverridesOf(string source)
+    {
+        if (!_overrides.TryGetValue(source, out var o)) _overrides[source] = o = new Overrides();
+        return o;
+    }
+
+    /// <summary>
+    /// Replaces what the library holds for a folder with its side-car, so an override deleted on disk goes away. An unreadable
+    /// file keeps the last good values, and so does a folder whose last write failed (its values only exist here).
+    /// </summary>
     void ReadSidecar(string folder)
     {
+        if (OverridesOf(folder).Unsaved) return;
         var path = System.IO.Path.Combine(folder, SidecarName);
-        if (!File.Exists(path)) return;
+        var read = new Overrides();
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(path));
-            if (root?["texelDensity"] is JsonObject map)
-                foreach (var (name, value) in map)
-                    if (value is JsonValue jv && jv.TryGetValue(out float d) && d > 0) _density[name] = d;
-            if (root?["alpha"] is JsonObject alpha)
-                foreach (var (name, value) in alpha)
-                    if (value is JsonValue jv && jv.TryGetValue(out string? s) && Enum.TryParse<AlphaMode>(s, ignoreCase: true, out var mode))
-                        _alpha[name] = mode;
-            if (root?["doubleSided"] is JsonObject sides)
-                foreach (var (name, value) in sides)
-                    if (value is JsonValue jv && jv.TryGetValue(out bool on) && on) _doubleSided.Add(name);
+            if (File.Exists(path))
+            {
+                var root = JsonNode.Parse(File.ReadAllText(path));
+                if (root?["texelDensity"] is JsonObject map)
+                    foreach (var (name, value) in map)
+                        if (value is JsonValue jv && jv.TryGetValue(out float d) && d > 0) read.Density[name] = d;
+                if (root?["alpha"] is JsonObject alpha)
+                    foreach (var (name, value) in alpha)
+                        if (value is JsonValue jv && jv.TryGetValue(out string? s) && Enum.TryParse<AlphaMode>(s, ignoreCase: true, out var mode))
+                            read.Alpha[name] = mode;
+                if (root?["doubleSided"] is JsonObject sides)
+                    foreach (var (name, value) in sides)
+                        if (value is JsonValue jv && jv.TryGetValue(out bool on) && on) read.DoubleSided.Add(name);
+                if (root?["size"] is JsonObject sizes)
+                    foreach (var (name, value) in sizes)
+                        if (value is JsonArray { Count: 2 } wh && wh[0] is JsonValue jw && wh[1] is JsonValue jh
+                            && jw.TryGetValue(out int w) && jh.TryGetValue(out int h) && w > 0 && h > 0)
+                            read.Size[name] = (w, h);
+            }
+            _overrides[folder] = read;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
     }
 
+    /// <summary>Writes a folder's side-car; "" (code-added materials) has none. False if it could not be written.</summary>
+    bool Save(string source)
+    {
+        if (source.Length == 0) return true;
+        bool saved = WriteSidecar(source);
+        OverridesOf(source).Unsaved = !saved;
+        return saved;
+    }
+
+    /// <summary>
+    /// Writes everything the folder has, including names with no image right now: an editor can be replacing the file, and a
+    /// texture that comes back under its name should keep its settings.
+    /// </summary>
     bool WriteSidecar(string folder)
     {
         var path = System.IO.Path.Combine(folder, SidecarName);
-        var mine = All.Where(m => m.Source == folder).OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        var overrides = OverridesOf(folder);
         var density = new JsonObject();
-        foreach (var m in mine.Where(m => m.TexelDensity != null)) density[m.Name] = m.TexelDensity!.Value;
+        foreach (var (name, value) in overrides.Density.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)) density[name] = value;
         var alpha = new JsonObject();
-        foreach (var m in mine.Where(m => m.Alpha != null)) alpha[m.Name] = m.Alpha!.Value.ToString().ToLowerInvariant();
+        foreach (var (name, value) in overrides.Alpha.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)) alpha[name] = value.ToString().ToLowerInvariant();
         var sides = new JsonObject();
-        foreach (var m in mine.Where(m => m.DoubleSided)) sides[m.Name] = true;
+        foreach (var name in overrides.DoubleSided.Order(StringComparer.OrdinalIgnoreCase)) sides[name] = true;
+        var sizes = new JsonObject();
+        foreach (var (name, value) in overrides.Size.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)) sizes[name] = new JsonArray(value.Width, value.Height);
         var root = new JsonObject();
         if (density.Count > 0) root["texelDensity"] = density;
         if (alpha.Count > 0) root["alpha"] = alpha;
         if (sides.Count > 0) root["doubleSided"] = sides;
+        if (sizes.Count > 0) root["size"] = sizes;
         try
         {
             if (root.Count == 0) { if (File.Exists(path)) File.Delete(path); }

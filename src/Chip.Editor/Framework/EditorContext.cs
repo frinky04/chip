@@ -300,6 +300,9 @@ public sealed class EditorContext
     /// <summary>Uploads top-down RGBA8 pixels (width, height, data) as an ImGui texture handle, for thumbnails. 0 when headless.</summary>
     public Func<int, int, byte[], nint> UploadTexture { get; set; } = (_, _, _) => 0;
 
+    /// <summary>Frees a handle from <see cref="UploadTexture"/>.</summary>
+    public Action<nint> FreeTexture { get; set; } = _ => { };
+
     // ---- Shared helpers ----
 
     public (Vector3 Min, Vector3 Max)? SelectionBounds()

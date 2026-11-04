@@ -97,6 +97,87 @@ public class MaterialFoldersTests : IDisposable
     }
 
     [Fact]
+    public void A_headless_export_prefers_the_textures_beside_a_level_outside_any_project_and_writes_nothing()
+    {
+        var mine = Folder("mine", "brick");
+        var project = Folder(Path.Combine("level", GameProject.DefaultTexturesPath), "brick");
+        var problems = new StringWriter();
+
+        var lib = MaterialFolders.LoadHeadless(Settings(mine), problems, environment: "", levelPath: Path.Combine(_dir, "level", "demo.chip"));
+
+        Assert.Equal(Path.Combine(project, "brick.png"), lib.Get("brick").Path);
+        Assert.Equal(project, lib.Folders[0]);
+        Assert.Empty(problems.ToString());
+        Assert.False(File.Exists(Path.Combine(project, MaterialLibrary.SidecarName)));
+    }
+
+    [Fact]
+    public void A_project_folder_that_does_not_exist_yet_is_not_reported_missing()
+    {
+        var lib = new MaterialLibrary();
+        lib.SetProjectFolder(Path.Combine(_dir, "not-yet"));
+        Assert.Equal(0, lib.Rescan().MissingFolders);
+        Assert.Empty(MaterialFolders.Missing(lib));
+    }
+
+    [Fact]
+    public void A_level_finds_its_project_textures_from_the_project_else_beside_itself()
+    {
+        var level = Path.Combine(_dir, "game", "levels", "demo.chip");
+        Assert.Equal(Path.Combine(_dir, "game", "levels", "textures"), MaterialFolders.Project(null, level));
+        Assert.Null(MaterialFolders.Project(null, null));
+
+        var root = Path.Combine(_dir, "game");
+        Directory.CreateDirectory(root);
+        var file = Path.Combine(root, GameProject.FileName);
+        Assert.Equal(Path.Combine(root, "textures"), MaterialFolders.Project(GameProject.Parse("{}", file), level));
+        Assert.Equal(Path.Combine(root, "art", "tex"), MaterialFolders.Project(GameProject.Parse("""{ "textures": "art/tex" }""", file), level));
+        Assert.Throws<InvalidDataException>(() => GameProject.Parse("""{ "textures": 3 }""", file));
+    }
+
+    [Theory]
+    [InlineData("brick.png", true)]
+    [InlineData("sub/brick.TGA", true)]
+    [InlineData(MaterialLibrary.SidecarName, true)]
+    [InlineData("sub", true)]
+    [InlineData("brick.png.import", false)]
+    [InlineData("~brick.tmp", false)]
+    public void Only_changes_that_can_matter_to_the_library_wake_it(string name, bool relevant) =>
+        Assert.Equal(relevant, ProjectTextures.Relevant(name));
+
+    [Fact]
+    public void Saving_a_project_texture_reaches_the_library_without_changing_how_it_tiles()
+    {
+        var ctx = RegistryTests.Headless();
+        var folder = Folder("project");
+        var file = Path.Combine(folder, "brick.png");
+        File.WriteAllBytes(file, MaterialLibrary.EncodePng(8, 8, new byte[8 * 8 * 4]));
+        using var textures = new ProjectTextures();
+
+        textures.Use(ctx, folder);
+        textures.Poll(ctx); // starts watching
+        var before = ctx.Materials.Get("brick");
+        Assert.Equal((8, 8), (before.Width, before.Height));
+        Assert.True(File.Exists(Path.Combine(folder, MaterialLibrary.SidecarName)));
+
+        var edited = Path.Combine(_dir, "edited.png");
+        File.WriteAllBytes(edited, MaterialLibrary.EncodePng(4, 4, new byte[4 * 4 * 4]));
+        // Starting to watch queues a rescan of its own, so wait for the result, not for any rescan.
+        File.Copy(edited, file, overwrite: true);
+        var stop = Environment.TickCount64 + 10_000;
+        while (ctx.Materials.Get("brick").Pixels == null && Environment.TickCount64 < stop)
+        {
+            textures.Poll(ctx);
+            Thread.Sleep(20);
+        }
+
+        var after = ctx.Materials.Get("brick");
+        Assert.Equal((4, 4), after.Pixels);
+        Assert.Equal((8, 8), (after.Width, after.Height));
+        Assert.NotEqual(before.Modified, after.Modified);
+    }
+
+    [Fact]
     public void A_missing_folder_and_unreadable_settings_are_reported()
     {
         var problems = new StringWriter();

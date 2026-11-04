@@ -48,7 +48,7 @@ if (args.Length >= 2 && args[0] == "--export")
         if (Chip.Core.Scene.EntityClasses.Problem is { } problem) Console.Error.WriteLine(problem);
         Chip.Core.Scene.LevelMigration.Apply(level, Chip.Core.Scene.EntityClasses.Current);
         var settings = new Chip.Editor.Settings.SettingsStore(Chip.Editor.Settings.SettingsStore.DefaultFolder);
-        var materials = Chip.Editor.Features.Materials.MaterialFolders.LoadHeadless(settings, Console.Error);
+        var materials = Chip.Editor.Features.Materials.MaterialFolders.LoadHeadless(settings, Console.Error, levelPath: levelPath);
         var r = Chip.Core.IO.GlbExporter.Export(level, materials, output);
         foreach (var w in r.Warnings) Console.Error.WriteLine(w);
         Console.WriteLine($"Exported {r.Meshes} meshes and {r.Entities} entities to {output}");

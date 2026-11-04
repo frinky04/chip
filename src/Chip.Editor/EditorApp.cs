@@ -54,6 +54,7 @@ public sealed partial class EditorApp : IDisposable
         {
             TextureId = name => _renderer.TextureId(name),
             UploadTexture = (w, h, rgba) => _renderer.UploadTexture(w, h, rgba),
+            FreeTexture = tex => _renderer.FreeTexture(tex),
             ConfirmDiscard = ConfirmDiscard,
             Quit = () => _window.Close(),
             TextureFolders = _settings.Current.TextureFolders.ToList(),
