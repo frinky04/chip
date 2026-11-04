@@ -228,6 +228,29 @@ public class CustomEngineExport : IDisposable
     }
 
     [Fact]
+    public void A_surface_warns_about_a_missing_picture_only_when_its_look_names_one()
+    {
+        File.WriteAllText(Path.Combine(_dir, "chip.project.json"), """
+            { "surfaces": {
+                "video": { "collide": "none" },
+                "poster": { "look": { "image": "gone.png" } },
+                "sky": { "look": { "panorama": true, "imageFrom": "sky" } }
+            } }
+            """);
+        EntityClasses.Track(_dir);
+
+        var doc = new Document();
+        doc.Add(MeshOps.CreateBox(Vector3.Zero, Vector3.One, "video", TextureMapping.Default));
+        doc.Add(MeshOps.CreateBox(Vector3.One, Vector3.One * 2, "sky", TextureMapping.Default));
+        Assert.Empty(GlbExporter.Build(doc, new MaterialLibrary(), null).Warnings);
+
+        doc.Add(MeshOps.CreateBox(Vector3.One * 3, Vector3.One * 4, "poster", TextureMapping.Default));
+        var warning = Assert.Single(GlbExporter.Build(doc, new MaterialLibrary(), null).Warnings);
+        Assert.Contains("poster", warning);
+        Assert.Contains("gone.png", warning);
+    }
+
+    [Fact]
     public void Colliders_carry_extras_and_names_carry_no_godot_suffixes()
     {
         File.WriteAllText(Path.Combine(_dir, "chip.project.json"), """{ "engine": "Toy" }""");

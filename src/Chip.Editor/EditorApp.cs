@@ -46,7 +46,7 @@ public sealed partial class EditorApp : IDisposable
         _imgui = new ImGuiController(_gl, window, _input, null, () => ConfigureImGui(_uiScale));
         Theme.Apply(_uiScale);
 
-        var lib = MaterialLibrary.LoadFolder(Path.Combine(AppContext.BaseDirectory, "assets", "textures"));
+        var lib = MaterialLibrary.LoadFolder(Features.Materials.MaterialFolders.Textures); // the feature adds the rest
         _renderer = new Renderer(_gl, lib);
         var session = new Session();
         session.Reset(new Document(), null);

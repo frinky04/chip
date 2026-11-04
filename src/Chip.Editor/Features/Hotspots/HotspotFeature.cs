@@ -11,10 +11,7 @@ public sealed class HotspotFeature : IEditorFeature
 {
     public void Register(EditorContext ctx)
     {
-        // The bundled sample's folder joins the library. Features register in type-name order, so the materials feature
-        // (Features.Materials) rescans after this and picks it up; the hotspot library follows the material library.
-        ctx.Materials.AddFolder(Path.Combine(AppContext.BaseDirectory, "assets", "hotspots"));
-
+        // The bundled sample's folder is in the material library (MaterialFolders); the hotspot library follows that library.
         var state = HotspotState.For(ctx);
         var editor = HotspotEditor.For(ctx);
         ctx.AddPanel(editor.Draw);

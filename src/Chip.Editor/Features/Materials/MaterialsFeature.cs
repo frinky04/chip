@@ -5,19 +5,16 @@ using NativeFileDialogSharp;
 namespace Chip.Editor.Features.Materials;
 
 /// <summary>
-/// Materials and assets: library folders (bundled textures, bundled tool materials, <c>CHIP_TEXTURE_DIRS</c>, folders
-/// added this session), the Materials tab of the dock, replace material, and applying per-material texel density.
+/// Materials and assets: library folders (<see cref="MaterialFolders"/>, and folders added this session), the Materials
+/// tab of the dock, replace material, and applying per-material texel density.
 /// </summary>
 public sealed class MaterialsFeature : IEditorFeature
 {
     public void Register(EditorContext ctx)
     {
         var lib = ctx.Materials;
-        lib.AddFolder(Path.Combine(AppContext.BaseDirectory, "assets", "tools"));
-        foreach (var folder in ctx.TextureFolders) lib.AddFolder(folder); // from settings (Preferences > Paths)
-        foreach (var folder in MaterialLibrary.EnvironmentFolders()) lib.AddFolder(folder);
-        lib.Rescan();
-        var missing = lib.Folders.Where(f => !Directory.Exists(f) && !f.StartsWith(AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase)).ToList();
+        MaterialFolders.AddTo(lib, ctx.TextureFolders);
+        var missing = MaterialFolders.Missing(lib);
         if (missing.Count > 0)
             ctx.Status($"Texture folder not found: {string.Join(", ", missing)}. Fix {MaterialLibrary.EnvVar}, then Texture > Rescan texture folders", error: true);
 

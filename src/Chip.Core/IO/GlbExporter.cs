@@ -113,7 +113,11 @@ public static class GlbExporter
                 textures.Add(new JsonObject { ["source"] = images.Count - 1, ["sampler"] = 0 });
                 pbr["baseColorTexture"] = new JsonObject { ["index"] = textures.Count - 1 };
             }
-            else pbr["baseColorFactor"] = new JsonArray(1f, 0f, 1f, 1f);
+            else
+            {
+                pbr["baseColorFactor"] = new JsonArray(1f, 0f, 1f, 1f);
+                if (MissingPicture(name, info, materials) is { } warning) warnings.Add(warning);
+            }
             var mat = new JsonObject { ["name"] = name, ["pbrMetallicRoughness"] = pbr };
             if (pbr.ContainsKey("baseColorTexture"))
                 switch (materials.AlphaOf(name))
@@ -490,6 +494,19 @@ public static class GlbExporter
             Collision = collisionStats,
             Tessellated = opt.Tessellate ? (tessBefore, tessAfter) : null,
         };
+    }
+
+    /// <summary>
+    /// What to say about a material that exports without a picture, or null when that's expected: the sky draws from the
+    /// level's sky, and a surface whose look names no image (a video screen) is the game's to fill in.
+    /// </summary>
+    static string? MissingPicture(string name, MaterialInfo info, MaterialLibrary materials)
+    {
+        if (Surfaces.Of(name) is { } surface)
+            return surface.Name == "sky" || surface.Look.Image == null ? null : $"Surface {name}: its image {surface.Look.Image} can't be read, so it exports magenta";
+        return materials.Contains(name) && info.Path != null
+            ? $"Material {name}: its image {info.Path} can't be read, so it exports magenta"
+            : $"Material {name} isn't in any texture folder, so it exports magenta. Add its folder in Preferences > Paths or {MaterialLibrary.EnvVar}";
     }
 
     /// <summary>The mesh a tessellated one was cut from, and each of its faces' source face.</summary>

@@ -45,7 +45,12 @@ public class ToyGameTests : IDisposable
         EntityClasses.Track(levelPath);
         Assert.Equal("Toy", EntityClasses.Engine);
         var doc = DocumentSerializer.Load(levelPath);
-        var export = GlbExporter.Build(doc, new MaterialLibrary(), null);
+        // Every picture the level draws: the bundled wall, and the screen surface's own image.
+        var materials = MaterialLibrary.LoadFolder(Path.GetFullPath(Path.Combine(Sample, "..", "..", "assets", "textures")));
+        var video = Surfaces.Of("video")!.Look.Image!;
+        Assert.True(MaterialLibrary.TryReadImageSize(video, out int width, out int height));
+        materials.Add(new MaterialInfo("video", video, width, height));
+        var export = GlbExporter.Build(doc, materials, null);
         Assert.Empty(export.Warnings);
 
         var level = Level.Load(export.Data);

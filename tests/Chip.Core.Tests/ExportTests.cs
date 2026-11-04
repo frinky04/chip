@@ -43,6 +43,42 @@ public class ExportTests
     static byte[] Png(int w, int h) => MaterialLibrary.EncodePng(w, h, Enumerable.Repeat((byte)200, w * h * 4).ToArray());
 
     [Fact]
+    public void A_material_with_no_picture_warns_once_by_name()
+    {
+        var dir = TempDir();
+        File.WriteAllBytes(Path.Combine(dir, "brick.png"), Png(4, 4));
+        var doc = new Document();
+        doc.Add(Box(Vector3.Zero, Vector3.One, "brick"));
+        doc.Add(Box(Vector3.One, Vector3.One * 2, "lost_paint"));
+        doc.Add(Box(Vector3.One * 3, Vector3.One * 4, "lost_paint"));
+
+        var r = GlbExporter.Build(doc, MaterialLibrary.LoadFolder(dir), null);
+
+        Assert.Contains("lost_paint", Assert.Single(r.Warnings));
+        var lost = Glb.Json(r.Data)["materials"]!.AsArray().Single(m => m!["name"]!.GetValue<string>() == "lost_paint")!;
+        Assert.NotNull(lost["pbrMetallicRoughness"]!["baseColorFactor"]);
+    }
+
+    [Fact]
+    public void A_material_whose_image_went_missing_warns_with_its_path()
+    {
+        var doc = new Document();
+        doc.Add(Box(Vector3.Zero, Vector3.One, "brick"));
+        var lib = new MaterialLibrary();
+        lib.Add(new MaterialInfo("brick", Path.Combine(TempDir(), "brick.png"), 4, 4));
+        var warning = Assert.Single(GlbExporter.Build(doc, lib, null).Warnings);
+        Assert.Contains("brick.png", warning);
+    }
+
+    [Fact]
+    public void The_sky_has_no_picture_on_purpose_and_stays_quiet()
+    {
+        var doc = new Document();
+        doc.Add(Box(Vector3.Zero, Vector3.One, "sky"));
+        Assert.Empty(GlbExporter.Build(doc, new MaterialLibrary(), null).Warnings);
+    }
+
+    [Fact]
     public void Entities_export_as_empty_nodes_with_scaled_translation_rotation_and_extras()
     {
         var doc = new Document { ExportScale = 2 };

@@ -25,7 +25,8 @@ if (args.Length >= 2 && args[0] == "--rules-check")
 if (args.Length >= 2 && args[0] == "--entities-check")
     return Chip.Core.Scene.EntityManifestCheck.Run(args[1], Console.Out, json: args.Contains("--json"));
 // Headless export: Chip --export level.chip [out.glb] (default: the level's export path). Entity classes and engine
-// conventions come from the game project the output or the level is in, as in the editor. Dressing rules aren't applied.
+// conventions come from the game project the output or the level is in, and materials from the saved settings' folders,
+// as in the editor. Dressing rules aren't applied.
 if (args.Length >= 2 && args[0] == "--export")
 {
     try
@@ -46,7 +47,8 @@ if (args.Length >= 2 && args[0] == "--export")
         Chip.Core.Scene.EntityClasses.Track(output, levelPath);
         if (Chip.Core.Scene.EntityClasses.Problem is { } problem) Console.Error.WriteLine(problem);
         Chip.Core.Scene.LevelMigration.Apply(level, Chip.Core.Scene.EntityClasses.Current);
-        var materials = Chip.Core.Scene.MaterialLibrary.LoadFolder(Path.Combine(AppContext.BaseDirectory, "assets", "textures"));
+        var settings = new Chip.Editor.Settings.SettingsStore(Chip.Editor.Settings.SettingsStore.DefaultFolder);
+        var materials = Chip.Editor.Features.Materials.MaterialFolders.LoadHeadless(settings, Console.Error);
         var r = Chip.Core.IO.GlbExporter.Export(level, materials, output);
         foreach (var w in r.Warnings) Console.Error.WriteLine(w);
         Console.WriteLine($"Exported {r.Meshes} meshes and {r.Entities} entities to {output}");

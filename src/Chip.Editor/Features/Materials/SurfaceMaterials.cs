@@ -17,7 +17,13 @@ public sealed class SurfaceMaterials
     {
         if (EntityClasses.Revision == _revision) return;
         _revision = EntityClasses.Revision;
-        var lib = ctx.Materials;
+        Sync(ctx.Materials);
+        ctx.Session.Touch(); // material sizes may have changed: rebuild the scene's UVs
+    }
+
+    /// <summary>Makes the library's surfaces match the current project's.</summary>
+    public void Sync(MaterialLibrary lib)
+    {
         var surfaces = (EntityClasses.Project?.Surfaces ?? []).ToList();
         if (!surfaces.Any(s => string.Equals(s.Name, "sky", StringComparison.OrdinalIgnoreCase)))
             surfaces.Add(Surfaces.BuiltIn.Single(s => s.Name == "sky"));
@@ -34,6 +40,5 @@ public sealed class SurfaceMaterials
             lib.Add(new MaterialInfo(s.Name, image, w, h));
             _added.Add(s.Name);
         }
-        ctx.Session.Touch(); // material sizes may have changed: rebuild the scene's UVs
     }
 }
