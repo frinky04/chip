@@ -336,17 +336,33 @@ public sealed class MaterialBrowser : IDockPanel
     static bool IsProjectTexture(EditorContext ctx, MaterialInfo m) =>
         m.Path != null && string.Equals(m.Source, ctx.Materials.ProjectFolder, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Edit image and Show in folder for the active material, when it has a file.</summary>
+    const string ImportTip = "Copy it into this project to edit it, leaving the original alone. Faces using it switch to the copy and stay where they are.";
+
+    /// <summary>A library texture, not a tool surface, with a project to copy it into.</summary>
+    static bool CanImport(EditorContext ctx, MaterialInfo m) =>
+        m.Path != null && m.Source.Length > 0 && m.Surface == null && ctx.Materials.ProjectFolder != null && !IsProjectTexture(ctx, m);
+
+    static void ImportToProject(EditorContext ctx, MaterialInfo m) => ctx.DropFiles([m.Path!]);
+
+    /// <summary>Edit image (or, for a library texture, Import to project) and Show in folder for the active material, when it has a file.</summary>
     static void DrawFileActions(EditorContext ctx, MaterialInfo active)
     {
         if (active.Path == null) return;
-        RowLabel("File", "The image behind this material. Saving it updates the level.");
-        ImGui.BeginDisabled(!IsProjectTexture(ctx, active));
+        RowLabel("File", "The image behind this material. Saving a project texture updates the level.");
         float width = (ImGui.GetContentRegionAvail().X - Theme.Px(6)) / 2;
-        if (ImGui.Button("Edit image", new Vector2(width, 0))) EditImage(ctx, active);
-        ImGui.EndDisabled();
-        Tip(IsProjectTexture(ctx, active) ? "Open in your default app for this file type"
-            : "Only project textures open for editing, so a shared library isn't changed by accident");
+        if (IsProjectTexture(ctx, active))
+        {
+            if (ImGui.Button("Edit image", new Vector2(width, 0))) EditImage(ctx, active);
+            Tip("Open in your default app for this file type");
+        }
+        else
+        {
+            bool can = CanImport(ctx, active);
+            ImGui.BeginDisabled(!can);
+            if (ImGui.Button("Import", new Vector2(width, 0))) ImportToProject(ctx, active);
+            ImGui.EndDisabled();
+            Tip(can ? ImportTip : ctx.Materials.ProjectFolder == null ? "Save the level first. Its textures go in its project, or in a folder beside it" : "Tool surfaces can't be imported");
+        }
         ImGui.SameLine(0, Theme.Px(6));
         if (ImGui.Button("Show in folder", new Vector2(width, 0))) ShowInFolder(ctx, active);
     }
@@ -535,8 +551,15 @@ public sealed class MaterialBrowser : IDockPanel
             if (m.Path != null)
             {
                 ImGui.Separator();
-                if (ImGui.MenuItem("Edit image", null, false, IsProjectTexture(ctx, m))) EditImage(ctx, m);
-                if (!IsProjectTexture(ctx, m)) Tip("Only project textures open for editing, so a shared library isn't changed by accident");
+                if (IsProjectTexture(ctx, m))
+                {
+                    if (ImGui.MenuItem("Edit image")) EditImage(ctx, m);
+                }
+                else if (CanImport(ctx, m))
+                {
+                    if (ImGui.MenuItem("Import to project")) ImportToProject(ctx, m);
+                    Tip(ImportTip);
+                }
                 if (ImGui.MenuItem("Show in folder")) ShowInFolder(ctx, m);
             }
             if (m.Pixels is { } pixels)

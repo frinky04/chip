@@ -31,7 +31,7 @@ public sealed class TextureImporter(ProjectTextures project)
             return;
         }
         ImportPlan plan;
-        try { plan = TextureImport.Inspect(paths, folder); }
+        try { plan = TextureImport.Inspect(paths, folder, ctx.Materials); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             ctx.Status($"Couldn't read the dropped files: {e.Message}", error: true);
@@ -51,6 +51,9 @@ public sealed class TextureImporter(ProjectTextures project)
     {
         var (folder, max) = (_folder, ctx.ImportMaxSize());
         _rejected = plan.Rejected;
+        // Before the copies land, so a rescan never sees one without the settings that keep faces where they are.
+        var unsaved = plan.Items.Where(i => i.Material is { } m && !ctx.Materials.CarryToProject(m)).Select(i => i.Material!.Name).ToList();
+        if (unsaved.Count > 0) _rejected = [.. _rejected, $"{unsaved[0]}'s settings couldn't be saved in {MaterialLibrary.SidecarName}, so they last until Chip closes"];
         _running = Task.Run(() => TextureImport.Run(plan, folder, keepBoth, max));
         ctx.Status(plan.Items.Count == 1 ? "Importing 1 texture…" : $"Importing {plan.Items.Count} textures…");
     }

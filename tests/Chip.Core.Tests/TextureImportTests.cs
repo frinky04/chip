@@ -56,6 +56,102 @@ public class TextureImportTests : IDisposable
         Assert.False(File.Exists(Path.Combine(Project, "pack", "readme.txt")));
     }
 
+    /// <summary>A library with a texture of its own settings in a shared folder, on a level whose project has none yet.</summary>
+    (MaterialLibrary Lib, string File) Shared()
+    {
+        var file = File_("shared/brick.png", Png(64, 32));
+        var lib = new MaterialLibrary();
+        lib.AddFolder(Path.GetDirectoryName(file)!);
+        lib.SetProjectFolder(Project);
+        lib.Rescan();
+        lib.SetTexelDensity("brick", 128);
+        lib.SetAlphaMode("brick", AlphaMode.Mask);
+        lib.SetDoubleSided("brick", true);
+        return (lib, file);
+    }
+
+    static void Carry(MaterialLibrary lib, ImportPlan plan)
+    {
+        foreach (var item in plan.Items)
+            if (item.Material is { } m) Assert.True(lib.CarryToProject(m));
+    }
+
+    [Fact]
+    public void A_library_texture_moves_to_the_project_with_its_settings_and_faces_stay_put()
+    {
+        var (lib, file) = Shared();
+        var before = lib.Get("brick");
+        float tile = before.TileWidth;
+        var plan = TextureImport.Inspect([file], Project, lib);
+        Assert.Equal("brick", plan.Items.Single().Material?.Name);
+
+        Carry(lib, plan);
+        TextureImport.Run(plan, Project, keepBoth: false, maxSize: 0);
+        lib.Rescan();
+
+        var after = lib.Get("brick");
+        Assert.Equal(Path.Combine(Project, "brick.png"), after.Path);
+        Assert.Equal(Project, after.Source);
+        Assert.Equal(128f, after.TexelDensity);
+        Assert.Equal(AlphaMode.Mask, after.Alpha);
+        Assert.True(after.DoubleSided);
+        Assert.Equal(tile, after.TileWidth);
+        Assert.True(File.Exists(file)); // the original is left alone
+
+        var fresh = new MaterialLibrary(); // and it's all on disk, for the next session and for --export
+        fresh.SetProjectFolder(Project);
+        fresh.Rescan();
+        Assert.Equal(128f, fresh.Get("brick").TexelDensity);
+    }
+
+    [Fact]
+    public void A_size_limit_on_a_library_texture_loses_detail_but_not_placement()
+    {
+        var (lib, file) = Shared();
+        float tile = lib.Get("brick").TileWidth;
+        var plan = TextureImport.Inspect([file], Project, lib);
+
+        Carry(lib, plan);
+        TextureImport.Run(plan, Project, keepBoth: false, maxSize: 16);
+        lib.Rescan();
+        lib.PinProjectSizes();
+
+        var after = lib.Get("brick");
+        Assert.Equal((16, 8), after.Pixels);
+        Assert.Equal((64, 32), (after.Width, after.Height));
+        Assert.Equal(tile, after.TileWidth);
+    }
+
+    [Fact]
+    public void A_library_texture_that_was_resized_carries_the_size_it_tiles_at()
+    {
+        var (lib, file) = Shared();
+        lib.CarryToProject(lib.Get("brick") with { Width = 256, Height = 128, Pixels = (64, 32) });
+        TextureImport.Run(TextureImport.Inspect([file], Project), Project, keepBoth: false, maxSize: 0);
+        lib.Rescan();
+
+        Assert.Equal(256, lib.Get("brick").Width);
+        Assert.Equal((64, 32), lib.Get("brick").Pixels);
+    }
+
+    [Fact]
+    public void Only_the_image_a_material_uses_now_takes_it_over()
+    {
+        var (lib, file) = Shared();
+        var other = File_("elsewhere/brick.png", Png(8, 8));
+        var fresh = File_("elsewhere/fresh.png", Png(8, 8));
+        Assert.Null(TextureImport.Inspect([other], Project, lib).Items.Single().Material);
+        Assert.Null(TextureImport.Inspect([fresh], Project, lib).Items.Single().Material);
+        Assert.NotNull(TextureImport.Inspect([file], Project, lib).Items.Single().Material);
+
+        // Once the project has its own copy, the old file is just another image, and clashes.
+        File_("project/brick.png", Png(8, 8));
+        lib.Rescan();
+        var item = TextureImport.Inspect([file], Project, lib).Items.Single();
+        Assert.Null(item.Material);
+        Assert.NotNull(item.Clash);
+    }
+
     [Fact]
     public void Dot_folders_are_not_imported_and_do_not_count_as_clashes()
     {

@@ -204,6 +204,34 @@ public class MaterialFoldersTests : IDisposable
     }
 
     [Fact]
+    public void Importing_a_library_texture_keeps_the_faces_using_it_where_they_are()
+    {
+        var ctx = RegistryTests.Headless();
+        var shared = Folder("shared", "brick");
+        ctx.Materials.AddFolder(shared);
+        ctx.Materials.Rescan();
+        ctx.Materials.SetTexelDensity("brick", 64);
+        float tile = ctx.Materials.Get("brick").TileWidth;
+        using var textures = new ProjectTextures();
+        var project = Path.Combine(_dir, "project");
+        textures.Use(ctx, project);
+        var importer = new TextureImporter(textures);
+
+        importer.Drop(ctx, [Path.Combine(shared, "brick.png")]);
+        var stop = Environment.TickCount64 + 10_000;
+        while (ctx.Materials.Get("brick").Source != project && Environment.TickCount64 < stop)
+        {
+            importer.Update(ctx);
+            Thread.Sleep(10);
+        }
+
+        var brick = ctx.Materials.Get("brick");
+        Assert.Equal(project, brick.Source);
+        Assert.Equal(64f, brick.TexelDensity);
+        Assert.Equal(tile, brick.TileWidth);
+    }
+
+    [Fact]
     public void Dropping_with_nowhere_to_put_it_copies_nothing()
     {
         var ctx = RegistryTests.Headless();

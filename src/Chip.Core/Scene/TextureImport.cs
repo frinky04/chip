@@ -3,8 +3,11 @@ using StbImageSharp;
 
 namespace Chip.Core.Scene;
 
-/// <summary>A file to copy: where it is, where it goes below the folder, and the file already there under its material name.</summary>
-public sealed record ImportItem(string Source, string Relative, string? Clash);
+/// <summary>
+/// A file to copy: where it is, where it goes below the folder, and the file already there under its material name.
+/// <see cref="Material"/> is set when the file is the image a library material uses now, so the copy takes that material over.
+/// </summary>
+public sealed record ImportItem(string Source, string Relative, string? Clash, MaterialInfo? Material = null);
 
 /// <summary>What a drop would do. <see cref="Rejected"/> says what's being left out, and why.</summary>
 public sealed record ImportPlan(IReadOnlyList<ImportItem> Items, IReadOnlyList<string> Rejected);
@@ -18,8 +21,11 @@ public sealed record TextureImportResult(int Imported, int Replaced, int Resized
 /// </summary>
 public static class TextureImport
 {
-    /// <summary>Works out what importing <paramref name="paths"/> (files or folders) into <paramref name="folder"/> would do. Copies nothing.</summary>
-    public static ImportPlan Inspect(IEnumerable<string> paths, string folder)
+    /// <summary>
+    /// Works out what importing <paramref name="paths"/> (files or folders) into <paramref name="folder"/> would do. Copies
+    /// nothing. <paramref name="library"/> tells which files are images its materials use now.
+    /// </summary>
+    public static ImportPlan Inspect(IEnumerable<string> paths, string folder, MaterialLibrary? library = null)
     {
         var target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
         var existing = Existing(target);
@@ -33,7 +39,14 @@ public static class TextureImport
             string name = Key(file);
             if (!MaterialLibrary.TryReadImageSize(file, out _, out _)) rejected.Add($"{Path.GetFileName(file)} can't be read as an image");
             else if (!seen.Add(name)) rejected.Add($"{Path.GetFileName(file)} has the same name as another dropped image");
-            else items.Add(new ImportItem(file, relative, existing.GetValueOrDefault(name)));
+            else items.Add(new ImportItem(file, relative, existing.GetValueOrDefault(name), InUse(file)));
+        }
+
+        MaterialInfo? InUse(string file)
+        {
+            if (library == null || MaterialLibrary.MaterialName(Path.GetFileNameWithoutExtension(file)) is not { } material) return null;
+            var info = library.Get(material);
+            return string.Equals(info.Path, Path.GetFullPath(file), StringComparison.OrdinalIgnoreCase) ? info : null;
         }
 
         foreach (var path in paths)

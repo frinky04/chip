@@ -139,6 +139,11 @@ whether to replace it, which keeps how it tiles, or keep both. Preferences > Pat
 images, and those are tiled at the smaller size. **Edit image** opens a project texture in your default app for that file
 type, and **Show in folder** finds any texture on disk; both are under the active material and on a tile's right-click menu.
 
+**Import** under the active material, or **Import to project** on the right-click menu, copies a texture from another folder into the project so you can edit it,
+leaving the original alone. Faces using it switch to the copy without moving, because it brings its density, alpha,
+double-sided setting and tiling size, even if a size limit scales the copy down. Dragging in the file a material uses now
+does the same.
+
 Texel density is set per level, Scythe style, under Level in the inspector (with nothing selected). "1 m is 256 px" by
 default, so a 128 px texture tiles every 50 cm. A texture can have its own density, set in the Materials tab under the
 active material. Changing the level's density affects new faces and leaves existing ones alone. Rescale existing faces,

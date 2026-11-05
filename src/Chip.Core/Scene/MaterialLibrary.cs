@@ -300,6 +300,28 @@ public sealed partial class MaterialLibrary
     }
 
     /// <summary>
+    /// Gives the project folder this material's settings and tiling size, for a copy of its image about to arrive there, so
+    /// faces using its name don't move when the copy takes over. Call it before the copy lands. Returns false if the
+    /// side-car could not be written (the settings still apply for this session).
+    /// </summary>
+    public bool CarryToProject(MaterialInfo material)
+    {
+        if (ProjectFolder is not { } folder) return true;
+        var overrides = OverridesOf(folder);
+        if (material.TexelDensity is float density) overrides.Density[material.Name] = density; else overrides.Density.Remove(material.Name);
+        if (material.Alpha is AlphaMode alpha) overrides.Alpha[material.Name] = alpha; else overrides.Alpha.Remove(material.Name);
+        if (material.DoubleSided) overrides.DoubleSided.Add(material.Name); else overrides.DoubleSided.Remove(material.Name);
+        overrides.Size[material.Name] = (material.Width, material.Height);
+        try { Directory.CreateDirectory(folder); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            overrides.Unsaved = true;
+            return false;
+        }
+        return Save(folder);
+    }
+
+    /// <summary>
     /// Makes a resized material tile by its image's real size again, which changes how it sits on every face using it, and
     /// writes its folder's side-car. Returns false if the side-car could not be written (the change still applies for this session).
     /// </summary>
