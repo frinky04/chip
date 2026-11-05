@@ -20,6 +20,7 @@ level's export path. Every field is optional:
 | `kinds` | none | The kinds of file an asset property can name (Asset kinds, below). |
 | `flags` | none | Named level and game state that connections set and test ([`logic.md`](logic.md), Flags). |
 | `prefabs` | search the whole project; new ones in `prefabs/` | Where prefab files (`*.prefab.chip`) are: `{ "roots": ["props"], "default": "props" }`. `roots` limits the search; `default` is where Save as prefab puts new ones. Both are relative to the project file ([`levels.md`](levels.md), Prefabs). |
+| `textures` | `textures` | The project's texture folder, relative to the project file. Its images win a name clash with any other texture folder, reload when saved, and keep the size they were first seen at for UVs and tiling (the `size` map in the folder's `chip-materials.json`), so resizing an image doesn't move it on faces. |
 
 An unknown field makes the whole file unreadable, and Chip then falls back to its built-in classes. Comments and trailing commas are allowed.
 

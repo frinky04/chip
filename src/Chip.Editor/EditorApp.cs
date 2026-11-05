@@ -54,6 +54,7 @@ public sealed partial class EditorApp : IDisposable
         {
             TextureId = name => _renderer.TextureId(name),
             UploadTexture = (w, h, rgba) => _renderer.UploadTexture(w, h, rgba),
+            FreeTexture = tex => _renderer.FreeTexture(tex),
             ConfirmDiscard = ConfirmDiscard,
             Quit = () => _window.Close(),
             TextureFolders = _settings.Current.TextureFolders.ToList(),
@@ -69,7 +70,9 @@ public sealed partial class EditorApp : IDisposable
         ApplySettings();
         if (persistent) _recovery = _autosave.FindRecoverable();
 
+        Ctx.ImportMaxSize = () => _settings.Current.ImportMaxSize;
         _window.Closing += OnClosing;
+        _window.FileDrop += paths => Ctx.DropFiles(paths);
         DarkTitleBar.Apply(window);
         AppIcon.Apply(window);
     }

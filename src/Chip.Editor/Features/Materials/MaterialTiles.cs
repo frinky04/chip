@@ -84,7 +84,7 @@ public static class MaterialTiles
         ImGui.PushFont(Fonts.Strong);
         ImGui.Text(m.Name);
         ImGui.PopFont();
-        ImGui.TextColored(Theme.TextDim, $"{m.Width} × {m.Height} px");
+        ImGui.TextColored(Theme.TextDim, m.Pixels is { } pixels ? $"{pixels.Width} × {pixels.Height} px, tiles as {m.Width} × {m.Height}" : $"{m.Width} × {m.Height} px");
         string tiling = $"Tiles every {Labels.Length(m.TileWidth)}" + (m.TileHeight != m.TileWidth ? $" × {Labels.Length(m.TileHeight)}" : "");
         ImGui.TextColored(Theme.TextDim, m.TexelDensity != null ? $"{tiling} (custom density)" : tiling);
         if (m.Folder.Length > 0) ImGui.TextColored(Theme.TextDim, $"Folder: {m.Folder}");

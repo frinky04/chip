@@ -23,6 +23,11 @@ public sealed class MaterialsFeature : IEditorFeature
         ctx.AddDockPanel(browser);
         ctx.AddPanel(browser.Update);
         ctx.AddPanel(new SurfaceMaterials().Update);
+        var project = new ProjectTextures();
+        var importer = new TextureImporter(project);
+        ctx.AddPanel(project.Update);
+        ctx.AddPanel(importer.Update);
+        ctx.FilesDropped += paths => importer.Drop(ctx, paths);
         ctx.AddPanel(replace.Draw);
 
         var c = ctx.Commands;
@@ -48,13 +53,27 @@ public sealed class MaterialsFeature : IEditorFeature
         Rescan(ctx);
     }
 
+    /// <summary>After a rescan: new project textures keep the size they arrived at, whatever later happens to the image.</summary>
+    public static void PinProjectSizes(EditorContext ctx)
+    {
+        if (!ctx.Materials.PinProjectSizes())
+            ctx.Status($"Couldn't write {MaterialLibrary.SidecarName} in {ctx.Materials.ProjectFolder}, so resizing its textures would change how they tile. Check the folder is writable.", error: true);
+    }
+
+    /// <summary>After a rescan: redraws what depends on the files.</summary>
+    public static void Refreshed(EditorContext ctx)
+    {
+        MaterialBrowser.For(ctx).Thumbs.Refresh(ctx);
+        ctx.Session.Touch(); // sizes may have changed: rebuild the scene's UVs
+    }
+
     /// <summary>Re-reads every library folder and reports what changed.</summary>
     public static void Rescan(EditorContext ctx)
     {
         int before = ctx.Materials.All.Count;
         var r = ctx.Materials.Rescan();
-        MaterialBrowser.For(ctx).Thumbs.Refresh();
-        ctx.Session.Touch(); // sizes may have changed: rebuild the scene's UVs
+        PinProjectSizes(ctx);
+        Refreshed(ctx);
         var notes = new List<string>();
         if (r.Duplicates > 0) notes.Add(r.Duplicates == 1 ? "1 duplicate name skipped" : $"{r.Duplicates} duplicate names skipped");
         if (r.Unreadable > 0) notes.Add(r.Unreadable == 1 ? "1 unreadable image" : $"{r.Unreadable} unreadable images");

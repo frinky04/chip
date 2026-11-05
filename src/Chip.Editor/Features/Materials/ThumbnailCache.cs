@@ -27,6 +27,8 @@ public sealed class ThumbnailCache
         public DateTime Stamp = stamp;
         public nint Tex;
         public bool Queued, Failed;
+        /// <summary>The file changed while a decode was on its way, so that decode is out of date.</summary>
+        public bool Stale;
         public volatile int LastSeen;
     }
 
@@ -69,15 +71,17 @@ public sealed class ThumbnailCache
     }
 
     /// <summary>After a rescan: thumbnails of files that changed on disk are rebuilt.</summary>
-    public void Refresh()
+    public void Refresh(EditorContext ctx)
     {
         foreach (var e in _byPath.Values)
         {
             var stamp = Stamp(e.Path);
             if (stamp == e.Stamp) continue;
             e.Stamp = stamp;
+            if (e.Tex != 0) ctx.FreeTexture(e.Tex);
             e.Tex = 0;
             e.Failed = false;
+            e.Stale = e.Queued;
         }
     }
 
@@ -112,7 +116,8 @@ public sealed class ThumbnailCache
     static void Finish(EditorContext ctx, Entry e, int w, int h, byte[]? rgba)
     {
         e.Queued = false;
-        if (rgba == null) return;                 // stale: try again next time it is drawn
+        if (e.Stale) { e.Stale = false; return; } // requested again when next drawn
+        if (rgba == null) return;               // stale: try again next time it is drawn
         if (rgba.Length == 0) { e.Failed = true; return; }
         e.Tex = ctx.UploadTexture(w, h, rgba);
         if (e.Tex == 0) e.Failed = true;          // headless: fall back to the renderer

@@ -97,6 +97,159 @@ public class MaterialFoldersTests : IDisposable
     }
 
     [Fact]
+    public void A_headless_export_prefers_the_textures_beside_a_level_outside_any_project_and_writes_nothing()
+    {
+        var mine = Folder("mine", "brick");
+        var project = Folder(Path.Combine("level", GameProject.DefaultTexturesPath), "brick");
+        var problems = new StringWriter();
+
+        var lib = MaterialFolders.LoadHeadless(Settings(mine), problems, environment: "", levelPath: Path.Combine(_dir, "level", "demo.chip"));
+
+        Assert.Equal(Path.Combine(project, "brick.png"), lib.Get("brick").Path);
+        Assert.Equal(project, lib.Folders[0]);
+        Assert.Empty(problems.ToString());
+        Assert.False(File.Exists(Path.Combine(project, MaterialLibrary.SidecarName)));
+    }
+
+    [Fact]
+    public void A_project_folder_that_does_not_exist_yet_is_not_reported_missing()
+    {
+        var lib = new MaterialLibrary();
+        lib.SetProjectFolder(Path.Combine(_dir, "not-yet"));
+        Assert.Equal(0, lib.Rescan().MissingFolders);
+        Assert.Empty(MaterialFolders.Missing(lib));
+    }
+
+    [Fact]
+    public void A_level_finds_its_project_textures_from_the_project_else_beside_itself()
+    {
+        var level = Path.Combine(_dir, "game", "levels", "demo.chip");
+        Assert.Equal(Path.Combine(_dir, "game", "levels", "textures"), MaterialFolders.Project(null, level));
+        Assert.Null(MaterialFolders.Project(null, null));
+
+        var root = Path.Combine(_dir, "game");
+        Directory.CreateDirectory(root);
+        var file = Path.Combine(root, GameProject.FileName);
+        Assert.Equal(Path.Combine(root, "textures"), MaterialFolders.Project(GameProject.Parse("{}", file), level));
+        Assert.Equal(Path.Combine(root, "art", "tex"), MaterialFolders.Project(GameProject.Parse("""{ "textures": "art/tex" }""", file), level));
+        Assert.Throws<InvalidDataException>(() => GameProject.Parse("""{ "textures": 3 }""", file));
+    }
+
+    [Theory]
+    [InlineData("brick.png", true)]
+    [InlineData("sub/brick.TGA", true)]
+    [InlineData(MaterialLibrary.SidecarName, true)]
+    [InlineData("sub", true)]
+    [InlineData("brick.png.import", false)]
+    [InlineData("~brick.tmp", false)]
+    [InlineData(".texhist", false)]
+    [InlineData(".texhist/brick.png", false)]
+    [InlineData("sub\\.texhist\\v2\\brick.png", false)]
+    public void Only_changes_that_can_matter_to_the_library_wake_it(string name, bool relevant) =>
+        Assert.Equal(relevant, ProjectTextures.Relevant(name));
+
+    [Fact]
+    public void Saving_a_project_texture_reaches_the_library_without_changing_how_it_tiles()
+    {
+        var ctx = RegistryTests.Headless();
+        var folder = Folder("project");
+        var file = Path.Combine(folder, "brick.png");
+        File.WriteAllBytes(file, MaterialLibrary.EncodePng(8, 8, new byte[8 * 8 * 4]));
+        using var textures = new ProjectTextures();
+
+        textures.Use(ctx, folder);
+        textures.Poll(ctx); // starts watching
+        var before = ctx.Materials.Get("brick");
+        Assert.Equal((8, 8), (before.Width, before.Height));
+        Assert.True(File.Exists(Path.Combine(folder, MaterialLibrary.SidecarName)));
+
+        var edited = Path.Combine(_dir, "edited.png");
+        File.WriteAllBytes(edited, MaterialLibrary.EncodePng(4, 4, new byte[4 * 4 * 4]));
+        // Starting to watch queues a rescan of its own, so wait for the result, not for any rescan.
+        File.Copy(edited, file, overwrite: true);
+        var stop = Environment.TickCount64 + 10_000;
+        while (ctx.Materials.Get("brick").Pixels == null && Environment.TickCount64 < stop)
+        {
+            textures.Poll(ctx);
+            Thread.Sleep(20);
+        }
+
+        var after = ctx.Materials.Get("brick");
+        Assert.Equal((4, 4), after.Pixels);
+        Assert.Equal((8, 8), (after.Width, after.Height));
+        Assert.NotEqual(before.Modified, after.Modified);
+    }
+
+    [Fact]
+    public void Dropping_an_image_imports_it_and_makes_it_active()
+    {
+        var ctx = RegistryTests.Headless();
+        var project = Path.Combine(_dir, "project");
+        using var textures = new ProjectTextures();
+        textures.Use(ctx, project);
+        var importer = new TextureImporter(textures);
+        var image = Path.Combine(Folder("drop", "fresh"), "fresh.png");
+
+        importer.Drop(ctx, [image]);
+        var stop = Environment.TickCount64 + 10_000;
+        while (!ctx.Materials.Contains("fresh") && Environment.TickCount64 < stop)
+        {
+            importer.Update(ctx);
+            Thread.Sleep(10);
+        }
+
+        Assert.True(ctx.Materials.Contains("fresh"));
+        Assert.Equal("fresh", ctx.ActiveMaterial);
+        Assert.Equal(4, ctx.Materials.Get("fresh").Width);
+    }
+
+    [Fact]
+    public void Importing_a_library_texture_keeps_the_faces_using_it_where_they_are()
+    {
+        var ctx = RegistryTests.Headless();
+        var shared = Folder("shared", "brick");
+        ctx.Materials.AddFolder(shared);
+        ctx.Materials.Rescan();
+        ctx.Materials.SetTexelDensity("brick", 64);
+        float tile = ctx.Materials.Get("brick").TileWidth;
+        using var textures = new ProjectTextures();
+        var project = Path.Combine(_dir, "project");
+        textures.Use(ctx, project);
+        var importer = new TextureImporter(textures);
+
+        importer.Drop(ctx, [Path.Combine(shared, "brick.png")]);
+        var stop = Environment.TickCount64 + 10_000;
+        while (ctx.Materials.Get("brick").Source != project && Environment.TickCount64 < stop)
+        {
+            importer.Update(ctx);
+            Thread.Sleep(10);
+        }
+
+        var brick = ctx.Materials.Get("brick");
+        Assert.Equal(project, brick.Source);
+        Assert.Equal(64f, brick.TexelDensity);
+        Assert.Equal(tile, brick.TileWidth);
+    }
+
+    [Fact]
+    public void Dropping_with_nowhere_to_put_it_copies_nothing()
+    {
+        var ctx = RegistryTests.Headless();
+        var importer = new TextureImporter(new ProjectTextures());
+        int before = ctx.Materials.All.Count;
+        importer.Drop(ctx, [Path.Combine(Folder("drop", "fresh"), "fresh.png")]);
+        importer.Update(ctx);
+        Assert.Equal(before, ctx.Materials.All.Count);
+    }
+
+    [Fact]
+    public void The_import_summary_says_what_happened_and_the_first_thing_that_did_not()
+    {
+        var summary = TextureImporter.Summary(new TextureImportResult(3, 1, 2, 1, "a", ["b.png: locked"]), ["c.webp isn't a PNG, JPEG or TGA"]);
+        Assert.Equal("Imported 3 textures; 1 replaced; 2 scaled down; 1 other map, such as a normal map, isn't listed; 2 skipped, first: b.png: locked", summary);
+    }
+
+    [Fact]
     public void A_missing_folder_and_unreadable_settings_are_reported()
     {
         var problems = new StringWriter();

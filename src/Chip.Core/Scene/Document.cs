@@ -30,7 +30,7 @@ public sealed class Document
     /// <summary>
     /// Texel density in pixels per metre ("1 m is 256 px", as in Scythe) for every material without its own override.
     /// New levels use <see cref="NewLevelTexelDensity"/>; files saved before the setting existed load at 512, the scale they
-    /// were built at. Change it with <see cref="TexelDensityOps.Change"/> so existing faces follow.
+    /// were built at. Changing it leaves existing faces as they are; <see cref="TexelDensityOps.Rescale"/> brings them along.
     /// </summary>
     public float TexelDensity = NewLevelTexelDensity;
     public const float NewLevelTexelDensity = 256f;

@@ -365,6 +365,19 @@ public sealed partial class EditorApp
         if (ImGui.Button("Add folder...")) AddTextureFolder();
 
         PageGap();
+        Widgets.Heading("Imported textures");
+        PrefRow("Longest side");
+        ImGui.SetNextItemWidth(Theme.Px(220));
+        static string SizeLabel(int size) => size == 0 ? "Keep the original size" : $"{size} px";
+        if (ImGui.BeginCombo("##importMax", SizeLabel(s.ImportMaxSize)))
+        {
+            foreach (var size in new[] { 0, 512, 1024, 2048, 4096 })
+                if (ImGui.Selectable(SizeLabel(size), s.ImportMaxSize == size)) { s.ImportMaxSize = size; SaveSettings(); }
+            ImGui.EndCombo();
+        }
+        Note("Larger images dropped on the window are scaled down as they're copied into the project and saved as PNG. Faces tile them at the smaller size.");
+
+        PageGap();
         Widgets.Heading("Where Chip keeps its files");
         FolderRow("Settings", _settings.Folder);
         FolderRow("Autosaves", _autosave.Folder);

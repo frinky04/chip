@@ -37,6 +37,13 @@ public sealed record GameProject : IDisposable
     public IReadOnlyList<string> PrefabRoots { get; init; } = [];
     /// <summary>Where new prefab files are saved, relative to <see cref="Root"/> (<c>"prefabs": { "default" }</c>), or null for <c>prefabs</c>.</summary>
     public string? PrefabDefault { get; init; }
+    /// <summary>The project's texture folder, relative to <see cref="Root"/> (<c>"textures"</c>), or null for <c>textures</c>.</summary>
+    public string? TexturesPath { get; init; }
+    /// <summary>The project's texture folder, absolute. It may not exist yet.</summary>
+    public string TexturesFolder => Path.GetFullPath(Path.Combine(Root, TexturesPath ?? DefaultTexturesPath));
+
+    /// <summary>The project's texture folder when the project file doesn't name one, and beside a level outside any project.</summary>
+    public const string DefaultTexturesPath = "textures";
 
     /// <summary>The manifest when the project file doesn't name one (where the Godot addon writes it), relative to the project folder.</summary>
     public static readonly string DefaultManifest = Path.Combine(".chip", "entities.json");
@@ -126,7 +133,8 @@ public sealed record GameProject : IDisposable
                     case "flags": p = p with { Flags = FlagSpec.Parse(prop.Value) }; break;
                     case "surfaces": p = p with { Surfaces = Scene.Surfaces.Parse(prop.Value, root) }; break;
                     case "prefabs": p = ParsePrefabs(p, prop); break;
-                    default: throw new InvalidDataException($"has an unknown field \"{prop.Name}\" (known: version, engine, entities, collisionSuffixes, lightmapCharts, assetPrefix, surfaces, kinds, flags, prefabs)");
+                    case "textures": p = p with { TexturesPath = Text(prop) }; break;
+                    default: throw new InvalidDataException($"has an unknown field \"{prop.Name}\" (known: version, engine, entities, collisionSuffixes, lightmapCharts, assetPrefix, surfaces, kinds, flags, prefabs, textures)");
                 }
             return p;
         }

@@ -55,7 +55,7 @@ public sealed unsafe class Renderer : IDisposable
     readonly MaterialLibrary _lib;
     readonly uint _meshProg, _colorProg, _lineProg, _gridProg;
     readonly uint _overlayVao, _overlayVbo, _gridVao, _gridVbo;
-    readonly Dictionary<string, (string? Path, uint Tex, AlphaMode Alpha)> _textures = new(StringComparer.OrdinalIgnoreCase); // loaded on first use
+    readonly Dictionary<string, (string? Path, long Stamp, uint Tex, AlphaMode Alpha)> _textures = new(StringComparer.OrdinalIgnoreCase); // loaded on first use
     readonly List<uint> _uploads = new();
     readonly uint _missingTex;
     readonly Dictionary<int, MeshGpu> _meshes = new();
@@ -119,7 +119,7 @@ public sealed unsafe class Renderer : IDisposable
 
     /// <summary>
     /// The material's GL texture, loaded on first use (large libraries never load unused textures) and reloaded when a
-    /// rescan points the name at another file. Unreadable or unknown materials get the missing checker.
+    /// rescan finds the name on another file, or its file changed. Unreadable or unknown materials get the missing checker.
     /// </summary>
     public uint EnsureTexture(string material)
     {
@@ -128,8 +128,10 @@ public sealed unsafe class Renderer : IDisposable
         // A surface without an image file gets a tile drawn from its look (the browser shows it; the viewport draws the
         // pattern in world space instead).
         var look = path == null ? Surfaces.Of(material)?.Look : null;
-        string? key = path != null ? (surfaceLook != null ? $"{path}:{File.GetLastWriteTimeUtc(path).Ticks}" : path) : (look != null ? $"look:{look}" : null);
-        if (_textures.TryGetValue(material, out var t) && t.Path == key) return t.Tex;
+        string? key = path ?? (look != null ? $"look:{look}" : null);
+        // An ordinary material's stamp comes from the last scan, so drawing one never touches the disk.
+        long stamp = surfaceLook == null ? _lib.Get(material).Modified : path != null ? File.GetLastWriteTimeUtc(path).Ticks : 0;
+        if (_textures.TryGetValue(material, out var t) && t.Path == key && t.Stamp == stamp) return t.Tex;
         if (t.Tex != 0 && t.Tex != _missingTex) _gl.DeleteTexture(t.Tex);
         uint tex = _missingTex;
         var alpha = AlphaMode.Opaque;
@@ -137,7 +139,7 @@ public sealed unsafe class Renderer : IDisposable
             try { (tex, alpha) = LoadTexture(path); }
             catch (Exception) { } // corrupt or unsupported image: keep the checker so the scene still draws
         else if (look != null) tex = SurfaceTile(look);
-        _textures[material] = (key, tex, alpha);
+        _textures[material] = (key, stamp, tex, alpha);
         return tex;
     }
 
@@ -276,6 +278,12 @@ public sealed unsafe class Renderer : IDisposable
         uint tex = CreateTexture(width, height, rgba);
         _uploads.Add(tex);
         return (nint)tex;
+    }
+
+    /// <summary>Frees a texture from <see cref="UploadTexture"/> (a thumbnail whose file changed).</summary>
+    public void FreeTexture(nint texture)
+    {
+        if (_uploads.Remove((uint)texture)) _gl.DeleteTexture((uint)texture);
     }
 
     readonly List<RenderTarget> _targets = new();

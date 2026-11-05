@@ -220,6 +220,222 @@ public sealed class MaterialLibraryTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_dir, MaterialLibrary.SidecarName)));
     }
 
+    // ---- Project folder and overrides ----
+
+    string SubFolder(string name)
+    {
+        var folder = Path.Combine(_dir, name);
+        Directory.CreateDirectory(folder);
+        return folder;
+    }
+
+    [Fact]
+    public void The_project_folder_wins_a_name_clash_and_leaves_when_the_project_does()
+    {
+        var shared = SubFolder("shared");
+        var first = SubFolder("first");
+        var second = SubFolder("second");
+        File.WriteAllBytes(Path.Combine(shared, "brick.png"), Png(8, 8));
+        File.WriteAllBytes(Path.Combine(first, "brick.png"), Png(16, 16));
+        File.WriteAllBytes(Path.Combine(second, "tile.png"), Png(4, 4));
+        var lib = new MaterialLibrary();
+        lib.AddFolder(shared);
+
+        Assert.True(lib.SetProjectFolder(first));
+        Assert.False(lib.SetProjectFolder(first));
+        lib.Rescan();
+        Assert.Equal([first, shared], lib.Folders);
+        Assert.Equal(16, lib.Get("brick").Width);
+
+        lib.SetProjectFolder(second);
+        lib.Rescan();
+        Assert.Equal([second, shared], lib.Folders);
+        Assert.Equal(8, lib.Get("brick").Width);
+        Assert.True(lib.Contains("tile"));
+    }
+
+    [Fact]
+    public void Dot_folders_hold_no_materials_even_when_the_library_folder_is_inside_one()
+    {
+        var folder = SubFolder(Path.Combine(".parent", "textures"));
+        File.WriteAllBytes(Path.Combine(folder, "brick.png"), Png(8, 8));
+        Directory.CreateDirectory(Path.Combine(folder, ".texhist", "v1"));
+        Directory.CreateDirectory(Path.Combine(folder, "walls"));
+        File.WriteAllBytes(Path.Combine(folder, ".texhist", "v1", "brick_old.png"), Png(4, 4));
+        File.WriteAllBytes(Path.Combine(folder, ".texhist", "brick.png"), Png(4, 4));
+        File.WriteAllBytes(Path.Combine(folder, "walls", "tile.png"), Png(4, 4));
+
+        var lib = MaterialLibrary.LoadFolder(folder);
+
+        Assert.Equal(["brick", "tile"], lib.All.Select(m => m.Name).Order());
+        Assert.Equal(8, lib.Get("brick").Width);
+        Assert.Equal(0, lib.Rescan().Duplicates);
+    }
+
+    [Fact]
+    public void A_folder_both_added_and_the_project_folder_is_scanned_once_and_stays_after_the_project()
+    {
+        var folder = SubFolder("both");
+        File.WriteAllBytes(Path.Combine(folder, "brick.png"), Png(8, 8));
+        var lib = new MaterialLibrary();
+        lib.AddFolder(folder);
+        lib.SetProjectFolder(folder);
+        Assert.Equal(0, lib.Rescan().Duplicates);
+        Assert.Equal([folder], lib.Folders);
+
+        lib.SetProjectFolder(null);
+        lib.Rescan();
+        Assert.Equal([folder], lib.Folders);
+        Assert.True(lib.Contains("brick"));
+    }
+
+    [Fact]
+    public void Overrides_belong_to_their_folder_so_they_do_not_follow_a_name_to_another_project()
+    {
+        var a = SubFolder("a");
+        var b = SubFolder("b");
+        File.WriteAllBytes(Path.Combine(a, "brick.png"), Png(8, 8));
+        File.WriteAllBytes(Path.Combine(b, "brick.png"), Png(8, 8));
+        var lib = new MaterialLibrary();
+        lib.SetProjectFolder(a);
+        lib.Rescan();
+        lib.SetTexelDensity("brick", 64);
+        lib.SetAlphaMode("brick", AlphaMode.Mask);
+        lib.SetDoubleSided("brick", true);
+
+        lib.SetProjectFolder(b);
+        lib.Rescan();
+        var other = lib.Get("brick");
+        Assert.Null(other.TexelDensity);
+        Assert.Null(other.Alpha);
+        Assert.False(other.DoubleSided);
+
+        lib.SetProjectFolder(a);
+        lib.Rescan();
+        Assert.Equal(64f, lib.Get("brick").TexelDensity);
+    }
+
+    [Fact]
+    public void Rescan_follows_the_side_car_on_disk_unless_it_cannot_be_read()
+    {
+        Write("brick.png", Png(8, 8));
+        var lib = MaterialLibrary.LoadFolder(_dir);
+        lib.SetTexelDensity("brick", 64);
+        var sidecar = Path.Combine(_dir, MaterialLibrary.SidecarName);
+
+        File.WriteAllText(sidecar, "{ not json");
+        lib.Rescan();
+        Assert.Equal(64f, lib.Get("brick").TexelDensity);
+
+        File.Delete(sidecar);
+        lib.Rescan();
+        Assert.Null(lib.Get("brick").TexelDensity);
+    }
+
+    [Fact]
+    public void Overrides_stay_on_disk_while_their_image_is_away()
+    {
+        Write("brick.png", Png(8, 8));
+        Write("tile.png", Png(8, 8));
+        var lib = MaterialLibrary.LoadFolder(_dir);
+        lib.SetTexelDensity("brick", 64);
+
+        File.Move(Path.Combine(_dir, "brick.png"), Path.Combine(_dir, "brick.tmp")); // an editor swapping the file in
+        lib.Rescan();
+        lib.SetTexelDensity("tile", 32); // writes the side-car while brick is gone
+        File.Move(Path.Combine(_dir, "brick.tmp"), Path.Combine(_dir, "brick.png"));
+        lib.Rescan();
+
+        Assert.Equal(64f, lib.Get("brick").TexelDensity);
+    }
+
+    // ---- Pinned size ----
+
+    /// <summary>Faces' UVs through the library's size, as the renderer and exporters take them.</summary>
+    static Vector2 UvOf(MaterialLibrary lib, string name)
+    {
+        var info = lib.Get(name);
+        var box = MeshOps.CreateBox(Vector3.Zero, Vector3.One, name, lib.MappingFor(name));
+        var face = box.Faces[5];
+        return face.UV(1, box.Positions[face.Verts[1]], info.Width, info.Height);
+    }
+
+    [Fact]
+    public void Resizing_a_project_texture_keeps_its_tiling_until_asked_to_use_the_real_size()
+    {
+        var file = Path.Combine(SubFolder("project"), "brick.png");
+        File.WriteAllBytes(file, Png(512, 256));
+        var lib = new MaterialLibrary();
+        lib.SetProjectFolder(Path.GetDirectoryName(file));
+        lib.Rescan();
+        Assert.True(lib.PinProjectSizes());
+        var uv = UvOf(lib, "brick");
+        float tile = lib.Get("brick").TileWidth;
+
+        File.WriteAllBytes(file, Png(128, 64));
+        lib.Rescan();
+
+        var resized = lib.Get("brick");
+        Assert.Equal((512, 256), (resized.Width, resized.Height));
+        Assert.Equal((128, 64), resized.Pixels);
+        Assert.Equal(tile, resized.TileWidth);
+        Assert.Equal(uv, UvOf(lib, "brick"));
+
+        var fresh = new MaterialLibrary(); // the pin is on disk, not just in this session
+        fresh.SetProjectFolder(Path.GetDirectoryName(file));
+        fresh.Rescan();
+        Assert.Equal(512, fresh.Get("brick").Width);
+
+        Assert.True(lib.ResetSize("brick"));
+        var actual = lib.Get("brick");
+        Assert.Equal((128, 64), (actual.Width, actual.Height));
+        Assert.Null(actual.Pixels);
+        lib.Rescan();
+        Assert.Equal(128, lib.Get("brick").Width);
+        Assert.Null(lib.Get("brick").Pixels);
+    }
+
+    [Fact]
+    public void Only_project_textures_are_pinned_and_a_new_one_keeps_the_size_it_arrived_at()
+    {
+        var project = SubFolder("project");
+        var shared = SubFolder("shared");
+        File.WriteAllBytes(Path.Combine(project, "brick.png"), Png(8, 8));
+        File.WriteAllBytes(Path.Combine(shared, "tile.png"), Png(8, 8));
+        var lib = new MaterialLibrary();
+        lib.AddFolder(shared);
+        lib.SetProjectFolder(project);
+        lib.Rescan();
+        lib.PinProjectSizes();
+
+        Assert.False(File.Exists(Path.Combine(shared, MaterialLibrary.SidecarName)));
+        File.WriteAllBytes(Path.Combine(shared, "tile.png"), Png(4, 4));
+        lib.Rescan();
+        Assert.Equal(4, lib.Get("tile").Width); // library folders still go by the file
+
+        File.WriteAllBytes(Path.Combine(project, "new.png"), Png(32, 32));
+        lib.Rescan();
+        lib.PinProjectSizes();
+        File.WriteAllBytes(Path.Combine(project, "new.png"), Png(16, 16));
+        lib.Rescan();
+        Assert.Equal(32, lib.Get("new").Width);
+    }
+
+    [Fact]
+    public void Scanning_notes_when_a_file_changed()
+    {
+        var file = Path.Combine(_dir, "brick.png");
+        File.WriteAllBytes(file, Png(8, 8));
+        File.SetLastWriteTimeUtc(file, new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var lib = MaterialLibrary.LoadFolder(_dir);
+        long first = lib.Get("brick").Modified;
+
+        File.SetLastWriteTimeUtc(file, new DateTime(2021, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        lib.Rescan();
+
+        Assert.NotEqual(first, lib.Get("brick").Modified);
+    }
+
     // ---- Alpha ----
 
     /// <summary>A w×h image whose texel i has alpha <paramref name="alpha"/>(i) and colour (10, 20, 30).</summary>

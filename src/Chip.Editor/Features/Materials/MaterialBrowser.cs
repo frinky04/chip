@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Chip.Core.Scene;
@@ -241,6 +242,7 @@ public sealed class MaterialBrowser : IDockPanel
         DrawOwnDensity(ctx, active);
         DrawAlpha(ctx, active);
         DrawSides(ctx, active);
+        DrawFileActions(ctx, active);
 
         ImGui.Dummy(Theme.Px(0, 2));
         ImGui.TextColored(Theme.TextDim, "Slots");
@@ -331,6 +333,66 @@ public sealed class MaterialBrowser : IDockPanel
             ctx.Status($"Couldn't write {MaterialLibrary.SidecarName} in {m.Source}. The change applies until Chip closes; check the folder is writable.", error: true);
     }
 
+    static bool IsProjectTexture(EditorContext ctx, MaterialInfo m) =>
+        m.Path != null && string.Equals(m.Source, ctx.Materials.ProjectFolder, StringComparison.OrdinalIgnoreCase);
+
+    const string ImportTip = "Copy it into this project to edit it, leaving the original alone. Faces using it switch to the copy and stay where they are.";
+
+    /// <summary>A library texture, not a tool surface, with a project to copy it into.</summary>
+    static bool CanImport(EditorContext ctx, MaterialInfo m) =>
+        m.Path != null && m.Source.Length > 0 && m.Surface == null && ctx.Materials.ProjectFolder != null && !IsProjectTexture(ctx, m);
+
+    static void ImportToProject(EditorContext ctx, MaterialInfo m) => ctx.DropFiles([m.Path!]);
+
+    /// <summary>Edit image (or, for a library texture, Import to project) and Show in folder for the active material, when it has a file.</summary>
+    static void DrawFileActions(EditorContext ctx, MaterialInfo active)
+    {
+        if (active.Path == null) return;
+        RowLabel("File", "The image behind this material. Saving a project texture updates the level.");
+        float width = (ImGui.GetContentRegionAvail().X - Theme.Px(6)) / 2;
+        if (IsProjectTexture(ctx, active))
+        {
+            if (ImGui.Button("Edit image", new Vector2(width, 0))) EditImage(ctx, active);
+            Tip("Open in your default app for this file type");
+        }
+        else
+        {
+            bool can = CanImport(ctx, active);
+            ImGui.BeginDisabled(!can);
+            if (ImGui.Button("Import", new Vector2(width, 0))) ImportToProject(ctx, active);
+            ImGui.EndDisabled();
+            Tip(can ? ImportTip : ctx.Materials.ProjectFolder == null ? "Save the level first. Its textures go in its project, or in a folder beside it" : "Tool surfaces can't be imported");
+        }
+        ImGui.SameLine(0, Theme.Px(6));
+        if (ImGui.Button("Show in folder", new Vector2(width, 0))) ShowInFolder(ctx, active);
+    }
+
+    static void EditImage(EditorContext ctx, MaterialInfo m)
+    {
+        try { Process.Start(new ProcessStartInfo(m.Path!) { UseShellExecute = true }); }
+        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            ctx.Status($"Couldn't open {m.Path}: {e.Message}", error: true);
+        }
+    }
+
+    static void ShowInFolder(EditorContext ctx, MaterialInfo m)
+    {
+        try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{m.Path}\"") { UseShellExecute = true }); }
+        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            ctx.Status($"Couldn't show {m.Path}: {e.Message}", error: true);
+        }
+    }
+
+    static void UseActualSize(EditorContext ctx, MaterialInfo m)
+    {
+        bool saved = ctx.Materials.ResetSize(m.Name);
+        ctx.Session.Touch(); // sizes changed: rebuild the scene's UVs
+        if (!saved)
+            ctx.Status($"Couldn't write {MaterialLibrary.SidecarName} in {m.Source}. The change applies until Chip closes; check the folder is writable.", error: true);
+    }
+
     static void SetDensity(EditorContext ctx, MaterialInfo m, float? density)
     {
         bool saved = ctx.Materials.SetTexelDensity(m.Name, density);
@@ -378,7 +440,8 @@ public sealed class MaterialBrowser : IDockPanel
         {
             var subs = group.Select(m => m.Folder).Where(f => f.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)
                 .SelectMany(Ancestors).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
-            string label = Path.GetFileName(group.Key) is { Length: > 0 } n ? n : group.Key;
+            string label = string.Equals(group.Key, lib.ProjectFolder, StringComparison.OrdinalIgnoreCase) ? "Project"
+                : Path.GetFileName(group.Key) is { Length: > 0 } n ? n : group.Key;
             FolderNode(group.Key, "", label, subs, group.Key);
         }
     }
@@ -485,6 +548,25 @@ public sealed class MaterialBrowser : IDockPanel
             ImGui.Separator();
             if (ImGui.MenuItem("Replace in level with this…")) ReplaceMaterialDialog.For(ctx).Show(ctx, to: m.Name);
             if (ImGui.MenuItem("Copy name")) ImGui.SetClipboardText(m.Name);
+            if (m.Path != null)
+            {
+                ImGui.Separator();
+                if (IsProjectTexture(ctx, m))
+                {
+                    if (ImGui.MenuItem("Edit image")) EditImage(ctx, m);
+                }
+                else if (CanImport(ctx, m))
+                {
+                    if (ImGui.MenuItem("Import to project")) ImportToProject(ctx, m);
+                    Tip(ImportTip);
+                }
+                if (ImGui.MenuItem("Show in folder")) ShowInFolder(ctx, m);
+            }
+            if (m.Pixels is { } pixels)
+            {
+                if (ImGui.MenuItem($"Tile by actual size ({pixels.Width} × {pixels.Height})")) UseActualSize(ctx, m);
+                Tip($"The image was resized, so faces still tile it as {m.Width} × {m.Height}. This makes them use its real size, which changes how it sits on every face using it");
+            }
             ImGui.EndPopup();
         }
     }

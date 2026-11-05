@@ -47,29 +47,24 @@ public class TexelDensityTests
     }
 
     [Fact]
-    public void Changing_the_level_density_rescales_following_faces_and_undoes()
+    public void Changing_the_level_density_leaves_existing_faces_alone_and_new_ones_use_it()
     {
         var lib = Lib();
         var doc = new Document { TexelDensity = 512 };
         lib.DefaultTexelsPerMeter = 512;
         var wall = doc.Add(MeshOps.CreateBox(Vector3.Zero, Vector3.One, "wall", lib.MappingFor("wall")));
-        var brick = doc.Add(MeshOps.CreateBox(new Vector3(2, 0, 0), new Vector3(3, 1, 1), "brick", lib.MappingFor("brick")));
         wall.Faces[0].UVs = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];
-        float brickScale = brick.Faces[1].Map.ScaleU;
         var session = new Session();
         session.Reset(doc, null);
+        var meshes = System.Text.Json.Nodes.JsonNode.Parse(DocumentSerializer.Serialize(doc))!["meshes"]!.ToJsonString();
         var before = DocumentSerializer.Serialize(doc);
 
-        int changed = 0;
-        session.Do("Texel Density", () => changed = TexelDensityOps.Change(session.Doc, lib, 64));
+        session.Do("Texel Density", () => TexelDensityOps.Change(session.Doc, lib, 64));
 
-        Assert.Equal(6, changed); // the wall's faces; the brick has its own density
-        var w = session.Doc.Find(wall.Id)!;
-        Assert.Equal(1f / 64, w.Faces[1].Map.ScaleU, 6);                       // projected: 8x larger texels
-        Assert.Equal(new Vector2(0.125f, 0.125f), w.Faces[0].UVs![2]);          // explicit: 1/8 of a repeat per metre
-        Assert.Equal(brickScale, session.Doc.Find(brick.Id)!.Faces[1].Map.ScaleU);
+        Assert.Equal(meshes, System.Text.Json.Nodes.JsonNode.Parse(DocumentSerializer.Serialize(session.Doc))!["meshes"]!.ToJsonString());
         Assert.Equal(64f, session.Doc.TexelDensity);
         Assert.Equal(64f, lib.DefaultTexelsPerMeter);
+        Assert.Equal(1f / 64, lib.MappingFor("wall").ScaleU, 6);
 
         session.Undo();
         Assert.Equal(before, DocumentSerializer.Serialize(session.Doc));
@@ -77,12 +72,42 @@ public class TexelDensityTests
     }
 
     [Fact]
-    public void Setting_the_same_density_changes_nothing()
+    public void Rescaling_follows_projected_faces_only_and_undoes()
+    {
+        var lib = Lib();
+        var doc = new Document { TexelDensity = 64 };
+        lib.DefaultTexelsPerMeter = 512;
+        var wall = doc.Add(MeshOps.CreateBox(Vector3.Zero, Vector3.One, "wall", lib.MappingFor("wall")));
+        var brick = doc.Add(MeshOps.CreateBox(new Vector3(2, 0, 0), new Vector3(3, 1, 1), "brick", lib.MappingFor("brick")));
+        wall.Faces[0].UVs = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];
+        wall.Faces[2].Map.ScaleU *= 2; // a hand-tuned scale
+        float brickScale = brick.Faces[1].Map.ScaleU;
+        var session = new Session();
+        session.Reset(doc, null);
+        var before = DocumentSerializer.Serialize(doc);
+
+        int changed = 0;
+        session.Do("Rescale Faces", () => changed = TexelDensityOps.Rescale(session.Doc, lib, 512, 64));
+
+        Assert.Equal(5, changed); // the wall's projected faces; not its explicit one, nor the brick with its own density
+        var w = session.Doc.Find(wall.Id)!;
+        Assert.Equal(1f / 64, w.Faces[1].Map.ScaleU, 6);                       // 8x larger texels
+        Assert.Equal(2f / 64, w.Faces[2].Map.ScaleU, 6);                       // still twice that
+        Assert.Equal(new Vector2(1, 1), w.Faces[0].UVs![2]);                   // explicit: untouched
+        Assert.Equal(brickScale, session.Doc.Find(brick.Id)!.Faces[1].Map.ScaleU);
+
+        session.Undo();
+        Assert.Equal(before, DocumentSerializer.Serialize(session.Doc));
+    }
+
+    [Fact]
+    public void Bad_densities_are_refused_and_rescaling_to_the_same_one_changes_nothing()
     {
         var lib = Lib();
         var doc = new Document();
         doc.Add(MeshOps.CreateBox(Vector3.Zero, Vector3.One, "wall", lib.MappingFor("wall")));
-        Assert.Equal(0, TexelDensityOps.Change(doc, lib, doc.TexelDensity));
+        Assert.Equal(0, TexelDensityOps.Rescale(doc, lib, 256, 256));
         Assert.Throws<ArgumentOutOfRangeException>(() => TexelDensityOps.Change(doc, lib, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TexelDensityOps.Rescale(doc, lib, 0, 256));
     }
 }

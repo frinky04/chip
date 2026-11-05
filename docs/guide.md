@@ -127,9 +127,28 @@ Materials are image files (PNG, JPEG or TGA) in folders. Chip ships a few measur
 your own folders with Texture > Add texture folder, or list them in the `CHIP_TEXTURE_DIRS` environment variable.
 `Shift+Alt+1`…`0` apply the first ten slots in the Materials tab, and `Shift`+right-click lifts the material off a face.
 
+**Project textures** are the ones that belong to this game. Put them in `textures/` in your project (the folder with
+`chip.project.json` or `project.godot`; `"textures": "art/textures"` in the project file moves it), or beside a level
+that isn't in a project. They show as Project in the Materials tab and win over any other texture of the same name.
+Save an image in your editor and the level updates. Resize one and it keeps tiling as before, with more or less detail:
+Chip records each project texture's size the first time it sees it, in `chip-materials.json` beside the image. To make a
+resized texture tile by its real size instead, right-click it and choose Tile by actual size.
+
+Drag images or a folder onto the window to copy them into the project. Dropping a texture the project already has asks
+whether to replace it, which keeps how it tiles, or keep both. It asks the same when the image has the name of a texture
+from another folder that the level uses, since faces would switch to the new image. Preferences > Paths can cap the longest side of imported
+images, and those are tiled at the smaller size. **Edit image** opens a project texture in your default app for that file
+type, and **Show in folder** finds any texture on disk; both are under the active material and on a tile's right-click menu.
+
+**Import** under the active material, or **Import to project** on the right-click menu, copies a texture from another folder into the project so you can edit it,
+leaving the original alone. Faces using it switch to the copy without moving, because it brings its density, alpha,
+double-sided setting and tiling size, even if a size limit scales the copy down. Dragging in the file a material uses now
+does the same.
+
 Texel density is set per level, Scythe style, under Level in the inspector (with nothing selected). "1 m is 256 px" by
 default, so a 128 px texture tiles every 50 cm. A texture can have its own density, set in the Materials tab under the
-active material.
+active material. Changing the level's density affects new faces and leaves existing ones alone. Rescale existing faces,
+which appears under the setting after a change, brings along those not placed by hand.
 
 Textures with an alpha channel draw see-through. Chip reads the alpha: crisp holes become a **cutout** (fences, foliage,
 grates; holes under 50 %) and soft alpha becomes **blend** (glass, water). Change it under Alpha in the Materials tab.

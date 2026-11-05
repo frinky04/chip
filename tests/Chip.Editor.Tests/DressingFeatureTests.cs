@@ -56,6 +56,9 @@ public class DressingFeatureTests : IDisposable
         Assert.Contains(export.Meshes, m => m.Name.StartsWith("baseboard_"));
         Assert.Contains(export.Meshes, m => m.Name == "pillar_collision" && m.Collision == Core.Geometry.CollisionMode.Only);
 
+        ctx.Doc.World["fog_end"] = EntityValues.Of("50");
+        Assert.Equal("50", ctx.ExportDocument().World["fog_end"].GetString()); // the level's settings aren't dressing's to lose
+
         Assert.True(ctx.Commands.Find("view.dressed")!.Enabled);
         ctx.Commands.Execute("view.dressed");
         Assert.False(ctx.ShowDressed);
