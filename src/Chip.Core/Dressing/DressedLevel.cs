@@ -208,14 +208,14 @@ public sealed class DressedLevel : IMeshSet
     /// <summary>
     /// A document to export: the dressed meshes, plus a collision-only stand-in for each blockout mesh a shape rule replaced
     /// (so collision stays the simple blockout shape). Generated meshes get fresh positive ids and names "rule_source".
-    /// Entities, groups and export settings are shared with the source document, not copied.
+    /// Entities, groups, level properties and export settings are shared with the source document, not copied.
     /// </summary>
     public Document ForExport()
     {
         var doc = new Document
         {
             ExportScale = _doc.ExportScale, ExportPath = _doc.ExportPath, ExportCollision = _doc.ExportCollision, Export = _doc.Export,
-            TexelDensity = _doc.TexelDensity, Entities = _doc.Entities, Groups = _doc.Groups, NextId = _doc.NextId,
+            TexelDensity = _doc.TexelDensity, World = _doc.World, Entities = _doc.Entities, Groups = _doc.Groups, NextId = _doc.NextId,
         };
         foreach (var m in Meshes)
         {

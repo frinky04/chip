@@ -13,7 +13,7 @@ namespace Chip.Editor.Features.Materials;
 /// </summary>
 public sealed class TextureImporter(ProjectTextures project)
 {
-    const string Title = "Replace textures?";
+    const string Title = "Use the new images?";
 
     ImportPlan? _asking;
     string _folder = "";
@@ -31,7 +31,7 @@ public sealed class TextureImporter(ProjectTextures project)
             return;
         }
         ImportPlan plan;
-        try { plan = TextureImport.Inspect(paths, folder, ctx.Materials); }
+        try { plan = TextureImport.Inspect(paths, folder, ctx.Materials, ctx.Doc); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             ctx.Status($"Couldn't read the dropped files: {e.Message}", error: true);
@@ -43,7 +43,7 @@ public sealed class TextureImporter(ProjectTextures project)
             ctx.Status(plan.Rejected.Count > 0 ? $"Nothing imported: {plan.Rejected[0]}" : "Those textures are already in the project", error: plan.Rejected.Count > 0);
             return;
         }
-        if (plan.Items.Any(i => i.Clash != null)) { _asking = plan; _request = true; }
+        if (plan.Items.Any(i => i.NeedsAnswer)) { _asking = plan; _request = true; }
         else Start(ctx, plan, keepBoth: false);
     }
 
@@ -86,15 +86,18 @@ public sealed class TextureImporter(ProjectTextures project)
         if (ImGui.BeginPopupModal(Title, ref open, ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             var clashes = plan.Items.Where(i => i.Clash != null).Select(i => Path.GetFileNameWithoutExtension(i.Clash!)).ToList();
-            string names = string.Join(", ", clashes.Take(5)) + (clashes.Count > 5 ? $" and {clashes.Count - 5} more" : "");
+            var takeovers = plan.Items.Where(i => i.Takeover != null).Select(i => i.Takeover!.Name).ToList();
             ImGui.PushTextWrapPos(0);
-            ImGui.TextColored(Theme.TextDim, $"The project already has {names}.");
-            ImGui.TextColored(Theme.TextDim, "Replacing keeps how it tiles on faces. Keeping both gives the new image a new name, and leaves out other maps such as normals.");
+            if (clashes.Count > 0)
+                ImGui.TextColored(Theme.TextDim, $"The project already has {Names(clashes)}. Replacing keeps how it tiles on faces.");
+            if (takeovers.Count > 0)
+                ImGui.TextColored(Theme.TextDim, $"This level uses {Names(takeovers)} from another folder. Faces using it will switch to the new image, and may tile differently.");
+            ImGui.TextColored(Theme.TextDim, "Keeping both gives the new image a new name and changes no faces. It leaves out other maps that clash, such as normals.");
             ImGui.PopTextWrapPos();
             ImGui.Dummy(Theme.Px(0, 4));
             float width = (ImGui.GetContentRegionAvail().X - Theme.Px(12)) / 3;
             PushPrimary();
-            bool replace = ImGui.Button("Replace", new Vector2(width, 0));
+            bool replace = ImGui.Button(clashes.Count > 0 ? "Replace" : "Use new image", new Vector2(width, 0));
             PopPrimary();
             ImGui.SameLine(0, Theme.Px(6));
             bool both = ImGui.Button("Keep both", new Vector2(width, 0));
@@ -111,6 +114,8 @@ public sealed class TextureImporter(ProjectTextures project)
         else if (!open) _asking = null;
         ImGui.PopStyleVar();
     }
+
+    static string Names(List<string> names) => string.Join(", ", names.Take(5)) + (names.Count > 5 ? $" and {names.Count - 5} more" : "");
 
     /// <summary>The status line for a finished import: what happened, then the first thing that didn't.</summary>
     public static string Summary(TextureImportResult result, IReadOnlyList<string> rejected)

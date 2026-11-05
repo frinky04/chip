@@ -1,4 +1,7 @@
+using System.Numerics;
+using Chip.Core.Geometry;
 using Chip.Core.Scene;
+using Chip.Core.Texturing;
 
 namespace Chip.Core.Tests;
 
@@ -150,6 +153,55 @@ public class TextureImportTests : IDisposable
         var item = TextureImport.Inspect([file], Project, lib).Items.Single();
         Assert.Null(item.Material);
         Assert.NotNull(item.Clash);
+    }
+
+    static Document LevelUsing(string material)
+    {
+        var doc = new Document();
+        doc.Add(MeshOps.CreateBox(Vector3.Zero, Vector3.One, material, TextureMapping.Default));
+        return doc;
+    }
+
+    [Fact]
+    public void A_different_image_with_a_name_the_level_uses_from_a_library_asks_first()
+    {
+        var (lib, file) = Shared();
+        var other = File_("elsewhere/brick.png", Png(8, 8));
+
+        Assert.True(TextureImport.Inspect([other], Project, lib, LevelUsing("brick")).Items.Single().NeedsAnswer);
+        Assert.Equal(file, TextureImport.Inspect([other], Project, lib, LevelUsing("brick")).Items.Single().Takeover?.Path);
+        Assert.False(TextureImport.Inspect([other], Project, lib, LevelUsing("tile")).Items.Single().NeedsAnswer); // no faces would change
+        Assert.False(TextureImport.Inspect([file], Project, lib, LevelUsing("brick")).Items.Single().NeedsAnswer); // the same image: Import to project
+    }
+
+    [Fact]
+    public void A_surface_is_not_taken_over_because_it_outranks_project_textures()
+    {
+        var lib = new MaterialLibrary();
+        lib.Add(new MaterialInfo("water", null, 64, 64));
+        var item = TextureImport.Inspect([File_("drop/water.png", Png(8, 8))], Project, lib, LevelUsing("water")).Items.Single();
+        Assert.False(item.NeedsAnswer);
+    }
+
+    [Fact]
+    public void Using_the_new_image_takes_the_name_and_keeping_both_leaves_the_faces_alone()
+    {
+        var (lib, _) = Shared();
+        File_("shared/brick_2.png", Png(4, 4)); // a library name a renamed copy has to avoid
+        lib.Rescan();
+        var other = File_("elsewhere/brick.png", Png(8, 8));
+
+        var both = TextureImport.Run(TextureImport.Inspect([other], Project, lib, LevelUsing("brick")), Project, keepBoth: true, maxSize: 0);
+        lib.Rescan();
+        Assert.Equal("brick_3", both.FirstMaterial);
+        Assert.Equal(64, lib.Get("brick").Width);
+        Assert.Equal(8, lib.Get("brick_3").Width);
+
+        var use = TextureImport.Run(TextureImport.Inspect([other], Project, lib, LevelUsing("brick")), Project, keepBoth: false, maxSize: 0);
+        lib.Rescan();
+        Assert.Equal("brick", use.FirstMaterial);
+        Assert.Equal(0, use.Replaced);
+        Assert.Equal(Path.Combine(Project, "brick.png"), lib.Get("brick").Path);
     }
 
     [Fact]

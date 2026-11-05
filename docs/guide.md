@@ -135,7 +135,8 @@ Chip records each project texture's size the first time it sees it, in `chip-mat
 resized texture tile by its real size instead, right-click it and choose Tile by actual size.
 
 Drag images or a folder onto the window to copy them into the project. Dropping a texture the project already has asks
-whether to replace it, which keeps how it tiles, or keep both. Preferences > Paths can cap the longest side of imported
+whether to replace it, which keeps how it tiles, or keep both. It asks the same when the image has the name of a texture
+from another folder that the level uses, since faces would switch to the new image. Preferences > Paths can cap the longest side of imported
 images, and those are tiled at the smaller size. **Edit image** opens a project texture in your default app for that file
 type, and **Show in folder** finds any texture on disk; both are under the active material and on a tile's right-click menu.
 

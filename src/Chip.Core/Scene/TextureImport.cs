@@ -6,11 +6,17 @@ namespace Chip.Core.Scene;
 /// <summary>
 /// A file to copy: where it is, where it goes below the folder, and the file already there under its material name.
 /// <see cref="Material"/> is set when the file is the image a library material uses now, so the copy takes that material over.
+/// <see cref="Takeover"/> is set when it's a different image with the name of a library material the level uses: project
+/// textures win, so faces would switch to it.
 /// </summary>
-public sealed record ImportItem(string Source, string Relative, string? Clash, MaterialInfo? Material = null);
+public sealed record ImportItem(string Source, string Relative, string? Clash, MaterialInfo? Material = null, MaterialInfo? Takeover = null)
+{
+    /// <summary>Importing this changes something already there, so the user gets a say.</summary>
+    public bool NeedsAnswer => Clash != null || Takeover != null;
+}
 
-/// <summary>What a drop would do. <see cref="Rejected"/> says what's being left out, and why.</summary>
-public sealed record ImportPlan(IReadOnlyList<ImportItem> Items, IReadOnlyList<string> Rejected);
+/// <summary>What a drop would do. <see cref="Rejected"/> says what's being left out, and why. <see cref="Names"/> are the library's, which a renamed copy avoids.</summary>
+public sealed record ImportPlan(IReadOnlyList<ImportItem> Items, IReadOnlyList<string> Rejected, IReadOnlyList<string>? Names = null);
 
 /// <summary>What an import did. <see cref="FirstMaterial"/> is the first new material, to make active.</summary>
 public sealed record TextureImportResult(int Imported, int Replaced, int Resized, int OtherMaps, string? FirstMaterial, IReadOnlyList<string> Problems);
@@ -23,10 +29,12 @@ public static class TextureImport
 {
     /// <summary>
     /// Works out what importing <paramref name="paths"/> (files or folders) into <paramref name="folder"/> would do. Copies
-    /// nothing. <paramref name="library"/> tells which files are images its materials use now.
+    /// nothing. <paramref name="library"/> tells which files are images its materials use now, and <paramref name="level"/>
+    /// which of its materials a different image would take over from faces.
     /// </summary>
-    public static ImportPlan Inspect(IEnumerable<string> paths, string folder, MaterialLibrary? library = null)
+    public static ImportPlan Inspect(IEnumerable<string> paths, string folder, MaterialLibrary? library = null, Document? level = null)
     {
+        var used = level == null ? [] : MaterialLibrary.Usage(level).Select(u => u.Material).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
         var existing = Existing(target);
         var items = new List<ImportItem>();
@@ -39,7 +47,20 @@ public static class TextureImport
             string name = Key(file);
             if (!MaterialLibrary.TryReadImageSize(file, out _, out _)) rejected.Add($"{Path.GetFileName(file)} can't be read as an image");
             else if (!seen.Add(name)) rejected.Add($"{Path.GetFileName(file)} has the same name as another dropped image");
-            else items.Add(new ImportItem(file, relative, existing.GetValueOrDefault(name), InUse(file)));
+            else
+            {
+                var clash = existing.GetValueOrDefault(name);
+                var material = InUse(file);
+                items.Add(new ImportItem(file, relative, clash, material, clash == null && material == null ? TakenOver(file) : null));
+            }
+        }
+
+        // A scanned material only: one added in code, such as a surface, outranks project textures, so nothing would change.
+        MaterialInfo? TakenOver(string file)
+        {
+            if (library == null || MaterialLibrary.MaterialName(Path.GetFileNameWithoutExtension(file)) is not { } material || !used.Contains(material)) return null;
+            var info = library.Get(material);
+            return info.Source.Length > 0 ? info : null;
         }
 
         MaterialInfo? InUse(string file)
@@ -61,18 +82,18 @@ public static class TextureImport
             else if (!IsImage(full)) rejected.Add($"{Path.GetFileName(full)} isn't a PNG, JPEG or TGA");
             else Add(full, Path.GetFileName(full));
         }
-        return new ImportPlan(items, rejected);
+        return new ImportPlan(items, rejected, library?.All.Select(m => m.Name).ToList());
     }
 
     /// <summary>
-    /// Copies the plan's files into <paramref name="folder"/>. A clash is replaced, or with <paramref name="keepBoth"/> the
-    /// new image takes a free name. An image longer than <paramref name="maxSize"/> (0 for no limit) on its longest side is
+    /// Copies the plan's files into <paramref name="folder"/>. A clash is replaced and a takeover goes ahead, or with
+    /// <paramref name="keepBoth"/> the new image takes a free name instead. An image longer than <paramref name="maxSize"/> (0 for no limit) on its longest side is
     /// scaled down and written as PNG. Safe on a worker thread. A file that fails doesn't stop the others.
     /// </summary>
     public static TextureImportResult Run(ImportPlan plan, string folder, bool keepBoth, int maxSize)
     {
         var target = Path.GetFullPath(folder);
-        var taken = new HashSet<string>(Existing(target).Keys, StringComparer.OrdinalIgnoreCase);
+        var taken = new HashSet<string>(Existing(target).Keys.Concat(plan.Names ?? []), StringComparer.OrdinalIgnoreCase);
         int imported = 0, replaced = 0, resized = 0, otherMaps = 0;
         string? first = null;
         var problems = new List<string>();
@@ -83,9 +104,9 @@ public static class TextureImport
                 bool map = MaterialLibrary.MaterialName(Path.GetFileNameWithoutExtension(item.Source)) == null;
                 if (item.Clash != null && keepBoth && map) continue; // no material would use a renamed map
                 var (bytes, extension, scaled) = Read(item.Source, maxSize);
-                string dest = item.Clash == null ? Path.Combine(target, item.Relative)
-                    : keepBoth ? Path.Combine(target, Path.GetDirectoryName(item.Relative) ?? "", Free(Key(item.Source), taken))
-                    : Path.Combine(Path.GetDirectoryName(item.Clash)!, Path.GetFileName(item.Relative));
+                string dest = keepBoth && item.NeedsAnswer ? Path.Combine(target, Path.GetDirectoryName(item.Relative) ?? "", Free(Key(item.Source), taken))
+                    : item.Clash != null ? Path.Combine(Path.GetDirectoryName(item.Clash)!, Path.GetFileName(item.Relative))
+                    : Path.Combine(target, item.Relative);
                 dest = Path.ChangeExtension(dest, extension);
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
                 AtomicFile.Write(dest, bytes);
