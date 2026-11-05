@@ -303,6 +303,14 @@ public sealed class EditorContext
     /// <summary>Frees a handle from <see cref="UploadTexture"/>.</summary>
     public Action<nint> FreeTexture { get; set; } = _ => { };
 
+    /// <summary>Files or folders dropped on the window. The host raises it through <see cref="DropFiles"/>.</summary>
+    public event Action<IReadOnlyList<string>>? FilesDropped;
+
+    public void DropFiles(IReadOnlyList<string> paths) => FilesDropped?.Invoke(paths);
+
+    /// <summary>The longest side an imported texture keeps, in pixels; 0 for no limit (Preferences > Paths).</summary>
+    public Func<int> ImportMaxSize { get; set; } = () => 0;
+
     // ---- Shared helpers ----
 
     public (Vector3 Min, Vector3 Max)? SelectionBounds()

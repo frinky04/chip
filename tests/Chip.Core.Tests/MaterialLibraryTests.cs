@@ -255,6 +255,24 @@ public sealed class MaterialLibraryTests : IDisposable
     }
 
     [Fact]
+    public void Dot_folders_hold_no_materials_even_when_the_library_folder_is_inside_one()
+    {
+        var folder = SubFolder(Path.Combine(".parent", "textures"));
+        File.WriteAllBytes(Path.Combine(folder, "brick.png"), Png(8, 8));
+        Directory.CreateDirectory(Path.Combine(folder, ".texhist", "v1"));
+        Directory.CreateDirectory(Path.Combine(folder, "walls"));
+        File.WriteAllBytes(Path.Combine(folder, ".texhist", "v1", "brick_old.png"), Png(4, 4));
+        File.WriteAllBytes(Path.Combine(folder, ".texhist", "brick.png"), Png(4, 4));
+        File.WriteAllBytes(Path.Combine(folder, "walls", "tile.png"), Png(4, 4));
+
+        var lib = MaterialLibrary.LoadFolder(folder);
+
+        Assert.Equal(["brick", "tile"], lib.All.Select(m => m.Name).Order());
+        Assert.Equal(8, lib.Get("brick").Width);
+        Assert.Equal(0, lib.Rescan().Duplicates);
+    }
+
+    [Fact]
     public void A_folder_both_added_and_the_project_folder_is_scanned_once_and_stays_after_the_project()
     {
         var folder = SubFolder("both");

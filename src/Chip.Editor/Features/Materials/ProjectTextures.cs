@@ -20,8 +20,9 @@ public sealed class ProjectTextures : IDisposable
     bool _followed;
     long _lastEvent;
     long _lastFolderCheck;
-    int _pending;       // a rescan is wanted
-    int _imagesChanged; // and the user should hear about it
+    int _pending;      // a rescan is wanted
+    int _texturesSeen; // what the last rescan found, to tell a real change from the library's own side-car write
+    bool _changed;     // and the user hasn't heard about it yet
     int _retries;
 
     /// <summary>The per-frame host callback.</summary>
@@ -44,9 +45,8 @@ public sealed class ProjectTextures : IDisposable
         StopWatching();
         _lastFolderCheck = 0;
         _retries = 0;
-        Volatile.Write(ref _imagesChanged, 0);
         Volatile.Write(ref _pending, 0);
-        Reload(ctx);
+        ReloadQuietly(ctx);
     }
 
     /// <summary>Starts or stops watching as the folder comes and goes, and rescans once changes settle (never mid-gesture).</summary>
@@ -61,45 +61,63 @@ public sealed class ProjectTextures : IDisposable
             {
                 StopWatching();
                 if (exists) _watcher = Watch(folder);
-                Mark(images: true);
+                Mark();
             }
         }
         if (Volatile.Read(ref _pending) == 0 || now - Volatile.Read(ref _lastEvent) < Settle.TotalMilliseconds || ctx.Interacting) return;
         Volatile.Write(ref _pending, 0);
-        bool images = Interlocked.Exchange(ref _imagesChanged, 0) != 0;
         var scan = Reload(ctx);
         if (scan.Unreadable > 0 && _retries < UnreadableRetries)
         {
             _retries++;
-            Mark(images);
+            Mark();
             return;
         }
         _retries = 0;
-        if (images)
+        if (_changed)
             ctx.Status(scan.Unreadable == 0 ? "Project textures updated"
                 : scan.Unreadable == 1 ? "Project textures updated; 1 image can't be read" : $"Project textures updated; {scan.Unreadable} images can't be read",
                 error: scan.Unreadable > 0);
+        _changed = false;
     }
 
-    static ScanResult Reload(EditorContext ctx)
+    /// <summary>Rescans now, for a change the caller will report itself.</summary>
+    public void ReloadQuietly(EditorContext ctx)
     {
-        var scan = ctx.Materials.Rescan();
+        Reload(ctx);
+        _changed = false;
+    }
+
+    ScanResult Reload(EditorContext ctx)
+    {
+        var lib = ctx.Materials;
+        var scan = lib.Rescan();
         MaterialsFeature.PinProjectSizes(ctx);
         MaterialsFeature.Refreshed(ctx);
+        var seen = new HashCode();
+        foreach (var m in lib.All)
+            if (string.Equals(m.Source, lib.ProjectFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                seen.Add(m.Name, StringComparer.OrdinalIgnoreCase);
+                seen.Add(m.Modified);
+            }
+        int hash = seen.ToHashCode();
+        _changed |= hash != _texturesSeen;
+        _texturesSeen = hash;
         return scan;
     }
 
     /// <summary>
-    /// Whether a change to a file of this name can matter to the library. Editors' temporary files and engines' import
-    /// files can't; a name with no extension may be a folder.
+    /// Whether a change to a file of this name can matter to the library. Editors' temporary files and history folders,
+    /// and engines' import files, can't; a name with no extension may be a folder.
     /// </summary>
     public static bool Relevant(string? name)
     {
+        if (name != null && MaterialLibrary.InDotFolder(name)) return false;
         var extension = Path.GetExtension(name);
-        return string.IsNullOrEmpty(extension) || IsImage(name) || extension.Equals(".json", StringComparison.OrdinalIgnoreCase);
+        return string.IsNullOrEmpty(extension) || extension.Equals(".json", StringComparison.OrdinalIgnoreCase)
+            || MaterialLibrary.Extensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
     }
-
-    static bool IsImage(string? name) => MaterialLibrary.Extensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase);
 
     FileSystemWatcher Watch(string folder)
     {
@@ -111,26 +129,20 @@ public sealed class ProjectTextures : IDisposable
         watcher.Changed += Changed;
         watcher.Created += Changed;
         watcher.Deleted += Changed;
-        watcher.Renamed += Renamed;
-        watcher.Error += (_, _) => Mark(images: true);
+        // Editors often save by renaming a temporary file over the image, so the old name alone doesn't decide this.
+        watcher.Renamed += (_, e) => { if (Relevant(e.Name) || Relevant(e.OldName)) Mark(); };
+        watcher.Error += (_, _) => Mark();
         watcher.EnableRaisingEvents = true;
         return watcher;
     }
 
     void Changed(object sender, FileSystemEventArgs e)
     {
-        if (Relevant(e.Name)) Mark(!string.Equals(Path.GetExtension(e.Name), ".json", StringComparison.OrdinalIgnoreCase));
+        if (Relevant(e.Name)) Mark();
     }
 
-    // Editors often save by renaming a temporary file over the image, so the old name doesn't decide this one.
-    void Renamed(object sender, RenamedEventArgs e)
+    void Mark()
     {
-        if (Relevant(e.Name) || Relevant(e.OldName)) Mark(images: IsImage(e.Name) || IsImage(e.OldName));
-    }
-
-    void Mark(bool images)
-    {
-        if (images) Volatile.Write(ref _imagesChanged, 1);
         Volatile.Write(ref _lastEvent, Environment.TickCount64);
         Volatile.Write(ref _pending, 1);
     }

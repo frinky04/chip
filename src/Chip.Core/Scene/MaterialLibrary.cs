@@ -179,6 +179,16 @@ public sealed partial class MaterialLibrary
 
     public bool Contains(string name) => _byName.ContainsKey(name);
 
+    /// <summary>
+    /// Whether a file's path below a library folder passes through a dot folder (<c>.texhist/brick.png</c>). Those belong to
+    /// tools, such as an image editor's history, and hold no materials.
+    /// </summary>
+    public static bool InDotFolder(string relativePath)
+    {
+        var folders = System.IO.Path.GetDirectoryName(relativePath);
+        return !string.IsNullOrEmpty(folders) && folders.Split('/', '\\').Any(s => s.StartsWith('.') && s != "." && s != "..");
+    }
+
     /// <summary>Re-reads every folder (headers and density side-cars). Code-added materials stay.</summary>
     public ScanResult Rescan()
     {
@@ -204,6 +214,7 @@ public sealed partial class MaterialLibrary
                 files = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
                     .Where(f => Extensions.Contains(System.IO.Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
                     .Select(f => System.IO.Path.GetRelativePath(folder, f))
+                    .Where(f => !InDotFolder(f))
                     .Order(StringComparer.OrdinalIgnoreCase)
                     .ToList();
             }

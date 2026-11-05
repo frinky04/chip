@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Chip.Core.Scene;
@@ -241,6 +242,7 @@ public sealed class MaterialBrowser : IDockPanel
         DrawOwnDensity(ctx, active);
         DrawAlpha(ctx, active);
         DrawSides(ctx, active);
+        DrawFileActions(ctx, active);
 
         ImGui.Dummy(Theme.Px(0, 2));
         ImGui.TextColored(Theme.TextDim, "Slots");
@@ -329,6 +331,42 @@ public sealed class MaterialBrowser : IDockPanel
     {
         if (!ctx.Materials.SetAlphaMode(m.Name, mode))
             ctx.Status($"Couldn't write {MaterialLibrary.SidecarName} in {m.Source}. The change applies until Chip closes; check the folder is writable.", error: true);
+    }
+
+    static bool IsProjectTexture(EditorContext ctx, MaterialInfo m) =>
+        m.Path != null && string.Equals(m.Source, ctx.Materials.ProjectFolder, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Edit image and Show in folder for the active material, when it has a file.</summary>
+    static void DrawFileActions(EditorContext ctx, MaterialInfo active)
+    {
+        if (active.Path == null) return;
+        RowLabel("File", "The image behind this material. Saving it updates the level.");
+        ImGui.BeginDisabled(!IsProjectTexture(ctx, active));
+        float width = (ImGui.GetContentRegionAvail().X - Theme.Px(6)) / 2;
+        if (ImGui.Button("Edit image", new Vector2(width, 0))) EditImage(ctx, active);
+        ImGui.EndDisabled();
+        Tip(IsProjectTexture(ctx, active) ? "Open in your default app for this file type"
+            : "Only project textures open for editing, so a shared library isn't changed by accident");
+        ImGui.SameLine(0, Theme.Px(6));
+        if (ImGui.Button("Show in folder", new Vector2(width, 0))) ShowInFolder(ctx, active);
+    }
+
+    static void EditImage(EditorContext ctx, MaterialInfo m)
+    {
+        try { Process.Start(new ProcessStartInfo(m.Path!) { UseShellExecute = true }); }
+        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            ctx.Status($"Couldn't open {m.Path}: {e.Message}", error: true);
+        }
+    }
+
+    static void ShowInFolder(EditorContext ctx, MaterialInfo m)
+    {
+        try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{m.Path}\"") { UseShellExecute = true }); }
+        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            ctx.Status($"Couldn't show {m.Path}: {e.Message}", error: true);
+        }
     }
 
     static void UseActualSize(EditorContext ctx, MaterialInfo m)
@@ -494,6 +532,13 @@ public sealed class MaterialBrowser : IDockPanel
             ImGui.Separator();
             if (ImGui.MenuItem("Replace in level with this…")) ReplaceMaterialDialog.For(ctx).Show(ctx, to: m.Name);
             if (ImGui.MenuItem("Copy name")) ImGui.SetClipboardText(m.Name);
+            if (m.Path != null)
+            {
+                ImGui.Separator();
+                if (ImGui.MenuItem("Edit image", null, false, IsProjectTexture(ctx, m))) EditImage(ctx, m);
+                if (!IsProjectTexture(ctx, m)) Tip("Only project textures open for editing, so a shared library isn't changed by accident");
+                if (ImGui.MenuItem("Show in folder")) ShowInFolder(ctx, m);
+            }
             if (m.Pixels is { } pixels)
             {
                 if (ImGui.MenuItem($"Tile by actual size ({pixels.Width} × {pixels.Height})")) UseActualSize(ctx, m);

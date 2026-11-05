@@ -28,6 +28,8 @@ public sealed class AppSettings
     public int AutosaveSeconds { get; set; } = 60;
 
     public List<string> TextureFolders { get; set; } = new();
+    /// <summary>The longest side an imported texture keeps, in pixels; 0 for no limit.</summary>
+    public int ImportMaxSize { get; set; }
     /// <summary>Most recent first.</summary>
     public List<string> RecentFiles { get; set; } = new();
     /// <summary>Command ids run from the palette, most recent first.</summary>
@@ -68,6 +70,7 @@ public sealed class AppSettings
         if (!Enum.TryParse<Viewport.SnapSpace>(SnapSpace, out _)) SnapSpace = nameof(Viewport.SnapSpace.World);
         AutosaveSeconds = AutosaveSeconds <= 0 ? 0 : Math.Clamp(AutosaveSeconds, 10, 3600);
         TextureFolders = Clean(TextureFolders);
+        ImportMaxSize = ImportMaxSize <= 0 ? 0 : Math.Clamp(ImportMaxSize, 16, 16384);
         RecentFiles = Clean(RecentFiles).Take(MaxRecentFiles).ToList();
         RecentCommands = Clean(RecentCommands).Take(MaxRecentCommands).ToList();
         Hotkeys = (Hotkeys ?? new()).Where(kv => !string.IsNullOrWhiteSpace(kv.Key))

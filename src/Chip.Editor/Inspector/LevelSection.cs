@@ -34,12 +34,27 @@ public sealed class LevelSection : IInspectorSection
         _world.Draw(ctx);
         SectionDivider();
 
-        RowLabel("Density", "Texel density of this level: how many texture pixels cover a metre. Textures without their own density follow it; changing it rescales their faces.");
+        RowLabel("Density", "Texel density of this level: how many texture pixels cover a metre. New faces use it, unless their texture has its own density. Faces already in the level stay as they are.");
         if (DensityField("##levelDensity", doc.TexelDensity, out float density))
         {
-            int faces = 0;
-            ctx.Session.Do("Texel Density", () => faces = TexelDensityOps.Change(doc, ctx.Materials, density));
-            ctx.Status($"Level texel density: 1 m is {density:0.##} px. {(faces == 1 ? "1 face" : $"{faces} faces")} rescaled to match");
+            // Changing it twice before rescaling still rescales from what the faces were built at.
+            if (!RescalePending(doc)) (_rescaleDoc, _rescaleFrom) = (doc, doc.TexelDensity);
+            ctx.Session.Do("Texel Density", () => TexelDensityOps.Change(doc, ctx.Materials, density));
+            _rescaleTo = density;
+            ctx.Status($"Level texel density: 1 m is {density:0.##} px. New faces use it; existing faces stay as they are");
+        }
+        if (RescalePending(doc))
+        {
+            FieldStart();
+            if (ImGui.Button("Rescale existing faces", new Vector2(-1, 0)))
+            {
+                int faces = 0;
+                float from = _rescaleFrom;
+                ctx.Session.Do("Rescale Faces", () => faces = TexelDensityOps.Rescale(doc, ctx.Materials, from, doc.TexelDensity));
+                _rescaleDoc = null;
+                ctx.Status($"{(faces == 1 ? "1 face" : $"{faces} faces")} rescaled from {from:0.##} to {doc.TexelDensity:0.##} px per metre");
+            }
+            Tip($"Scale faces built at {_rescaleFrom:0.##} px per metre to match {doc.TexelDensity:0.##}, so their textures tile differently. Faces with hand-placed UVs, and textures with their own density, stay as they are.");
         }
 
         RowLabel("Export", "Where Ctrl+E writes the .glb");
@@ -64,6 +79,12 @@ public sealed class LevelSection : IInspectorSection
         if (ImGui.Button(rules != null ? "Edit rules…" : "Set up rules…", new Vector2(-1, 0))) ctx.Commands.Execute("dressing.rules");
         Tip("Open the Dressing tab  (Ctrl+Shift+D)");
     }
+
+    // The density change the Rescale button would follow. Undoing the change, or opening another level, drops the offer.
+    Document? _rescaleDoc;
+    float _rescaleFrom, _rescaleTo;
+
+    bool RescalePending(Document doc) => ReferenceEquals(_rescaleDoc, doc) && doc.TexelDensity == _rescaleTo && _rescaleFrom != _rescaleTo;
 
     static string Count(int n, string one, string many) => n == 1 ? $"1 {one}" : $"{n} {many}";
 }

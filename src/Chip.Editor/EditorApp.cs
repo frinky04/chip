@@ -70,7 +70,9 @@ public sealed partial class EditorApp : IDisposable
         ApplySettings();
         if (persistent) _recovery = _autosave.FindRecoverable();
 
+        Ctx.ImportMaxSize = () => _settings.Current.ImportMaxSize;
         _window.Closing += OnClosing;
+        _window.FileDrop += paths => Ctx.DropFiles(paths);
         DarkTitleBar.Apply(window);
         AppIcon.Apply(window);
     }

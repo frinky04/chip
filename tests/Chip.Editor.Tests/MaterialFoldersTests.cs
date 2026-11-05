@@ -142,6 +142,9 @@ public class MaterialFoldersTests : IDisposable
     [InlineData("sub", true)]
     [InlineData("brick.png.import", false)]
     [InlineData("~brick.tmp", false)]
+    [InlineData(".texhist", false)]
+    [InlineData(".texhist/brick.png", false)]
+    [InlineData("sub\\.texhist\\v2\\brick.png", false)]
     public void Only_changes_that_can_matter_to_the_library_wake_it(string name, bool relevant) =>
         Assert.Equal(relevant, ProjectTextures.Relevant(name));
 
@@ -175,6 +178,47 @@ public class MaterialFoldersTests : IDisposable
         Assert.Equal((4, 4), after.Pixels);
         Assert.Equal((8, 8), (after.Width, after.Height));
         Assert.NotEqual(before.Modified, after.Modified);
+    }
+
+    [Fact]
+    public void Dropping_an_image_imports_it_and_makes_it_active()
+    {
+        var ctx = RegistryTests.Headless();
+        var project = Path.Combine(_dir, "project");
+        using var textures = new ProjectTextures();
+        textures.Use(ctx, project);
+        var importer = new TextureImporter(textures);
+        var image = Path.Combine(Folder("drop", "fresh"), "fresh.png");
+
+        importer.Drop(ctx, [image]);
+        var stop = Environment.TickCount64 + 10_000;
+        while (!ctx.Materials.Contains("fresh") && Environment.TickCount64 < stop)
+        {
+            importer.Update(ctx);
+            Thread.Sleep(10);
+        }
+
+        Assert.True(ctx.Materials.Contains("fresh"));
+        Assert.Equal("fresh", ctx.ActiveMaterial);
+        Assert.Equal(4, ctx.Materials.Get("fresh").Width);
+    }
+
+    [Fact]
+    public void Dropping_with_nowhere_to_put_it_copies_nothing()
+    {
+        var ctx = RegistryTests.Headless();
+        var importer = new TextureImporter(new ProjectTextures());
+        int before = ctx.Materials.All.Count;
+        importer.Drop(ctx, [Path.Combine(Folder("drop", "fresh"), "fresh.png")]);
+        importer.Update(ctx);
+        Assert.Equal(before, ctx.Materials.All.Count);
+    }
+
+    [Fact]
+    public void The_import_summary_says_what_happened_and_the_first_thing_that_did_not()
+    {
+        var summary = TextureImporter.Summary(new TextureImportResult(3, 1, 2, 1, "a", ["b.png: locked"]), ["c.webp isn't a PNG, JPEG or TGA"]);
+        Assert.Equal("Imported 3 textures; 1 replaced; 2 scaled down; 1 other map, such as a normal map, isn't listed; 2 skipped, first: b.png: locked", summary);
     }
 
     [Fact]

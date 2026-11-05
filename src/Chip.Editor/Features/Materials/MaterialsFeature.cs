@@ -23,7 +23,11 @@ public sealed class MaterialsFeature : IEditorFeature
         ctx.AddDockPanel(browser);
         ctx.AddPanel(browser.Update);
         ctx.AddPanel(new SurfaceMaterials().Update);
-        ctx.AddPanel(new ProjectTextures().Update);
+        var project = new ProjectTextures();
+        var importer = new TextureImporter(project);
+        ctx.AddPanel(project.Update);
+        ctx.AddPanel(importer.Update);
+        ctx.FilesDropped += paths => importer.Drop(ctx, paths);
         ctx.AddPanel(replace.Draw);
 
         var c = ctx.Commands;

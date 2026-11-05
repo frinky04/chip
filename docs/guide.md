@@ -134,9 +134,15 @@ Save an image in your editor and the level updates. Resize one and it keeps tili
 Chip records each project texture's size the first time it sees it, in `chip-materials.json` beside the image. To make a
 resized texture tile by its real size instead, right-click it and choose Tile by actual size.
 
+Drag images or a folder onto the window to copy them into the project. Dropping a texture the project already has asks
+whether to replace it, which keeps how it tiles, or keep both. Preferences > Paths can cap the longest side of imported
+images, and those are tiled at the smaller size. **Edit image** opens a project texture in your default app for that file
+type, and **Show in folder** finds any texture on disk; both are under the active material and on a tile's right-click menu.
+
 Texel density is set per level, Scythe style, under Level in the inspector (with nothing selected). "1 m is 256 px" by
 default, so a 128 px texture tiles every 50 cm. A texture can have its own density, set in the Materials tab under the
-active material.
+active material. Changing the level's density affects new faces and leaves existing ones alone. Rescale existing faces,
+which appears under the setting after a change, brings along those not placed by hand.
 
 Textures with an alpha channel draw see-through. Chip reads the alpha: crisp holes become a **cutout** (fences, foliage,
 grates; holes under 50 %) and soft alpha becomes **blend** (glass, water). Change it under Alpha in the Materials tab.
